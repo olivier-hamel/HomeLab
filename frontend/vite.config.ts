@@ -7,5 +7,9 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 3000,
     strictPort: true,
+    // Keep future browser API calls relative in development as in production.
+    proxy: {
+      "^/api(?:/|$)": "http://127.0.0.1:3001",
+    },
   },
 });
