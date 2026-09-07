@@ -13,6 +13,19 @@ coverage/
 *.log
 .vercel/
 
+# SSH keys, certificates, secrets, and future persistent application data
+.ssh/
+id_rsa*
+id_ed25519*
+id_ecdsa*
+id_dsa*
+*.pem
+*.key
+secrets/
+data/
+volumes/
+backups/
+
 # Operating system files
 .DS_Store
 Thumbs.db
