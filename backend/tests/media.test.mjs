@@ -43,6 +43,11 @@ function fixture(options = {}) {
       }
       if (url.pathname === '/torrent/upload') { assert.equal(init.body.has('save'), false); assert.equal(init.body.get('file').name, 'source.torrent'); return json([status]); }
       if (url.pathname === '/stream') {
+        if (url.searchParams.get('index') === '3') {
+          assert.equal(new Headers(init.headers).get('range'), null);
+          assert.equal(new Headers(init.headers).get('if-range'), null);
+          return new Response(options.subtitle ?? '1\n00:00:00,000 --> 00:00:05,000\nHello from the torrent\n', { headers: options.subtitleHeaders });
+        }
         assert.equal(url.searchParams.get('link'), hash); assert.equal(url.searchParams.get('index'), '2');
         const range = new Headers(init.headers).get('range');
         if (range === 'bytes=9000-') return new Response('private upstream error', { status: 416, headers: { 'Content-Range': 'bytes */1000', 'Content-Length': '22' } });
@@ -194,4 +199,44 @@ test('HTML disguised as a video cannot execute when its stream URL is opened dir
   assert.equal(response.headers.get('content-disposition'), 'attachment');
   assert.match(response.headers.get('content-security-policy'), /sandbox/);
   await response.body.cancel();
+});
+
+test('torrent subtitles require a selected video and the owning session, and reject other files', async () => {
+  const f = fixture(); const { call, added, select } = await selected(f);
+  assert.equal((await call(`subtitles/${added.id}/3`)).status, 400);
+  for (const id of [2, 999, 'bad']) assert.equal((await call(`subtitles/${select.id}/${id}`)).status, 400);
+  const other = await client(f.api);
+  assert.equal((await other(`subtitles/${select.id}/3`)).status, 410);
+  assert.equal((await f.api(new Request(`http://dashboard.test/api/media/subtitles/${select.id}/3`))).status, 401);
+  assert.equal(f.requests.filter(r => r.url.pathname === '/stream').length, 0);
+  const response = await call(`subtitles/${select.id}/3`, null, { headers: { Range: 'bytes=1-3', 'If-Range': 'fixture' } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/octet-stream');
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  assert.match(response.headers.get('content-security-policy'), /sandbox/);
+  const text = await response.text(); assert.match(text, /Hello from the torrent/); assert.ok(!text.includes(secret));
+  const video = await call(`stream/${select.id}`); assert.equal(await video.text(), 'abcdef', 'subtitle choice does not change the selected video');
+});
+
+test('subtitle downloads reject oversized metadata and bodies, including unknown content length', async () => {
+  let fetched = false;
+  const ts = new TorrServer(async () => { fetched = true; return new Response('unread'); });
+  const file = { id: 3, path: 'English.srt', kind: 'subtitle', size: 2 * 1024 * 1024 + 1 };
+  await assert.rejects(ts.subtitle(hash, file, new AbortController().signal), e => e.status === 413);
+  await assert.rejects(ts.subtitle(hash, { ...file, path: 'English.ass', size: 10 }, new AbortController().signal), e => e.status === 400);
+  assert.equal(fetched, false);
+  const f = fixture({ subtitle: 'x'.repeat(2 * 1024 * 1024 + 1) }); const { call, select } = await selected(f);
+  const response = await call(`subtitles/${select.id}/3`);
+  assert.equal(response.status, 413); assert.ok(!(await response.text()).includes(secret));
+});
+
+test('subtitle downloads retain VTT bytes and cancel partial upstream responses', async () => {
+  const content = 'WEBVTT\n\n00:00.000 --> 00:01.000\nHello\n';
+  const ts = new TorrServer(async () => new Response(content, { headers: { 'Content-Type': 'text/vtt' } }));
+  const file = { id: 3, path: 'English.vtt', kind: 'subtitle', size: null };
+  assert.equal(new TextDecoder().decode(await ts.subtitle(hash, file, new AbortController().signal)), content);
+  let cancelled = false;
+  const partial = new TorrServer(async () => new Response(new ReadableStream({ cancel() { cancelled = true; } }), { status: 206 }));
+  await assert.rejects(partial.subtitle(hash, file, new AbortController().signal), e => e.status === 502);
+  assert.equal(cancelled, true);
 });

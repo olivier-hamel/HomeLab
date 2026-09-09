@@ -48,6 +48,17 @@ export class TorrServer {
     return normalizeTorrent(Array.isArray(result) ? result[0] : result);
   }
   async status(id: string, signal: AbortSignal) { return normalizeTorrent(await this.request("torrents", { action: "get", hash: hash(id) }, signal)); }
+  async subtitle(id: string, file: TorrentFile, signal: AbortSignal) {
+    const max = 2 * 1024 * 1024;
+    if (file.kind !== "subtitle" || !/\.(srt|vtt)$/i.test(file.path)) throw new MediaError("input", "Choose an SRT or VTT subtitle from this torrent.", 400);
+    if (file.size !== null && file.size > max) throw new MediaError("too_large", "Subtitle files must be 2 MiB or smaller.", 413);
+    return bounded("Subtitle download", 30_000, signal, async s => {
+      // Reuse authenticated streaming and cancellation without forwarding video ranges.
+      const response = await this.stream(id, file, new Request("http://localhost/subtitle", { signal: s }));
+      if (response.status !== 200) { await response.body?.cancel(); throw new MediaError("subtitle", "The subtitle file could not be loaded. Retry or load a local file.", 502); }
+      return readLimited(response, max);
+    });
+  }
   async stream(id: string, file: TorrentFile, request: Request): Promise<Response> {
     const url = new URL("stream", serviceUrl("TORRSERVER_BASE_URL"));
     url.search = new URLSearchParams({ link: hash(id), index: String(integer(file.id)), play: "" }).toString();

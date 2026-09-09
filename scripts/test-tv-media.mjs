@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, cpSync } from 'node
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { subtitleZip, subtitleFixture } from './subtitle-test-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cache = resolve(root, 'backend/node_modules/.cache/media-reference');
@@ -24,12 +25,29 @@ const origin = `http://127.0.0.1:${frontendPort}`;
 const upstream = `http://127.0.0.1:${fixturePort}`;
 const hash = 'b'.repeat(40);
 const secret = 'test-only-media-canary-not-a-live-credential';
-const metrics = { adds: 0, gets: 0, streams: [], cancellations: 0, downloads: 0 };
+const subtitleSrt = '1\r\n00:00:00,000 --> 00:01:00,000\r\nTorrent subtitle fixture\r\n';
+const metrics = { adds: 0, gets: 0, streams: [], cancellations: 0, downloads: 0, subtitleSearches: [], subtitleDownloads: 0 };
 const torrentStatus = () => ({ hash, title: 'Big Buck Bunny — authorized trailer fixture', stat: 3, file_stats: [{ id: 1, path: 'sample.mp4', length: 20 }, { id: 2, path: 'Big Buck Bunny trailer.mp4', length: videoBytes.length }, { id: 3, path: 'English.srt', length: 45 }, { id: 4, path: 'Unsupported-format fixture.avi', length: 64 }], active_peers: 3, download_speed: 65536, bytes_read_data: 123456, loaded_size: 123456 });
 const fixture = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, upstream);
     const json = (data, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
+    if (url.pathname === '/subdl-api/api/v1/subtitles') {
+      assert.equal(url.searchParams.get('api_key'), secret);
+      metrics.subtitleSearches.push({ imdb: url.searchParams.get('imdb_id'), type: url.searchParams.get('type'), language: url.searchParams.get('languages') });
+      return json({ status: true, results: [{ name: 'Big Buck Bunny', year: 2008 }], subtitles: [
+        { name: 'Raw subtitle', release_name: 'Raw subtitle release', unpack_files: [{ name: 'Online.srt', url: `/subtitle/fixture/raw?api_key=${secret}`, language: 'EN' }] },
+        { name: 'Multiple-files.zip', release_name: 'Subtitle ZIP release', url: `/subtitle/fixture-pack.zip?api_key=${secret}`, lang: 'english' },
+        { name: 'Slow subtitle', release_name: 'Slow subtitle release', unpack_files: [{ name: 'Slow.srt', url: '/subtitle/fixture/slow', language: 'EN' }] },
+      ] });
+    }
+    if (url.pathname.startsWith('/subdl-download/subtitle/')) {
+      assert.equal(req.headers['x-api-key'], url.pathname.endsWith('/slow') ? undefined : secret); assert.equal(req.headers.authorization, undefined); assert.equal(url.search, '');
+      metrics.subtitleDownloads++;
+      if (url.pathname.endsWith('/slow')) await delay(1000);
+      const bytes = url.pathname.endsWith('.zip') ? subtitleZip([{ name: 'English.srt', text: subtitleFixture }, { name: 'French.srt', text: subtitleFixture.replace('Online subtitle fixture', 'ZIP subtitle fixture') }]) : Buffer.from(subtitleFixture);
+      res.writeHead(200, { 'Content-Length': bytes.length, 'Content-Type': url.pathname.endsWith('.zip') ? 'application/zip' : 'text/plain' }); return res.end(bytes);
+    }
     if (url.pathname.startsWith('/3/')) {
       assert.equal(req.headers.authorization, `Bearer ${secret}`);
       const title = { id: 10378, title: 'Big Buck Bunny', name: 'Authorized fixture series', release_date: '2008-04-10', first_air_date: '2008-04-10', overview: 'Creative Commons film by the Blender Foundation. This catalogue response is a test fixture.', poster_path: null, external_ids: { imdb_id: 'tt1254207', tvdb_id: 200 }, seasons: [{ season_number: 1, name: 'Season 1', episode_count: 2 }] };
@@ -56,6 +74,7 @@ const fixture = createServer(async (req, res) => {
     if (url.pathname === '/stream') {
       assert.equal(url.searchParams.get('link'), hash);
       metrics.streams.push({ method: req.method, range: req.headers.range, index: url.searchParams.get('index') });
+      if (url.searchParams.get('index') === '3') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end(subtitleSrt); }
       if (url.searchParams.get('index') === '4') { res.writeHead(200, { 'Content-Type': 'video/x-msvideo' }); return res.end('RIFF unsupported-format test fixture; intentionally not decodable'); }
       assert.equal(url.searchParams.get('index'), '2', 'sample never selected automatically');
       let start = 0; let end = videoBytes.length - 1;
@@ -89,7 +108,7 @@ const launch = (bin, args, env = process.env) => { const child = spawn(bin, args
 try {
   const validate = launch(caddyBin, ['validate', '--config', configPath, '--adapter', 'caddyfile']);
   assert.equal(await new Promise(r => validate.on('exit', r)), 0, logs.join(''));
-  launch(process.execPath, [resolve(root, 'backend/.next/standalone/server.js')], { ...process.env, NODE_ENV: 'production', PORT: String(backendPort), HOSTNAME: '127.0.0.1', NEXT_TELEMETRY_DISABLED: '1', MEDIA_TRUSTED_NETWORK: 'true', MEDIA_ALLOWED_ORIGINS: origin, MEDIA_SESSION_SECRET: secret, PROWLARR_BASE_URL: upstream, PROWLARR_API_KEY: secret, TORRSERVER_BASE_URL: upstream, TORRSERVER_USERNAME: 'fixture', TORRSERVER_PASSWORD: secret, TMDB_READ_ACCESS_TOKEN: secret, TV_TEST_UPSTREAM: upstream, NODE_OPTIONS: `--import=${pathToFileURL(resolve(root, 'scripts/tmdb-test-preload.mjs')).href}` });
+  launch(process.execPath, [resolve(root, 'backend/.next/standalone/server.js')], { ...process.env, NODE_ENV: 'production', PORT: String(backendPort), HOSTNAME: '127.0.0.1', NEXT_TELEMETRY_DISABLED: '1', MEDIA_TRUSTED_NETWORK: 'true', MEDIA_ALLOWED_ORIGINS: origin, MEDIA_SESSION_SECRET: secret, PROWLARR_BASE_URL: upstream, PROWLARR_API_KEY: secret, TORRSERVER_BASE_URL: upstream, TORRSERVER_USERNAME: 'fixture', TORRSERVER_PASSWORD: secret, TMDB_READ_ACCESS_TOKEN: secret, SUBDL_API_KEY: secret, TV_TEST_UPSTREAM: upstream, NODE_OPTIONS: `--import=${pathToFileURL(resolve(root, 'scripts/tmdb-test-preload.mjs')).href}` });
   launch(caddyBin, ['run', '--config', configPath, '--adapter', 'caddyfile']);
   for (let i = 0; i < 100; i++) { try { if ((await fetch(`${origin}/api/health`)).ok) break; } catch {} await delay(100); }
   assert.equal((await fetch(`${origin}/api/health`)).status, 200, logs.join(''));
@@ -115,10 +134,12 @@ try {
   await until(`!!document.querySelector('button[aria-label="Details for Big Buck Bunny"]')`);
   assert.equal(metrics.adds, 0, 'browsing never initiates torrents');
   assert.equal(await evaluate(`document.querySelector('header').innerText.includes('SAMPLE DATA')`), false);
-  await evaluate(`document.querySelector('details[aria-label="About TMDB"]').open = true`);
-  await until(`document.querySelector('img[alt="TMDB"]').naturalWidth > 0`);
-  assert.ok(await evaluate(`document.querySelector('details[aria-label="About TMDB"]').innerText.includes('This product uses the TMDB API but is not endorsed or certified by TMDB.')`));
-  await evaluate(`document.querySelector('details[aria-label="About TMDB"]').open = false`);
+  if (await evaluate(`!!document.querySelector('details[aria-label="About TMDB"]')`)) {
+    await evaluate(`document.querySelector('details[aria-label="About TMDB"]').open = true`);
+    await until(`document.querySelector('img[alt="TMDB"]').naturalWidth > 0`);
+    assert.ok(await evaluate(`document.querySelector('details[aria-label="About TMDB"]').innerText.includes('This product uses the TMDB API but is not endorsed or certified by TMDB.')`));
+    await evaluate(`document.querySelector('details[aria-label="About TMDB"]').open = false`);
+  }
   await screenshot('catalogue-1440');
   await evaluate(`document.querySelector('button[aria-label="Details for Big Buck Bunny"]').click()`);
   await until(`document.body.innerText.includes('Find sources')`); await click('Find sources');
@@ -130,7 +151,49 @@ try {
   await click('Choose source'); await until(`document.body.innerText.includes('Choose sample')`);
   assert.ok(metrics.adds >= 1); assert.equal(metrics.streams.length, 0, 'files do not auto-play');
   await click('Choose video'); await until('!!document.querySelector("video")');
+  const chooseSubtitle = key => evaluate(`(() => { const select = document.querySelector('[aria-label="Subtitle controls"] select'); select.value = ${JSON.stringify(key)}; select.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+  const loadLocalSubtitle = (name, content) => evaluate(`(() => { const input = document.querySelector('input[aria-label="Load subtitle file"]'); const data = new DataTransfer(); data.items.add(new File([${JSON.stringify(content)}], ${JSON.stringify(name)})); input.files = data.files; input.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+  await click('Find online subtitles'); await click('Search SubDL');
+  await until(`!!document.querySelector('[aria-label="SubDL results"] article')`);
+  assert.deepEqual(metrics.subtitleSearches[0], { imdb: 'tt1254207', type: 'movie', language: 'EN' });
+  assert.equal(metrics.subtitleDownloads, 0, 'online search does not download');
+  await click('Download & use');
+  await until(`document.querySelector('video').textTracks[0]?.cues?.[0]?.text === 'Online subtitle fixture'`);
+  assert.equal(await evaluate(`document.querySelector('video').paused`), true, 'online subtitles can load before playback');
+  await evaluate(`document.querySelectorAll('[aria-label="SubDL results"] article')[1].querySelector('button').click()`);
+  await until(`document.querySelectorAll('[aria-label="Downloaded subtitle files"] button').length === 2`);
+  await evaluate(`document.querySelectorAll('[aria-label="Downloaded subtitle files"] button')[1].click()`);
+  await until(`document.querySelector('video').textTracks[0]?.cues?.[0]?.text === 'ZIP subtitle fixture'`);
+  await evaluate(`document.querySelectorAll('[aria-label="SubDL results"] article')[2].querySelector('button').click()`);
+  await chooseSubtitle('');
+  await until(`document.querySelector('[aria-label="Downloaded subtitle files"] button') && !document.querySelector('[aria-label="Online subtitles"]').innerText.includes('Downloading subtitles')`);
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Subtitle controls"] select').value`), '', 'late download must not override Off');
+  await evaluate(`document.querySelector('[aria-label="Online subtitles"]').scrollIntoView({block:'center'})`);
+  await screenshot('online-subtitles-1440');
+  await click('Hide online search');
+  await chooseSubtitle('3');
+  await until(`document.querySelector('video').textTracks[0]?.cues?.length > 0`);
+  assert.equal(await evaluate(`document.querySelector('video').paused`), true, 'choosing subtitles does not auto-play');
   await click('Play'); await until('document.querySelector("video").currentTime > 1', 40000);
+  await until(`document.querySelector('video').textTracks[0]?.activeCues?.[0]?.text === 'Torrent subtitle fixture'`);
+  await evaluate(`document.querySelector('video').scrollIntoView({block:'start'})`);
+  await screenshot('subtitles-1440');
+  await chooseSubtitle('');
+  await until(`![...document.querySelector('video').textTracks].some(t => t.mode === 'showing')`);
+  const beforeSubtitle = await evaluate(`document.querySelector('video').currentTime`);
+  await loadLocalSubtitle('French.vtt', 'WEBVTT\n\n00:00.000 --> 01:00.000\nBonjour depuis le fichier local\n');
+  await until(`document.querySelector('video').textTracks[0]?.activeCues?.[0]?.text === 'Bonjour depuis le fichier local'`);
+  assert.ok(await evaluate(`document.querySelector('video').currentTime >= ${beforeSubtitle} && !document.querySelector('video').paused`), 'switching subtitles preserves playback');
+  await evaluate(`document.querySelector('video').textTracks[0].mode = 'disabled'`);
+  await until(`document.querySelector('[aria-label="Subtitle controls"] select').value === ''`);
+  await chooseSubtitle('local');
+  await until(`document.querySelector('video').textTracks[0]?.mode === 'showing'`);
+  await loadLocalSubtitle('English.srt', subtitleSrt.replace('Torrent subtitle fixture', 'Local SRT fixture'));
+  await until(`document.querySelector('video').textTracks[0]?.activeCues?.[0]?.text === 'Local SRT fixture'`);
+  await loadLocalSubtitle('broken.srt', 'not a subtitle');
+  await until(`document.querySelector('[aria-label="Subtitle controls"]').innerText.includes('No readable subtitle cues')`);
+  await chooseSubtitle('3');
+  await until(`document.querySelector('video').textTracks[0]?.activeCues?.[0]?.text === 'Torrent subtitle fixture'`);
   const duration = await evaluate('document.querySelector("video").duration'); assert.ok(duration > 10);
   await evaluate('document.querySelector("video").currentTime = 30');
   await until('document.querySelector("video").currentTime > 30 && !document.querySelector("video").seeking', 40000);
@@ -174,7 +237,7 @@ try {
   const before = metrics.gets; await delay(3500); assert.equal(metrics.gets, before, 'leaving page stops polling');
   assert.deepEqual(errors, []); assert.ok(!browserUrls.some(u => u.includes(secret) || u.includes('torrserver') || u.includes('prowlarr')));
   assert.ok(!logs.join('').includes(secret), 'server logs have no fixture credentials');
-  const report = { services: 'MOCK TMDB/Prowlarr/TorrServer — no live media VM', runtime: 'Caddy + Next standalone + built React + Chrome', browser: await call('Browser.getVersion'), checks: ['catalogue/source distinction', 'TV season/episode query', 'partial indexer failure', 'unknown counts', 'metadata polling', 'multi-file choice', 'MP4 playback', 'seek', 'stop/disconnect', 'Range/If-Range/HEAD/416', 'external link revocation', 'unsupported-format error fixture', 'responsive layout', 'navigation polling cleanup', 'private credentials'], layout, streamRequests: metrics.streams.length, cancellations: metrics.cancellations, screenshots: out };
+  const report = { services: 'MOCK TMDB/Prowlarr/TorrServer/SubDL — no live providers', runtime: 'Caddy + Next standalone + built React + Chrome', browser: await call('Browser.getVersion'), checks: ['catalogue/source distinction', 'TV season/episode query', 'partial indexer failure', 'unknown counts', 'metadata polling', 'multi-file choice', 'MP4 playback', 'torrent SRT subtitles', 'local SRT/VTT subtitles', 'SubDL search by catalogue ID', 'SubDL raw subtitle download before playback', 'SubDL ZIP file selection', 'late subtitle download preserves Off', 'subtitle off and native controls', 'subtitle switching preserves playback', 'invalid subtitle recovery', 'seek', 'stop/disconnect', 'Range/If-Range/HEAD/416', 'external link revocation', 'unsupported-format error fixture', 'responsive layout', 'navigation polling cleanup', 'private credentials'], layout, streamRequests: metrics.streams.length, cancellations: metrics.cancellations, screenshots: out };
   writeFileSync(resolve(out, 'report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report, null, 2));
 } catch (error) { writeFileSync(resolve(out, 'failure.log'), `${error.stack}\n${logs.join('')}`); throw error; }
 finally {

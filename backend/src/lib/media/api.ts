@@ -5,6 +5,7 @@ import { Prowlarr, type SearchContext } from "./prowlarr.ts";
 import { boundary, limited, rate, requireSession, startSession } from "./security.ts";
 import { Tmdb } from "./tmdb.ts";
 import { TorrServer, type TorrentFile } from "./torrserver.ts";
+import { Subdl, type SubdlFile } from "./subdl.ts";
 
 type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[] };
 type Share = { owner: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
@@ -22,6 +23,8 @@ export function createMediaApi(fetcher: Fetcher = fetch) {
   const tmdb = new Tmdb(fetcher);
   const prowlarr = new Prowlarr(fetcher);
   const torrents = new TorrServer(fetcher);
+  const subdl = new Subdl(fetcher);
+  const subtitleChoices = new BoundedCache<{ owner: string; playback: string; file: SubdlFile }>(2000, 10 * 60_000);
   const playbacks = new BoundedCache<Playback>(128, 8 * 60 * 60_000);
   const shares = new BoundedCache<Share>(256, 15 * 60_000);
   const activeStreams = new Map<string, number>();
@@ -81,6 +84,16 @@ export function createMediaApi(fetcher: Fetcher = fetch) {
       if (request.method === "HEAD") return json({ error: "HEAD is supported only for streams." }, 405);
       return await limited(async () => {
         if (request.method === "GET") {
+          if (path[0] === "subtitles" && path[1] === "provider" && path.length === 2) return json({ configured: !!process.env.SUBDL_API_KEY });
+          if (path[0] === "subtitles" && path.length === 3) {
+            rate(`subtitles:${owner}`, 30);
+            const entry = playback(path[1], owner);
+            if (!entry.file) throw new MediaError("input", "Choose a video file first.", 400);
+            const file = entry.files.find(f => f.id === integer(path[2]));
+            if (!file) throw new MediaError("input", "Choose a subtitle from this torrent's file list.", 400);
+            const content = await torrents.subtitle(entry.hash, file, request.signal);
+            return new Response(content, { headers: { "Content-Type": "application/octet-stream", "Content-Disposition": "attachment", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "sandbox; default-src 'none'" } });
+          }
           if (path[0] === "check") {
             rate(`check:${owner}`, 4);
             const check = async (work: () => Promise<unknown>) => { try { return await work(); } catch (e) { return { state: "unavailable", error: e instanceof MediaError ? e.message : "Service unavailable." }; } };
@@ -100,6 +113,24 @@ export function createMediaApi(fetcher: Fetcher = fetch) {
         }
         if (mutation) {
           const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 16_384))));
+          if (path[0] === "subtitles" && path[1] === "search" && path.length === 2) {
+            rate(`subtitle-search:${owner}`, 12);
+            const id = string(body.id, 64);
+            if (!playback(id, owner).file) throw new MediaError("input", "Choose a video file first.", 400);
+            const result = await subdl.search(query(body.query), string(body.language, 12).toUpperCase(), context(body.context), request.signal);
+            return json({ title: result.title, year: result.year, results: result.files.map(file => {
+              const choice = randomUUID(); subtitleChoices.set(choice, { owner, playback: id, file });
+              return { ...file, path: undefined, authenticated: undefined, id: choice };
+            }) });
+          }
+          if (path[0] === "subtitles" && path[1] === "download" && path.length === 2) {
+            rate(`subtitle-download:${owner}`, 20);
+            const id = string(body.id, 64);
+            playback(id, owner);
+            const choice = subtitleChoices.get(string(body.choice, 64));
+            if (!choice || choice.owner !== owner || choice.playback !== id) throw new MediaError("expired", "Subtitle result expired. Search again and choose a release.", 410);
+            return json(await subdl.download(choice.file, request.signal));
+          }
           if (path[0] === "search") {
             rate(`search:${owner}`, 8);
             return json(await prowlarr.search(query(body.query), integer(body.batch ?? 1, 1, 20), context(body.context), request.signal));

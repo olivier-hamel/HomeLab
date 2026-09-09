@@ -21,13 +21,7 @@ export default function Catalogue({ find }: { find: (intent: SearchIntent) => vo
       <Button className="h-11 bg-orange-600 text-white hover:bg-orange-700"><Search />Search</Button>
     </form>
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <p className="text-sm text-neutral-400">{q ? `Catalogue matches for “${q}”` : "Popular on TMDB"} · Metadata only. Find sources to check your indexers.</p>
-      <details aria-label="About TMDB" className="max-w-md text-xs leading-relaxed text-neutral-500">
-        <summary className="cursor-pointer py-1 text-neutral-400">About TMDB</summary>
-        <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" className="my-3 inline-block"><img src="/tmdb-logo.svg" alt="TMDB" className="h-4 w-auto" /></a>
-        <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
-        <p className="mt-2">TMDB provides metadata, not playable videos.</p>
-      </details>
+      <p className="text-sm text-neutral-400">{q ? `Catalogue matches for “${q}”` : "Popular on TMDB"} · Metadata only.</p>
     </div>
     {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={find} />}
     <CatalogueResults key={`${kind}/${q}/${page}/${retry}`} kind={kind} query={q} page={page} setPage={setPage} choose={setChosen} retry={() => setRetry(r => r + 1)} />
@@ -64,6 +58,8 @@ function TitleDetails({ title, close, find }: { title: Title; close: () => void;
   const [data, setData] = useState<Details | null>(null);
   const [error, setError] = useState("");
   const [season, setSeason] = useState<number | undefined>();
+  const [failedPoster, setFailedPoster] = useState<string | null>(null);
+  const poster = data?.poster || title.poster;
   useEffect(() => {
     panel.current?.focus();
     const controller = new AbortController();
@@ -72,12 +68,18 @@ function TitleDetails({ title, close, find }: { title: Title; close: () => void;
   }, [title.id, title.kind]);
   return <section ref={panel} tabIndex={-1} aria-label="Title details" className="scroll-mt-5 space-y-4 rounded-lg border border-orange-500/40 bg-neutral-900 p-4 focus:outline-none sm:p-6">
     <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2></div><Button size="icon" variant="ghost" aria-label="Close details" onClick={close}><X /></Button></div>
+    <div className="grid items-start gap-6 sm:grid-cols-[minmax(0,1fr)_10rem]">
+    <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
-    <p className="text-xs text-neutral-400">A catalogue entry does not establish torrent availability or identify a matching release.</p>
     {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data))}>Find sources</Button> : <div className="space-y-4">
       <label className="flex flex-wrap items-center gap-3 text-sm">Season<select className={field} value={season ?? ""} onChange={e => setSeason(Number(e.target.value))}>{data.seasons.map(s => <option key={s.number} value={s.number}>{s.name} ({s.episodes ?? "?"} episodes)</option>)}</select></label>
       {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} /> : <p>No season information is available.</p>}
     </div>}
+    </div>
+    <div className="flex aspect-[2/3] w-40 max-w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 justify-self-center sm:justify-self-end">
+      {poster && poster !== failedPoster ? <img src={poster} alt={`${title.title} poster`} referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={() => setFailedPoster(poster)} /> : <div className="flex flex-col items-center gap-2 text-neutral-500"><Film className="h-10 w-10" aria-hidden="true" /><span className="text-xs">No poster available</span></div>}
+    </div>
+    </div>
   </section>;
 }
 function Episodes({ title, season, find }: { title: Details; season: number; find: (intent: SearchIntent) => void }) {

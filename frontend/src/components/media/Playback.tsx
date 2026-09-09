@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Copy, Download, Maximize, Play, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
-import { bytes, mediaApi, type Selection, type Source, type TorrentStatus } from "../../lib/media";
+import { bytes, mediaApi, type SearchIntent, type Selection, type Source, type TorrentStatus } from "../../lib/media";
 import { useMediaTask } from "./useMediaTask";
+import Subtitles from "./Subtitles";
 
 function pause(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -12,7 +13,7 @@ function pause(ms: number, signal: AbortSignal) {
     if (signal.aborted) abort();
   });
 }
-export default function Playback({ source, close }: { source: Source | string; close: () => void }) {
+export default function Playback({ source, search, close }: { source: Source | string; search?: SearchIntent; close: () => void }) {
   const [status, setStatus] = useState<TorrentStatus | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -54,13 +55,13 @@ export default function Playback({ source, close }: { source: Source | string; c
     </>}
     {task.busy && <p role="status">Validating file… <Button variant="ghost" onClick={task.cancel}>Cancel</Button></p>}
     {task.error && <p role="alert" className="text-sm text-orange-400">{task.error} Choose the file again to retry.</p>}
-    {selection && <Player key={selection.id} selection={selection} initial={status!} />}
+    {selection && <Player key={selection.id} selection={selection} initial={status!} search={search} />}
     <Button variant="outline" onClick={close}>{selection ? "Stop and close" : "Cancel"}</Button>
     <p className="text-xs text-neutral-500">Closing stops this browser’s requests. Shared torrents are retained and follow TorrServer’s existing cache policy.</p>
   </section>;
 }
 
-function Player({ selection, initial }: { selection: Selection; initial: TorrentStatus }) {
+function Player({ selection, initial, search }: { selection: Selection; initial: TorrentStatus; search?: SearchIntent }) {
   const video = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState("ready");
   const [error, setError] = useState("");
@@ -120,6 +121,7 @@ function Player({ selection, initial }: { selection: Selection; initial: Torrent
     {stats.preloadBytes !== null && stats.preloadTarget !== null && stats.preloadTarget > 0 && <p className="text-xs text-neutral-500">TorrServer torrent-wide preload: {bytes(stats.preloadBytes)} / {bytes(stats.preloadTarget)}. This may include another viewer’s buffer.</p>}
     {statsError && <p className="text-xs text-orange-400">{statsError}</p>}
     <p className="text-xs leading-relaxed text-neutral-400">No transcoding. H.264/AAC MP4 is a useful target; compatibility depends on the actual codecs and your browser. If video has no audio, try the external-player option.</p>
+    <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} />
     <details className="rounded border border-neutral-700 p-4"><summary className="cursor-pointer text-sm">External player · VLC / M3U</summary><div className="mt-4 space-y-3">
       <p className="text-xs leading-relaxed text-neutral-400">Create a link valid for 15 minutes, scoped to this file. The player must reach this dashboard on your LAN/tailnet. The link works without browser cookies; anyone who has it and network access can use it until expiry or revocation. A separate login proxy may still block VLC.</p>
       <Button variant="outline" disabled={task.busy || !!share} onClick={() => { void task.run(s => mediaApi<NonNullable<typeof share>>("share", s, { id: selection.id }), setShare, 15_000); }}>Create player link</Button>

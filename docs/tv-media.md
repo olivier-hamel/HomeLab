@@ -4,11 +4,13 @@ The optional TV page browses TMDB metadata, searches existing Prowlarr indexers,
 selects TorrServer files, and plays same-origin video. Other dashboard sections
 still show sample data. Browsing a title never starts a torrent.
 
-**Verified on September 9, 2026:** lint, typecheck, build and 21 focused tests in
+**Verified on September 9, 2026:** lint, typecheck, build and 39 focused tests in
 both apps; actual Caddy 2.11.4 → Next.js 16.3.4 standalone → mocked services →
 Chrome playback of a licensed MP4, seeking, stopping/cancellation, range/HEAD/416,
-link revocation and an unsupported-format error fixture. Layouts fit at 1440,
-768, 390 and 320 pixels. **No live media integration or VM deployment was tested.**
+link revocation, bundled/local subtitles and an unsupported-format error fixture. Layouts fit at 1440,
+768, 390 and 320 pixels. A live SubDL search for Obsession (2026) returned six
+English releases / seven individual subtitle files, and one authenticated raw
+subtitle download was verified. **Live torrent playback and VM deployment were not tested.**
 Docker Desktop's engine was unavailable. Your installed TorrServer schema/version,
 authentication, real indexers, container networking and actual devices remain
 to verify with the steps below.
@@ -335,6 +337,88 @@ Download M3U or paste into VLC; there is no universal VLC launch integration.
 Direct TorrServer URLs would require media-VM reachability/auth on the playback
 device and are not emitted. No permanent service credentials appear in links.
 
+### Subtitles
+
+TV episodes and movies share the **Subtitles** controls below the video. Select
+an SRT or VTT file included in the torrent, or choose **Load SRT / VTT** to open
+a file from your computer. Select **Off** to hide captions. Choosing or changing
+subtitles does not start or restart the video. For season packs, select the
+subtitle file that matches the episode you chose.
+
+Use **Earlier 0.5 s** or **Later 0.5 s** under **Subtitle timing** to correct
+synchronization while watching. Negative offsets show captions earlier; positive
+offsets delay them. **Reset timing** returns to zero, as does selecting a subtitle
+file or another video. This works for torrent, local and SubDL subtitles without
+restarting playback. Original cue timings are retained, including cues shifted
+before zero, so adjustments remain reversible.
+
+Local subtitles stay in the browser and are cleared when you close the player
+or choose another video. Torrent and local subtitles need no additional account
+or environment setting. Files are limited to 2 MiB and must use UTF-8 or UTF-16 with a BOM.
+SRT timings are converted to [WebVTT](https://www.w3.org/TR/webvtt1/) for native
+browser text tracks; VTT cue formatting and positioning are preserved.
+
+Torrent subtitles use the existing authenticated TorrServer stream endpoint,
+with the selected playback session and file IDs validated by the backend. The
+subtitle body is size limited and has a 30-second total download deadline.
+Embedded MKV subtitle tracks are not extracted.
+ASS/SSA and image subtitles need another format or an external player. Browser
+subtitle selections are not included in the external stream link/M3U; load
+separate subtitle files directly in VLC when using that option.
+
+#### Find subtitles online with SubDL
+
+1. Get an API key from your [SubDL account panel](https://subdl.com/panel).
+2. Add it to your existing `backend/.env`:
+
+   ```dotenv
+   SUBDL_API_KEY=your_subdl_api_key
+   ```
+
+3. Restart the development backend, or rebuild and recreate the deployed apps:
+
+   ```sh
+   docker compose build backend frontend
+   docker compose up -d --force-recreate --wait
+   ```
+
+4. Choose a video, open **Find online subtitles**, select the language, and click
+   **Search SubDL**. Review the matched title and release, then **Download & use**.
+   You can do this before pressing Play. If a ZIP contains multiple SRT/VTT files,
+   select **Use subtitle** beside the file for your movie or episode.
+
+Catalogue searches retain their IMDb/TMDB IDs. For TV packs, the selected video's
+SxxExx or NxNN filename supplies the episode where available. You can edit the
+title, type, season and episode or uncheck catalogue matching to broaden a search.
+SubDL returns subtitles for its first matching title; the UI names that title so
+you can refine ambiguous searches. Up to 30 releases are requested, with up to
+100 individual subtitle choices from expanded packs. No result auto-downloads.
+
+The backend uses the [documented SubDL search API](https://subdl.com/api-doc)
+and `unpack=1` for individual files where available. Other downloads are unpacked
+in memory; nothing is extracted to disk. Standard stored/deflated ZIPs are limited
+to 4 MiB, 100 entries and 30 SRT/VTT files, with at most 4 MiB of extracted subtitle
+data in total. Each subtitle is limited to 2 MiB. Unsupported formats and corrupt
+archives show a retry/alternate-release error.
+
+The key is sent only from the backend to `api.subdl.com`. Download URLs are
+restricted to `https://dl.subdl.com/subtitle/…`, and remain server-side along with
+the key. SubDL sometimes appends `api_key` to its returned download links. The
+backend verifies it matches the configured key, removes it from the stored URL,
+and sends it as `x-api-key` only to the validated download host. Plain download
+links use the anonymous IP allowance; authenticated links use the account's
+download allowance. Account/search and download quotas apply, and errors direct
+you to the relevant account or retry step. The
+app does not purchase plans or use translation services. Local and torrent
+subtitles continue working if SubDL is unavailable or unconfigured.
+
+Searches have a 15-second deadline and a bounded five-minute cache. Results expire
+after ten minutes and belong to the browser session and selected video. Downloads
+have a 25-second deadline and require an explicit selection. SubDL subtitle files
+remain available only in the current player, like local files. Changing subtitle
+files preserves video playback; selecting Off while a download is pending keeps
+captions off until you choose the downloaded file.
+
 ## 9. Live acceptance test
 
 **PC/browser, through the deployed Caddy URL (not just Vite):**
@@ -349,6 +433,10 @@ device and are not emitted. No permanent service credentials appear in links.
 4. Play known H.264/AAC MP4. Confirm picture, audio, buffering and playing states.
    Seek both directions; check same-origin requests and 206/Content-Range in
    browser Network tools. On HTTPS there must be no browser HTTP-media-VM request.
+   Select a bundled SRT/VTT subtitle, switch it off, and load a local file. Confirm
+   cues appear at the right time, including after seeking and in fullscreen.
+   Changing subtitles should preserve the current video time. Try a malformed
+   subtitle and confirm you can choose another file after the error.
 5. Stop/close/navigate away. Video requests and polling end; another viewer
    continues and the shared torrent is not deleted.
 6. Try a known incompatible file/audio codec. Confirm a useful error or note
@@ -388,10 +476,21 @@ npm run build
 Backend tests cover normalization, capability search, metadata/source distinction,
 partial failures, private credentials, bounds/timeouts, rejected URLs/redirects,
 CSRF/session isolation, multiple files, ranges/HEAD/416, backpressure, cancellation
-and revocation. Frontend tests cover title/episode queries and sorting.
+and revocation, plus subtitle session isolation, file validation and download
+bounds. Frontend tests cover title/episode queries, sorting, subtitle conversion,
+encodings, malformed files and reversible positive/negative timing offsets.
+Timing controls passed frontend tests, lint and build; their browser check remains
+pending. Browser tests check bundled SRT and local SRT/VTT
+cues, switching subtitles off through either control, and error recovery while
+the video continues playing. SubDL adapter tests cover movie/episode filters,
+empty/error responses, credentials, quotas, restricted URLs, playback ownership,
+raw downloads, credential-bearing links and bounded ZIP extraction. Rejected
+download links produce an integration error instead of a false empty search.
+Browser tests cover SubDL search,
+downloads before playback, ZIP file selection and a download completing after Off.
 
 `scripts/test-tv-media.mjs` runs built React, Next standalone, real Caddy and
-hidden Chrome against loopback mock services. Its TMDB fetch override is loaded
+hidden Chrome against loopback mock services. Its TMDB/SubDL fetch override is loaded
 only into that test process; production has no mock toggle or alternate TMDB
 origin. It overrides all media credentials with fixture values.
 
