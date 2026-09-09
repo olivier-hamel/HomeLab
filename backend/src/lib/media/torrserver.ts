@@ -7,7 +7,7 @@ export function normalizeTorrent(value: unknown) {
   const files: TorrentFile[] = list(data.file_stats).slice(0, 5000).map(value => {
     const f = record(value);
     const path = string(f.path, 2000);
-    return { id: integer(f.id), path, size: count(f.length), kind: /\.(mp4|m4v|mkv|webm|mov|avi|ts|m2ts|mpg|mpeg|ogv)$/i.test(path) ? "video" : /\.(srt|vtt|ass|ssa|sub|idx)$/i.test(path) ? "subtitle" : "other", sample: /(^|[/\\ ._-])sample([/\\ ._-]|$)/i.test(path) };
+    return { id: integer(f.id), path, size: count(f.length), kind: /\.(mp4|m4v|mkv|webm|mov|avi|ts|mts|m2ts|mpg|mpeg|ogv|wmv|asf|flv|3gp|vob|m2v)$/i.test(path) ? "video" : /\.(srt|vtt|ass|ssa|sub|idx)$/i.test(path) ? "subtitle" : "other", sample: /(^|[/\\ ._-])sample([/\\ ._-]|$)/i.test(path) };
   });
   return { hash: hash(data.hash), title: string(data.title || data.name), files,
     state: data.stat === 4 || data.stat === 5 ? "unavailable" : data.stat === 2 ? "buffering" : files.length ? "ready" : "fetching metadata",

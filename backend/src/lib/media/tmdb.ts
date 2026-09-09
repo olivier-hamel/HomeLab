@@ -26,9 +26,10 @@ export class Tmdb {
     return { provider: "TMDB", availability: "metadata-only", page, pages: Math.min(count(data.total_pages) ?? 1, 500), titles: list(data.results).slice(0, 20).map(v => normalize(v, kind)) };
   }
   async details(kind: Kind, id: number, signal: AbortSignal) {
-    const data = await this.get(`${kind}/${id}`, { append_to_response: "external_ids", language: "en-US" }, signal);
+    const data = await this.get(`${kind}/${id}`, { append_to_response: "external_ids,alternative_titles", language: "en-US" }, signal);
     const ids = record(data.external_ids);
-    return { ...normalize(data, kind), availability: "metadata-only", imdbId: /^tt\d+$/.test(string(ids.imdb_id || data.imdb_id)) ? string(ids.imdb_id || data.imdb_id) : null, tvdbId: count(ids.tvdb_id), seasons: list(data.seasons).slice(0, 200).map(v => { const s = record(v); return { number: integer(s.season_number, 0, 1000), name: string(s.name), episodes: count(s.episode_count) }; }) };
+    const alternatives = record(data.alternative_titles);
+    return { ...normalize(data, kind), originalTitle: string(data.original_title || data.original_name), alternativeTitles: [...new Set(list(alternatives.titles || alternatives.results).map(v => string(record(v).title)).filter(Boolean))].slice(0, 40), companies: list(data.production_companies).slice(0, 20).map(v => string(record(v).name)).filter(Boolean), availability: "metadata-only", imdbId: /^tt\d+$/.test(string(ids.imdb_id || data.imdb_id)) ? string(ids.imdb_id || data.imdb_id) : null, tvdbId: count(ids.tvdb_id), seasons: list(data.seasons).slice(0, 200).map(v => { const s = record(v); return { number: integer(s.season_number, 0, 1000), name: string(s.name), episodes: count(s.episode_count) }; }) };
   }
   async season(id: number, season: number, signal: AbortSignal) {
     const data = await this.get(`tv/${id}/season/${season}`, { language: "en-US" }, signal);

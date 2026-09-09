@@ -1,7 +1,7 @@
 // Real Caddy + Next standalone + built React + headless Chrome, with MOCK services.
 // Requires a licensed H.264/AAC MP4 fixture. See docs/tv-media.md.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createServer as portProbe } from 'node:net';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, cpSync } from 'node:fs';
@@ -19,6 +19,15 @@ const chromeBin = process.env.CHROME_BIN || 'C:/Program Files/Google/Chrome/Appl
 const videoPath = process.env.TV_TEST_MP4 || resolve(cache, 'authorized-trailer.mp4');
 for (const path of [caddyBin, chromeBin, videoPath, resolve(root, 'backend/.next/standalone/server.js'), resolve(root, 'frontend/dist/index.html')]) assert.ok(existsSync(path), `Required file: ${path}`);
 const videoBytes = readFileSync(videoPath);
+// Tiny generated clips exercise real browser decoding through the FFmpeg layer.
+const generated = new Map();
+const generatedBase = resolve(out, 'generated-base.mp4');
+const ffmpeg = (args) => execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-v', 'error', '-y', ...args], { windowsHide: true });
+ffmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=24', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '12', '-c:v', 'libx264', '-threads', '2', '-g', '24', '-pix_fmt', 'yuv420p', '-c:a', 'aac', generatedBase]);
+for (const [id, name, codecs] of [[5, 'Remux fixture.ts', ['-c', 'copy']], [6, 'Audio conversion fixture.mkv', ['-c:v', 'copy', '-c:a', 'dca', '-strict', '-2', '-ac', '2']], [7, 'Full conversion fixture.avi', ['-c:v', 'mpeg4', '-c:a', 'pcm_s16le']]]) {
+  const path = resolve(out, name); ffmpeg(['-i', generatedBase, ...codecs, path]);
+  generated.set(id, { name, bytes: readFileSync(path) });
+}
 const freePort = async () => { const s = portProbe(); await new Promise(r => s.listen(0, '127.0.0.1', r)); const p = s.address().port; await new Promise(r => s.close(r)); return p; };
 const [backendPort, frontendPort, fixturePort] = await Promise.all([freePort(), freePort(), freePort()]);
 const origin = `http://127.0.0.1:${frontendPort}`;
@@ -27,7 +36,7 @@ const hash = 'b'.repeat(40);
 const secret = 'test-only-media-canary-not-a-live-credential';
 const subtitleSrt = '1\r\n00:00:00,000 --> 00:01:00,000\r\nTorrent subtitle fixture\r\n';
 const metrics = { adds: 0, gets: 0, streams: [], cancellations: 0, downloads: 0, subtitleSearches: [], subtitleDownloads: 0, aiReviews: 0 };
-const torrentStatus = () => ({ hash, title: 'Big Buck Bunny — authorized trailer fixture', stat: 3, file_stats: [{ id: 1, path: 'sample.mp4', length: 20 }, { id: 2, path: 'Big Buck Bunny trailer.mp4', length: videoBytes.length }, { id: 3, path: 'English.srt', length: 45 }, { id: 4, path: 'Unsupported-format fixture.avi', length: 64 }], active_peers: 3, download_speed: 65536, bytes_read_data: 123456, loaded_size: 123456 });
+const torrentStatus = () => ({ hash, title: 'Big Buck Bunny — authorized trailer fixture', stat: 3, file_stats: [{ id: 1, path: 'sample.mp4', length: 20 }, { id: 2, path: 'Big Buck Bunny trailer.mp4', length: videoBytes.length }, { id: 3, path: 'English.srt', length: 45 }, { id: 4, path: 'Unsupported-format fixture.avi', length: 64 }, ...[...generated].map(([id, f]) => ({ id, path: f.name, length: f.bytes.length }))], active_peers: 3, download_speed: 65536, bytes_read_data: 123456, loaded_size: 123456 });
 const fixture = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, upstream);
@@ -36,10 +45,15 @@ const fixture = createServer(async (req, res) => {
       assert.equal(req.headers['x-goog-api-key'], secret);
       let raw = ''; for await (const chunk of req) raw += chunk;
       assert.ok(!raw.includes(secret) && !raw.includes('download?') && !raw.includes('magnet:'));
-      const candidates = JSON.parse(JSON.parse(raw).contents[0].parts[0].text).candidates;
+      const payload = JSON.parse(JSON.parse(raw).contents[0].parts[0].text);
+      const candidates = payload.candidates;
+      assert.equal(payload.requestedTitle.title, 'Big Buck Bunny');
+      assert.equal(payload.requestedTitle.year, '2008');
+      assert.ok(payload.requestedTitle.overview && payload.requestedTitle.imdbId);
+      assert.ok(candidates.every(c => !c.title.startsWith('Maids')));
       metrics.aiReviews++;
       await delay(1500); // Exercise dismissals while the AI response is still in flight.
-      return json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ ranking: candidates.map(c => ({ id: c.id, verdict: c.title.includes('2160p') || c.seeders === null ? 'unsure' : 'good', reason: c.title.includes('2160p') ? '4K HEVC adds decoding load beyond your 1080p target.' : c.seeders === null ? 'The seeder count is unknown, so streaming may stall.' : 'The listed H264 and AAC codecs with healthy seeders look suitable for web playback.' })) }) }] } }] });
+      return json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ ranking: candidates.map(c => ({ id: c.id, identity: 'match', verdict: c.title.includes('2160p') || c.seeders === null ? 'unsure' : 'good', reason: c.title.includes('2160p') ? '4K adds bandwidth beyond your 1080p target.' : c.seeders === null ? 'The seeder count is unknown, so streaming may stall.' : 'The matching title, reasonable size and healthy seeders make this release look promising.' })) }) }] } }] });
     }
     if (url.pathname === '/subdl-api/api/v1/subtitles') {
       assert.equal(url.searchParams.get('api_key'), secret);
@@ -69,10 +83,10 @@ const fixture = createServer(async (req, res) => {
       if (url.pathname === '/api/v1/indexer') return json([1, 2].map(id => ({ id, name: id === 1 ? 'Authorized content fixture' : 'Unavailable fixture indexer', enable: true, protocol: 'torrent', supportsSearch: true, supportsPagination: true, capabilities: { movieSearchParams: ['q', 'imdbId'], tvSearchParams: ['q', 'tvdbId', 'season', 'ep'] }, fields: [{ value: secret }] })));
       if (url.pathname === '/api/v1/indexerstatus') return json([]);
       if (url.pathname === '/api/v1/search') return url.searchParams.get('indexerIds') === '2' ? json({ error: secret }, 503) : json([
-        { title: 'Big Buck Bunny 2008 1080p H264 AAC MP4 — licensed fixture', size: 2 * 1024 ** 3, seeders: 40 },
-        { title: 'Big Buck Bunny 2008 720p H264 AAC MP4 — alternate fixture', size: 1024 ** 3, seeders: 30 },
+        { title: 'Big Buck Bunny 2008 1080p H264 AAC MP4 — licensed fixture', size: 2 * 1024 ** 3, seeders: 4000 },
+        { title: 'Big Buck Bunny 2008 720p H264 AAC MP4 — alternate fixture', size: 1024 ** 3, seeders: 3000 },
         { title: 'Big Buck Bunny 2008 2160p HEVC DTS — heavy fixture', size: 20 * 1024 ** 3, seeders: 9999 },
-        { title: 'Big Buck Bunny 2008 1080p — unknown fixture', size: videoBytes.length, seeders: null },
+        { title: 'Maids Big Buck Bunny 2008 1080p — unrelated fixture', size: videoBytes.length, seeders: null },
       ].map(row => ({ ...row, leechers: 3, downloadUrl: `${upstream}/1/download?apikey=${secret}&link=fixture`, imdbId: 1254207 })));
       if (url.pathname === '/1/download') { metrics.downloads++; res.writeHead(302, { Location: `magnet:?xt=urn:btih:${hash}&dn=Authorized+fixture` }); return res.end(); }
     }
@@ -90,20 +104,22 @@ const fixture = createServer(async (req, res) => {
       metrics.streams.push({ method: req.method, range: req.headers.range, index: url.searchParams.get('index') });
       if (url.searchParams.get('index') === '3') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end(subtitleSrt); }
       if (url.searchParams.get('index') === '4') { res.writeHead(200, { 'Content-Type': 'video/x-msvideo' }); return res.end('RIFF unsupported-format test fixture; intentionally not decodable'); }
-      assert.equal(url.searchParams.get('index'), '2', 'sample never selected automatically');
-      let start = 0; let end = videoBytes.length - 1;
+      const index = Number(url.searchParams.get('index'));
+      assert.ok(index === 2 || generated.has(index), 'sample never selected automatically');
+      const bytes = generated.get(index)?.bytes ?? videoBytes;
+      let start = 0; let end = bytes.length - 1;
       if (req.headers.range) {
         const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
         assert.ok(match);
         if (match[1]) { start = Number(match[1]); if (match[2]) end = Math.min(end, Number(match[2])); }
-        else start = Math.max(0, videoBytes.length - Number(match[2]));
+        else start = Math.max(0, bytes.length - Number(match[2]));
       }
-      if (start >= videoBytes.length) { res.writeHead(416, { 'Content-Range': `bytes */${videoBytes.length}` }); return res.end(); }
-      res.writeHead(req.headers.range ? 206 : 200, { 'Content-Type': 'video/mp4', 'Content-Length': end - start + 1, 'Accept-Ranges': 'bytes', ETag: '"fixture"', ...(req.headers.range ? { 'Content-Range': `bytes ${start}-${end}/${videoBytes.length}` } : {}) });
+      if (start >= bytes.length) { res.writeHead(416, { 'Content-Range': `bytes */${bytes.length}` }); return res.end(); }
+      res.writeHead(req.headers.range ? 206 : 200, { 'Content-Type': 'video/mp4', 'Content-Length': end - start + 1, 'Accept-Ranges': 'bytes', ETag: '"fixture"', ...(req.headers.range ? { 'Content-Range': `bytes ${start}-${end}/${bytes.length}` } : {}) });
       if (req.method === 'HEAD') return res.end();
       let finished = false;
       res.on('close', () => { if (!finished) metrics.cancellations++; });
-      for (let offset = start; offset <= end && !res.destroyed; offset += 65536) { res.write(videoBytes.subarray(offset, Math.min(end + 1, offset + 65536))); await delay(40); }
+      for (let offset = start; offset <= end && !res.destroyed; offset += 65536) { res.write(bytes.subarray(offset, Math.min(end + 1, offset + 65536))); await delay(40); }
       if (!res.destroyed) { finished = true; res.end(); }
       return;
     }
@@ -174,7 +190,13 @@ try {
   await click('Search sources'); await until(`[...document.querySelectorAll('article span')].some(s => s.textContent === 'AI')`);
   assert.equal(await evaluate(`document.querySelectorAll('article').length`), 3, 'dismissal survives searching again');
   assert.equal(metrics.aiReviews, 1, 'repeat recommendation uses the backend cache');
-  for (let i = 0; i < 3; i++) { await click('Doesn’t work'); await delay(50); }
+  for (let i = 0; i < 3; i++) {
+    await click('Doesn’t work'); await delay(50);
+    if (i === 1) {
+      await until(`!${recommendation}`);
+      assert.ok(await evaluate(`document.body.innerText.includes('No confirmed title matches remain') && document.body.innerText.includes('Not a match')`), 'a wrong title is never promoted after all matching sources fail');
+    }
+  }
   await until(`document.body.innerText.includes('All loaded sources are hidden')`);
   assert.equal(metrics.aiReviews, 1, 'rejecting sources does not call Gemini again');
   await click('Restore hidden sources'); await until(`${recommendation}?.innerText.includes('1080p H264 AAC')`);
@@ -193,6 +215,14 @@ try {
   assert.ok(await evaluate(`${recommendation}.innerText.includes('720p')`), 'rejecting the active source closes its player and promotes the next');
   await click('Choose source'); await until(`document.body.innerText.includes('Choose sample')`);
   assert.ok(metrics.adds >= 1); assert.equal(metrics.streams.length, 0, 'files do not auto-play');
+  if (process.argv.includes('--sources-only')) {
+    assert.deepEqual(errors, []);
+    assert.ok(!browserUrls.some(u => u.includes(secret) || u.includes('generativelanguage.googleapis.com')));
+    assert.ok(!logs.join('').includes(secret));
+    const report = { services: 'MOCK TMDB/Prowlarr/TorrServer/Gemini', checks: ['canonical movie metadata', 'wrong-title exclusion before Gemini', 'no wrong-title recommendation after dismissing matches', '3000-seeder streaming target', 'late AI dismissal', 'cached reviews', 'manual sorting', 'restore hidden sources', 'dismiss active selection', 'source layouts at 1440/768/390/320', 'no automatic streaming', 'private credentials'], aiReviews: metrics.aiReviews };
+    writeFileSync(resolve(out, 'source-assist-report.json'), JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(report, null, 2));
+  } else {
   await click('Choose video'); await until('!!document.querySelector("video")');
   const chooseSubtitle = key => evaluate(`(() => { const select = document.querySelector('[aria-label="Subtitle controls"] select'); select.value = ${JSON.stringify(key)}; select.dispatchEvent(new Event('change', {bubbles:true})); })()`);
   const loadLocalSubtitle = (name, content) => evaluate(`(() => { const input = document.querySelector('input[aria-label="Load subtitle file"]'); const data = new DataTransfer(); data.items.add(new File([${JSON.stringify(content)}], ${JSON.stringify(name)})); input.files = data.files; input.dispatchEvent(new Event('change', {bubbles:true})); })()`);
@@ -252,9 +282,24 @@ try {
   const head = await fetch(link, { method: 'HEAD' }); assert.equal(head.status, 200); assert.equal(head.headers.get('content-length'), String(videoBytes.length));
   const invalid = await fetch(link, { headers: { Range: `bytes=${videoBytes.length + 10}-` } }); assert.equal(invalid.status, 416); assert.equal(await invalid.text(), '');
   await click('Revoke link'); await until(`document.body.innerText.includes('Player link revoked.')`); assert.equal((await fetch(link)).status, 410);
+  for (const [id, expected] of [[5, 'Remuxing'], [6, 'Converting audio'], [7, 'Converting video and audio']]) {
+    const name = generated.get(id).name;
+    await evaluate(`(() => { const row = [...document.querySelectorAll('[aria-label="Torrent files"] > div')].find(e => e.innerText.includes(${JSON.stringify(name)})); row.querySelector('button').click(); })()`);
+    await until(`document.querySelector('video')?.previousElementSibling?.textContent === ${JSON.stringify(name)}`);
+    await chooseSubtitle('3');
+    await click('Play'); await until('document.querySelector("video").currentTime > 1 && !document.querySelector("video").paused', 40000);
+    assert.ok(await evaluate(`document.body.innerText.includes(${JSON.stringify(expected)})`));
+    assert.ok(await evaluate(`document.querySelector('video').src.includes('/converted/')`));
+    await evaluate(`(() => { const input = document.querySelector('input[type="number"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '5'); input.dispatchEvent(new Event('input', {bubbles:true})); })()`);
+    await click('Jump');
+    await until(`document.querySelector('video').src.includes('start=5') && document.querySelector('video').currentTime > 0.5 && !document.querySelector('video').paused`, 40000);
+    await until(`document.querySelector('video').textTracks[0]?.activeCues?.[0]?.text === 'Torrent subtitle fixture'`);
+    await screenshot(`converted-${id}`);
+    await click('Stop'); await until('!document.querySelector("video").getAttribute("src")');
+  }
   await evaluate(`const row = [...document.querySelectorAll('[aria-label="Torrent files"] > div')].find(e => e.innerText.includes('Unsupported-format')); row.querySelector('button').click()`);
   await until(`document.querySelector('video')?.previousElementSibling?.textContent === 'Unsupported-format fixture.avi'`);
-  await click('Play'); await until(`document.body.innerText.includes('Unsupported format or interrupted stream') || document.body.innerText.includes('could not start the stream')`);
+  await click('Play'); await until(`document.body.innerText.includes('media could not be processed') || document.body.innerText.includes('format could not be inspected')`);
   const layout = [];
   for (const width of [1440, 768, 390, 320]) {
     await call('Emulation.setDeviceMetricsOverride', { width, height: width < 768 ? 844 : 1000, deviceScaleFactor: 1, mobile: width < 768 }); await delay(100);
@@ -282,6 +327,7 @@ try {
   assert.ok(!logs.join('').includes(secret), 'server logs have no fixture credentials');
   const report = { services: 'MOCK TMDB/Prowlarr/TorrServer/SubDL/Gemini — no live providers', runtime: 'Caddy + Next standalone + built React + Chrome', browser: await call('Browser.getVersion'), checks: ['catalogue/source distinction', 'TV season/episode query', '1080p Gemini recommendation', 'dismissal during AI response', 'next recommendation and manual sort', 'dismissal survives another search', 'cached Gemini review', 'all sources hidden and restore', 'dismiss active playback', 'source assist mobile layout', 'partial indexer failure', 'unknown counts', 'metadata polling', 'multi-file choice', 'MP4 playback', 'torrent SRT subtitles', 'local SRT/VTT subtitles', 'SubDL search by catalogue ID', 'SubDL raw subtitle download before playback', 'SubDL ZIP file selection', 'late subtitle download preserves Off', 'subtitle off and native controls', 'subtitle switching preserves playback', 'invalid subtitle recovery', 'seek', 'stop/disconnect', 'Range/If-Range/HEAD/416', 'external link revocation', 'unsupported-format error fixture', 'responsive layout', 'navigation polling cleanup', 'private credentials'], layout, aiReviews: metrics.aiReviews, streamRequests: metrics.streams.length, cancellations: metrics.cancellations, screenshots: out };
   writeFileSync(resolve(out, 'report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report, null, 2));
+  }
 } catch (error) { writeFileSync(resolve(out, 'failure.log'), `${error.stack}\n${logs.join('')}`); throw error; }
 finally {
   if (call && socket?.readyState === WebSocket.OPEN) { await Promise.race([call('Browser.close').catch(() => {}), delay(1000)]); socket.close(); }

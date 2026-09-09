@@ -2,14 +2,25 @@ export type Kind = "movie" | "tv";
 export type Title = { id: number; kind: Kind; title: string; year: string; overview: string; poster: string | null };
 export type Details = Title & { imdbId: string | null; tvdbId: number | null; seasons: { number: number; name: string; episodes: number | null }[] };
 export type SearchContext = { kind: Kind; imdbId?: string; tvdbId?: number; tmdbId?: number; season?: number; episode?: number };
-export type SearchIntent = { query: string; context?: SearchContext; label?: string };
+export type SearchIntent = { query: string; context?: SearchContext; target?: Pick<SearchContext, "kind" | "tmdbId" | "season" | "episode">; label?: string };
 export type Source = { id: string; title: string; size: number | null; seeders: number | null; leechers: number | null; peers: number | null; indexer: string; quality: string[]; match: string };
-export type Assessment = { id: string; verdict: "good" | "unsure" | "sketchy"; reason: string; method: "gemini" | "heuristic" };
+export type Assessment = { id: string; identity: "match" | "uncertain" | "mismatch"; verdict: "good" | "unsure" | "sketchy"; reason: string; method: "gemini" | "heuristic" };
 export type SourceAdvice = { provider: "gemini" | "heuristic"; model: string | null; warning: string | null; reviewed: number; ranking: Assessment[] };
 export type SearchResults = { searchId: string; advice: SourceAdvice; results: Source[]; reports: { indexer: string; query: string; strategy: string; error: string | null }[]; more: boolean; batch: number; warning: string | null };
 export type TorrentFile = { id: number; path: string; size: number | null; kind: "video" | "subtitle" | "other"; sample: boolean };
 export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
 export type Selection = { id: string; stream: string; file: TorrentFile };
+export type PlaybackOption = { id: string; mode: "direct" | "remux" | "transcode"; mime: string; container: string; video: "copy" | "h264" | "vp9"; audio: "copy" | "aac" | "opus" | "none" };
+export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; options: PlaybackOption[] };
+export type PreparedPlayback = PlaybackOption & { stream: string; duration: number | null };
+
+export function supportedPlayback(options: PlaybackOption[], canPlayType: (mime: string) => string): string[] {
+  return options.filter(option => canPlayType(option.mime) !== "").map(option => option.id);
+}
+export async function preparePlayback(id: string, signal: AbortSignal, canPlayType: (mime: string) => string): Promise<PreparedPlayback> {
+  const inspection = await mediaApi<PlaybackInspection>("inspect", signal, { id });
+  return mediaApi<PreparedPlayback>("prepare", signal, { id, supported: supportedPlayback(inspection.options, canPlayType) });
+}
 
 export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unknown): Promise<T> {
   const response = await fetch(`/api/media/${path}`, { signal, credentials: "same-origin", cache: "no-store", ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Media-Request": "1" }, body: JSON.stringify(body) }) });
@@ -19,7 +30,11 @@ export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unkn
 }
 export function sourceIntent(title: Details, season?: number, episode?: number): SearchIntent {
   const suffix = season === undefined ? title.kind === "movie" ? title.year : "" : `S${String(season).padStart(2, "0")}${episode === undefined ? "" : `E${String(episode).padStart(2, "0")}`}`;
-  return { query: `${title.title} ${suffix}`.trim(), label: `${title.title} ${suffix}`.trim(), context: { kind: title.kind, tmdbId: title.id, ...(title.imdbId ? { imdbId: title.imdbId } : {}), ...(title.tvdbId ? { tvdbId: title.tvdbId } : {}), ...(season === undefined ? {} : { season }), ...(episode === undefined ? {} : { episode }) } };
+  const target = { kind: title.kind, tmdbId: title.id, ...(season === undefined ? {} : { season }), ...(episode === undefined ? {} : { episode }) };
+  return { query: `${title.title} ${suffix}`.trim(), label: `${title.title} ${suffix}`.trim(), target, context: { ...target, ...(title.imdbId ? { imdbId: title.imdbId } : {}), ...(title.tvdbId ? { tvdbId: title.tvdbId } : {}) } };
+}
+export function sourceSearchIntent(intent: SearchIntent, query: string, useIds: boolean): SearchIntent {
+  return { query, ...(query === intent.query ? { target: intent.target, ...(useIds ? { context: intent.context } : {}) } : {}) };
 }
 export function bytes(value: number | null | undefined): string {
   if (value === null || value === undefined) return "Unknown";
@@ -45,10 +60,13 @@ export function sourceFingerprint(source: Source): string {
 export function recommendedSources(results: Source[], advice: SourceAdvice | null, dismissed: Set<string>, sort: string): Source[] {
   const visible = results.filter(source => !dismissed.has(sourceFingerprint(source)));
   const ranks = new Map(advice?.ranking.map((item, index) => [item.id, index]));
+  const matches = new Set(advice?.ranking.filter(item => item.identity === "match").map(item => item.id));
   const ranked = [...visible].sort((a, b) => (ranks.get(a.id) ?? Infinity) - (ranks.get(b.id) ?? Infinity));
-  if (sort === "recommended" || !ranked.length || !ranks.has(ranked[0].id)) return ranked;
+  if (sort === "recommended") return ranked;
+  const best = ranked.find(source => matches.has(source.id));
+  if (!best) return sortSources(visible, sort);
   // Keep the recommendation visible on page one even with a manual sort.
-  return [ranked[0], ...sortSources(visible.filter(source => source.id !== ranked[0].id), sort)];
+  return [best, ...sortSources(visible.filter(source => source.id !== best.id), sort)];
 }
 const dismissedKey = "homelab:failed-media-sources:v1";
 export function loadDismissedSources(): Set<string> {

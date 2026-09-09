@@ -3,15 +3,17 @@ import { BoundedCache, count, envNumber, integer, list, magnet, MediaError, reco
 import { bounded, jsonRequest, readLimited } from "./http.ts";
 
 export type SearchContext = { kind: Kind; imdbId?: string; tvdbId?: number; tmdbId?: number; season?: number; episode?: number };
-export type Source = { id: string; title: string; size: number | null; seeders: number | null; leechers: number | null; peers: number | null; indexer: string; quality: string[]; match: string };
+export type Source = { id: string; title: string; size: number | null; seeders: number | null; leechers: number | null; peers: number | null; indexer: string; quality: string[]; match: string; titleIds?: Pick<SearchContext, "imdbId" | "tmdbId" | "tvdbId"> };
 type Download = { link: string; indexerId: number };
 type Indexer = { id: number; name: string; capabilities: Record<string, unknown>; paginates: boolean };
 
 export function normalizeSource(value: unknown, indexer: string, context?: SearchContext): Source {
   const row = record(value);
   const title = string(row.title);
+  const imdbId = typeof row.imdbId === "number" && Number.isSafeInteger(row.imdbId) && row.imdbId > 0 ? `tt${row.imdbId}` : /^tt\d+$/.test(string(row.imdbId)) ? string(row.imdbId) : undefined;
+  const titleIds = { ...(imdbId ? { imdbId } : {}), ...(typeof row.tmdbId === "number" && Number.isSafeInteger(row.tmdbId) && row.tmdbId > 0 ? { tmdbId: row.tmdbId } : {}), ...(typeof row.tvdbId === "number" && Number.isSafeInteger(row.tvdbId) && row.tvdbId > 0 ? { tvdbId: row.tvdbId } : {}) };
   const idMatch = context && ((context.imdbId && Number(context.imdbId.slice(2)) === row.imdbId) || (context.tvdbId && context.tvdbId === row.tvdbId) || (context.tmdbId && context.tmdbId === row.tmdbId));
-  return { id: randomUUID(), title, size: count(row.size), seeders: count(row.seeders), leechers: count(row.leechers), peers: count(row.peers), indexer,
+  return { id: randomUUID(), title, titleIds, size: count(row.size), seeders: count(row.seeders), leechers: count(row.leechers), peers: count(row.peers), indexer,
     quality: [...new Set(title.match(/\b(2160p|1080p|720p|480p|4k|HEVC|H[. ]?26[45]|x26[45]|AAC|DTS|WEB[- .]?DL|BluRay|REMUX)\b/gi) ?? [])],
     match: idMatch ? "Indexer reports a matching title ID; verify edition and episode." : "Unverified match — check title, year and episode." };
 }

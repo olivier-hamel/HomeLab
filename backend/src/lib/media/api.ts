@@ -3,12 +3,15 @@ import { BoundedCache, integer, kind, magnet, MediaError, query, record, string,
 import { readLimited } from "./http.ts";
 import { Prowlarr, type SearchContext, type Source } from "./prowlarr.ts";
 import { baselineAdvice, SourceAssist } from "./source-assist.ts";
+import { queryTarget, type SourceTarget } from "./source-identity.ts";
 import { boundary, limited, rate, requireSession, startSession } from "./security.ts";
 import { Tmdb } from "./tmdb.ts";
 import { TorrServer, type TorrentFile } from "./torrserver.ts";
 import { Subdl, type SubdlFile } from "./subdl.ts";
+import { FFmpeg } from "./ffmpeg.ts";
+import { choosePlayback, inspectPlayback, type MediaProbe, type PlaybackOption } from "./playback-plan.ts";
 
-type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[] };
+type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe };
 type Share = { owner: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
 function context(value: unknown): SearchContext | undefined {
   if (!value) return;
@@ -20,17 +23,19 @@ function context(value: unknown): SearchContext | undefined {
 function json(value: unknown, status = 200, headers: Record<string, string> = {}) {
   return Response.json(value, { status, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", ...headers } });
 }
-export function createMediaApi(fetcher: Fetcher = fetch) {
+export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">) {
   const tmdb = new Tmdb(fetcher);
   const prowlarr = new Prowlarr(fetcher);
   const torrents = new TorrServer(fetcher);
+  const ffmpeg = converter ?? new FFmpeg(torrents);
   const subdl = new Subdl(fetcher);
   const assist = new SourceAssist(fetcher);
-  const sourceSearches = new BoundedCache<{ owner: string; query: string; context?: SearchContext; sources: Source[] }>(40, 2 * 60_000);
+  const sourceSearches = new BoundedCache<{ owner: string; query: string; context?: SearchContext; target: SourceTarget; sources: Source[] }>(40, 2 * 60_000);
   const subtitleChoices = new BoundedCache<{ owner: string; playback: string; file: SubdlFile }>(2000, 10 * 60_000);
   const playbacks = new BoundedCache<Playback>(128, 8 * 60 * 60_000);
   const shares = new BoundedCache<Share>(256, 15 * 60_000);
   const activeStreams = new Map<string, number>();
+  const conversions = new BoundedCache<{ owner: string; hash: string; file: TorrentFile; probe: MediaProbe; option: PlaybackOption }>(128, 8 * 60 * 60_000);
   function playback(id: string, owner: string) {
     const entry = playbacks.get(id);
     if (!entry || entry.owner !== owner) throw new MediaError("expired", "Playback session expired. Choose the source again.", 410);
@@ -79,6 +84,14 @@ export function createMediaApi(fetcher: Fetcher = fetch) {
       }
       const owner = requireSession(request);
       rate(`all:${owner}`, 180);
+      if (path[0] === "converted" && path.length === 2 && ["GET", "HEAD"].includes(request.method)) {
+        const entry = conversions.get(path[1]);
+        if (!entry || entry.owner !== owner) throw new MediaError("expired", "Playback session expired. Choose the source again.", 410);
+        const raw = url.searchParams.get("start") ?? "0";
+        const start = Number(raw);
+        if (!/^\d+(\.\d{1,3})?$/.test(raw) || !Number.isFinite(start) || start < 0 || start > 604800 || (entry.probe.duration !== null && start >= entry.probe.duration)) throw new MediaError("input", "Choose a time within this video.", 400);
+        return await ffmpeg.stream(entry.hash, entry.file, entry.probe, entry.option, request, start);
+      }
       if (path[0] === "stream" && ["GET", "HEAD"].includes(request.method)) {
         const entry = playback(path[1], owner);
         if (!entry.file) throw new MediaError("input", "Choose a video file first.", 400);
@@ -116,6 +129,25 @@ export function createMediaApi(fetcher: Fetcher = fetch) {
         }
         if (mutation) {
           const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 16_384))));
+          if (["inspect", "prepare"].includes(path[0]) && path.length === 1) {
+            rate(`prepare:${owner}`, 20);
+            const id = string(body.id, 64);
+            const entry = playback(id, owner);
+            if (!entry.file) throw new MediaError("input", "Choose a video file first.", 400);
+            if (path[0] === "inspect") {
+              entry.probe = await ffmpeg.probe(entry.hash, entry.file, request.signal);
+              return json(inspectPlayback(entry.probe));
+            }
+            if (!entry.probe) throw new MediaError("input", "Inspect the video before preparing playback.", 400);
+            const option = choosePlayback(inspectPlayback(entry.probe), body.supported);
+            let stream = `/api/media/stream/${id}`;
+            if (option.mode !== "direct") {
+              const convertedId = randomUUID();
+              conversions.set(convertedId, { owner, hash: entry.hash, file: entry.file, probe: entry.probe, option });
+              stream = `/api/media/converted/${convertedId}`;
+            }
+            return json({ ...option, stream, duration: entry.probe.duration });
+          }
           if (path[0] === "subtitles" && path[1] === "search" && path.length === 2) {
             rate(`subtitle-search:${owner}`, 12);
             const id = string(body.id, 64);
@@ -138,17 +170,28 @@ export function createMediaApi(fetcher: Fetcher = fetch) {
             rate(`search:${owner}`, 8);
             const q = query(body.query);
             const searchContext = context(body.context);
-            const result = await prowlarr.search(q, integer(body.batch ?? 1, 1, 20), searchContext, request.signal);
+            const selected = context(body.target);
+            const resolveTarget = async (): Promise<SourceTarget> => {
+              if (!selected?.tmdbId) return queryTarget(q, searchContext);
+              try {
+                const details = await tmdb.details(selected.kind, selected.tmdbId, request.signal);
+                return { ...selected, title: details.title, year: details.year, originalTitle: details.originalTitle, alternativeTitles: details.alternativeTitles, overview: details.overview.slice(0, 2000), companies: details.companies, ...(details.imdbId ? { imdbId: details.imdbId } : {}), ...(details.tvdbId ? { tvdbId: details.tvdbId } : {}) };
+              } catch (error) {
+                if (request.signal.aborted) throw error;
+                return queryTarget(q, selected);
+              }
+            };
+            const [result, target] = await Promise.all([prowlarr.search(q, integer(body.batch ?? 1, 1, 20), searchContext, request.signal), resolveTarget()]);
             const searchId = randomUUID();
-            sourceSearches.set(searchId, { owner, query: q, context: searchContext, sources: result.results });
-            return json({ ...result, searchId, advice: baselineAdvice(result.results, searchContext) });
+            sourceSearches.set(searchId, { owner, query: q, context: searchContext, target, sources: result.results });
+            return json({ ...result, searchId, advice: baselineAdvice(result.results, target, target) });
           }
           if (path[0] === "recommend" && path.length === 1) {
             rate(`recommend:${owner}`, 12);
             rate("recommend:global", 60);
             const found = sourceSearches.get(string(body.searchId, 64));
             if (!found || found.owner !== owner) throw new MediaError("expired", "Source recommendations expired. Search again.", 410);
-            return json(await assist.recommend(found.query, found.sources, found.context, request.signal));
+            return json(await assist.recommend(found.query, found.sources, found.target, request.signal, found.target));
           }
           if (path[0] === "playback" && path.length === 1) {
             rate(`add:${owner}`, 10);

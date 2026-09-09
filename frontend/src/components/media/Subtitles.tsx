@@ -13,7 +13,7 @@ function disableSubtitles(element: HTMLVideoElement | null) {
   }
 }
 
-export default function Subtitles({ video, playbackId, files, filename, search }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent }) {
+export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0 }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const active = useRef<AbortController | null>(null);
@@ -32,9 +32,9 @@ export default function Subtitles({ video, playbackId, files, filename, search }
 
   useEffect(() => () => active.current?.abort(), []);
   useEffect(() => {
-    offsetValue.current = offset;
-    applyOffset.current?.(offset);
-  }, [offset]);
+    offsetValue.current = offset - timelineStart;
+    applyOffset.current?.(offset - timelineStart);
+  }, [offset, timelineStart]);
   useEffect(() => {
     const element = video.current;
     if (!element || !loaded || loaded.key !== selected) return;
@@ -47,14 +47,19 @@ export default function Subtitles({ video, playbackId, files, filename, search }
       applyOffset.current = subtitleTiming(track.track.cues);
       applyOffset.current(offsetValue.current);
     };
-    const changed = () => { if (track.track.mode === "disabled") { selectionVersion.current++; setSelected(""); } };
+    // Loading another converted time range temporarily resets native track modes.
+    // Keep the user's selection through that reset and restore it after metadata.
+    const restore = () => { track.track.mode = "showing"; };
+    const changed = () => { if (element.readyState > 0 && track.track.mode === "disabled") { selectionVersion.current++; setSelected(""); } };
     track.addEventListener("load", ready); track.addEventListener("error", failed);
     disableSubtitles(element);
     element.append(track); track.track.mode = "showing";
     element.textTracks.addEventListener("change", changed);
+    element.addEventListener("loadedmetadata", restore);
     return () => {
       applyOffset.current = null;
       element.textTracks.removeEventListener("change", changed);
+      element.removeEventListener("loadedmetadata", restore);
       track.removeEventListener("load", ready); track.removeEventListener("error", failed);
       track.remove(); URL.revokeObjectURL(url);
     };
@@ -124,10 +129,8 @@ export default function Subtitles({ video, playbackId, files, filename, search }
         <Button variant="outline" size="sm" aria-label="Show subtitles 0.5 seconds later" onClick={() => setOffset(value => value + 0.5)}><Plus />Later 0.5 s</Button>
         <Button variant="ghost" size="sm" disabled={offset === 0} onClick={() => setOffset(0)}><RotateCcw />Reset timing</Button>
       </div>
-      <p className="text-xs leading-relaxed text-neutral-500">Negative shows subtitles earlier; positive shows them later. Selecting a subtitle file resets the timing.</p>
     </div>}
-    <p className="text-xs leading-relaxed text-neutral-400">{subtitles.length ? "Choose a subtitle file, find one online, or load your own." : "No SRT or VTT files in this torrent. Find subtitles online or load your own."} Local files stay in your browser. Maximum 2 MiB.</p>
-    <p className="text-xs leading-relaxed text-neutral-500">Embedded subtitles and ASS/SSA or image subtitles may need an external player.</p>
+    <p className="text-xs leading-relaxed text-neutral-400">{subtitles.length ? "Choose a subtitle file, find one online, or load your own." : "No SRT or VTT files in this torrent. Download subtitle or load your own."} Maximum 2 MiB.</p>
     {busy && <p role="status" className="text-xs text-orange-400">Loading subtitles… <Button variant="ghost" size="sm" onClick={() => choose("")}>Cancel</Button></p>}
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}
     <div id={`${id}-online`}>{showOnline && <OnlineSubtitles playbackId={playbackId} filename={filename} search={search} selectionVersion={selectionVersion} onLoad={(name, content) => { void load("online", name, async () => content); }} />}</div>

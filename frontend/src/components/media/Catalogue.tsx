@@ -54,20 +54,36 @@ function CatalogueResults({ kind, query, page, setPage, choose, retry }: { kind:
 }
 
 function TitleDetails({ title, close, find }: { title: Title; close: () => void; find: (intent: SearchIntent) => void }) {
-  const panel = useRef<HTMLElement>(null);
+  const panel = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<Details | null>(null);
   const [error, setError] = useState("");
   const [season, setSeason] = useState<number | undefined>();
   const [failedPoster, setFailedPoster] = useState<string | null>(null);
   const poster = data?.poster || title.poster;
   useEffect(() => {
-    panel.current?.focus();
+    const dialog = panel.current;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const scroller = document.getElementById("dashboard-content") ?? document.body;
+    const previousOverflow = scroller.style.overflow;
+    dialog?.showModal();
+    scroller.style.overflow = "hidden";
+    return () => {
+      dialog?.close();
+      scroller.style.overflow = previousOverflow;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, []);
+  useEffect(() => {
     const controller = new AbortController();
     void mediaApi<Details>(`details/${title.kind}/${title.id}`, AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])).then(d => { if (!controller.signal.aborted) { setData(d); setSeason(d.seasons.find(s => s.number > 0)?.number ?? d.seasons[0]?.number); } }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [title.id, title.kind]);
-  return <section ref={panel} tabIndex={-1} aria-label="Title details" className="scroll-mt-5 space-y-4 rounded-lg border border-orange-500/40 bg-neutral-900 p-4 focus:outline-none sm:p-6">
-    <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2></div><Button size="icon" variant="ghost" aria-label="Close details" onClick={close}><X /></Button></div>
+  return <dialog ref={panel} aria-labelledby="catalogue-details-title" onCancel={e => { e.preventDefault(); close(); }} onClick={e => {
+    if (e.target !== e.currentTarget) return;
+    const bounds = e.currentTarget.getBoundingClientRect();
+    if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) close();
+  }} className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl space-y-4 overflow-y-auto overscroll-contain rounded-lg border border-orange-500/40 bg-neutral-900 p-4 text-neutral-200 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm sm:p-6">
+    <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 id="catalogue-details-title" className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2></div><Button size="icon" variant="ghost" className="shrink-0" aria-label="Close details" onClick={close}><X /></Button></div>
     <div className="grid items-start gap-6 sm:grid-cols-[minmax(0,1fr)_10rem]">
     <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
@@ -80,7 +96,7 @@ function TitleDetails({ title, close, find }: { title: Title; close: () => void;
       {poster && poster !== failedPoster ? <img src={poster} alt={`${title.title} poster`} referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={() => setFailedPoster(poster)} /> : <div className="flex flex-col items-center gap-2 text-neutral-500"><Film className="h-10 w-10" aria-hidden="true" /><span className="text-xs">No poster available</span></div>}
     </div>
     </div>
-  </section>;
+  </dialog>;
 }
 function Episodes({ title, season, find }: { title: Details; season: number; find: (intent: SearchIntent) => void }) {
   const [episodes, setEpisodes] = useState<{ number: number; name: string; overview: string; airDate: string }[] | null>(null);

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Copy, Download, Maximize, Play, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
-import { bytes, mediaApi, type SearchIntent, type Selection, type Source, type TorrentStatus } from "../../lib/media";
+import { bytes, mediaApi, preparePlayback, type PreparedPlayback, type SearchIntent, type Selection, type Source, type TorrentStatus } from "../../lib/media";
 import { useMediaTask } from "./useMediaTask";
 import Subtitles from "./Subtitles";
+import PlaybackTimeline from "./PlaybackTimeline";
 
 function pause(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -57,7 +58,6 @@ export default function Playback({ source, search, close }: { source: Source | s
     {task.error && <p role="alert" className="text-sm text-orange-400">{task.error} Choose the file again to retry.</p>}
     {selection && <Player key={selection.id} selection={selection} initial={status!} search={search} />}
     <Button variant="outline" onClick={close}>{selection ? "Stop and close" : "Cancel"}</Button>
-    <p className="text-xs text-neutral-500">Closing stops this browser’s requests. Shared torrents are retained and follow TorrServer’s existing cache policy.</p>
   </section>;
 }
 
@@ -68,17 +68,21 @@ function Player({ selection, initial, search }: { selection: Selection; initial:
   const [stats, setStats] = useState(initial);
   const [statsError, setStatsError] = useState("");
   const [buffer, setBuffer] = useState<number | null>(null);
-  const [attached, setAttached] = useState(true);
+  const [playbackUrl, setPlaybackUrl] = useState<string>();
+  const [prepared, setPrepared] = useState<PreparedPlayback | null>(null);
+  const preparing = useRef<AbortController | null>(null);
+  const [timelineStart, setTimelineStart] = useState(0);
+  const [position, setPosition] = useState(0);
   const [share, setShare] = useState<{ token: string; path: string; expiresAt: string } | null>(null);
   const [notice, setNotice] = useState("");
   const task = useMediaTask();
   useEffect(() => {
     const element = video.current;
-    return () => { if (element) { element.pause(); element.removeAttribute("src"); element.load(); } };
+    return () => { preparing.current?.abort(); if (element) { element.pause(); element.removeAttribute("src"); element.load(); } };
   }, []);
   useEffect(() => {
     if (state !== "buffering") return;
-    const timer = setTimeout(() => { setState("stalled"); setError("No playable data arrived for 30 seconds. Retry, choose another source, or use an external player."); setAttached(false); }, 60_000);
+    const timer = setTimeout(() => { video.current?.pause(); video.current?.removeAttribute("src"); video.current?.load(); setState("stalled"); setError("No playable data arrived for 90 seconds. Retry, choose another source, or use an external player."); setPlaybackUrl(undefined); }, 90_000);
     return () => clearTimeout(timer);
   }, [state]);
   useEffect(() => {
@@ -95,12 +99,26 @@ function Player({ selection, initial, search }: { selection: Selection; initial:
     })();
     return () => controller.abort();
   }, [state, selection.id]);
-  const start = () => {
+  const start = async (at?: number) => {
     const element = video.current;
     if (!element) return;
-    setError(""); setState("buffering"); setAttached(true);
-    if (!element.getAttribute("src")) { element.src = selection.stream; element.load(); }
-    void element.play().catch(() => { setState("failed"); setError("This browser could not start the stream. Try the native controls or an external player."); });
+    preparing.current?.abort();
+    const controller = new AbortController(); preparing.current = controller;
+    setError(""); setState(prepared ? "buffering" : "checking format");
+    try {
+      const plan = prepared ?? await preparePlayback(selection.id, AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]), mime => element.canPlayType(mime));
+      if (controller.signal.aborted) return;
+      setPrepared(plan); setState("buffering");
+      if (at !== undefined || !element.getAttribute("src") || element.error) {
+        const offset = plan.mode === "direct" ? 0 : at ?? 0;
+        const url = offset ? `${plan.stream}?start=${offset}` : plan.stream;
+        setTimelineStart(offset); setPosition(offset); setPlaybackUrl(url);
+        element.src = url; element.load();
+      }
+      await element.play();
+    } catch (e) {
+      if (!controller.signal.aborted) { setState("failed"); setError(e instanceof Error ? e.name === "NotAllowedError" ? "Playback is ready. Press Play in the video controls to start." : e.message : "Playback could not start. Retry or use an external player."); }
+    }
   };
   const updateBuffer = () => {
     const element = video.current;
@@ -108,20 +126,37 @@ function Player({ selection, initial, search }: { selection: Selection; initial:
     let ahead = 0;
     for (let i = 0; i < element.buffered.length; i++) if (element.buffered.start(i) <= element.currentTime && element.buffered.end(i) >= element.currentTime) ahead = element.buffered.end(i) - element.currentTime;
     setBuffer(ahead);
+    setPosition(timelineStart + element.currentTime);
+  };
+  const seek = (target: number) => {
+    const element = video.current;
+    if (!element || !prepared) return;
+    const localTime = target - timelineStart;
+    // Reuse downloaded data when possible; otherwise request a stream at the target.
+    for (let i = 0; i < element.buffered.length; i++) {
+      if (localTime >= element.buffered.start(i) && localTime < element.buffered.end(i)) {
+        element.currentTime = localTime;
+        setPosition(target);
+        return;
+      }
+    }
+    void start(target);
   };
   const shareUrl = share ? new URL(share.path, window.location.origin).href : "";
   return <div className="space-y-4 border-t border-neutral-700 pt-5">
     <h3 className="break-words text-sm text-white">{selection.file.path}</h3>
-    <video ref={video} src={attached ? selection.stream : undefined} controls playsInline preload="none" aria-label="Selected video" className="aspect-video w-full rounded bg-black"
+    <video ref={video} controls playsInline preload="none" aria-label="Selected video" className="aspect-video w-full rounded bg-black"
       onPlaying={() => { setState("playing"); setError(""); }} onWaiting={() => setState("buffering")} onStalled={() => setState("buffering")} onSeeking={() => setState("buffering")} onCanPlay={() => setState(s => s === "playing" ? s : "ready")} onPause={() => setState(s => s === "stalled" || s === "failed" ? s : "ready")} onEnded={() => setState("ready")} onProgress={updateBuffer} onTimeUpdate={updateBuffer}
-      onError={() => { if (!attached) return; setState("failed"); setError("Unsupported format or interrupted stream. MKV/HEVC/DTS may fail or have no audio. Try another file or an external player."); }} />
-    <div className="flex flex-wrap items-center gap-3"><span role="status" className="mr-auto text-sm capitalize text-orange-400">{state}</span><Button onClick={start} className="bg-orange-600 text-white hover:bg-orange-700"><Play />{state === "failed" || state === "stalled" ? "Retry playback" : "Play"}</Button><Button variant="outline" onClick={() => { video.current?.pause(); setAttached(false); setState("ready"); setBuffer(null); setNotice("Playback stopped."); }}><Square />Stop</Button>{document.fullscreenEnabled && <Button variant="outline" aria-label="Fullscreen video" onClick={() => { void video.current?.requestFullscreen().catch(() => setNotice("Use the native player fullscreen control on this device.")); }}><Maximize /></Button>}</div>
+      onError={() => { if (!playbackUrl) return; setState("failed"); setError("Playback was interrupted or the browser could not decode the prepared stream. Retry, choose another file, or use an external player."); }} />
+    {prepared && prepared.mode !== "direct" && prepared.duration !== null && Number.isFinite(prepared.duration) && prepared.duration > 0 && <PlaybackTimeline duration={prepared.duration} position={position} onSeek={seek} />}
+    <div className="flex flex-wrap items-center gap-3"><span role="status" className="mr-auto text-sm capitalize text-orange-400">{state}</span><Button disabled={state === "checking format"} onClick={() => { void start(); }} className="bg-orange-600 text-white hover:bg-orange-700"><Play />{state === "failed" || state === "stalled" ? "Retry playback" : "Play"}</Button><Button variant="outline" onClick={() => { preparing.current?.abort(); video.current?.pause(); video.current?.removeAttribute("src"); video.current?.load(); setPlaybackUrl(undefined); setState("ready"); setBuffer(null); setNotice("Playback stopped."); }}><Square />Stop</Button>{document.fullscreenEnabled && <Button variant="outline" aria-label="Fullscreen video" onClick={() => { void video.current?.requestFullscreen().catch(() => setNotice("Use the native player fullscreen control on this device.")); }}><Maximize /></Button>}</div>
+    {prepared && <p className="text-xs text-neutral-400">{prepared.mode === "direct" ? "Direct play" : prepared.mode === "remux" ? "Remuxing · original video and audio" : `Converting ${prepared.video === "copy" ? "audio" : prepared.audio === "copy" || prepared.audio === "none" ? "video" : "video and audio"}`}</p>}
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}
     <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-neutral-400"><span>Download: {stats.downloadSpeed === null ? "Unknown" : `${bytes(stats.downloadSpeed)}/s`}</span><span>Connected peers: {stats.connectedPeers ?? "Unknown"}</span><span>Received torrent data: {bytes(stats.downloadedBytes)}</span>{buffer !== null && <span>Browser buffer ahead: {buffer.toFixed(1)} s</span>}</div>
     {stats.preloadBytes !== null && stats.preloadTarget !== null && stats.preloadTarget > 0 && <p className="text-xs text-neutral-500">TorrServer torrent-wide preload: {bytes(stats.preloadBytes)} / {bytes(stats.preloadTarget)}. This may include another viewer’s buffer.</p>}
     {statsError && <p className="text-xs text-orange-400">{statsError}</p>}
-    <p className="text-xs leading-relaxed text-neutral-400">No transcoding. H.264/AAC MP4 is a useful target; compatibility depends on the actual codecs and your browser. If video has no audio, try the external-player option.</p>
-    <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} />
+    <p className="text-xs leading-relaxed text-neutral-400">Playback checks this browser’s format support and preserves compatible video and audio. External players receive the original file.</p>
+    <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} />
     <details className="rounded border border-neutral-700 p-4"><summary className="cursor-pointer text-sm">External player · VLC / M3U</summary><div className="mt-4 space-y-3">
       <p className="text-xs leading-relaxed text-neutral-400">Create a link valid for 15 minutes, scoped to this file. The player must reach this dashboard on your LAN/tailnet. The link works without browser cookies; anyone who has it and network access can use it until expiry or revocation. A separate login proxy may still block VLC.</p>
       <Button variant="outline" disabled={task.busy || !!share} onClick={() => { void task.run(s => mediaApi<NonNullable<typeof share>>("share", s, { id: selection.id }), setShare, 15_000); }}>Create player link</Button>

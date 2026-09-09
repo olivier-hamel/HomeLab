@@ -4,7 +4,7 @@ The optional TV page browses TMDB metadata, searches existing Prowlarr indexers,
 selects TorrServer files, and plays same-origin video. Other dashboard sections
 still show sample data. Browsing a title never starts a torrent.
 
-**Verified on September 9, 2026:** lint, typecheck, build and 52 focused tests in
+**Verified on September 9, 2026:** lint, typecheck, build and focused tests in
 both apps; actual Caddy 2.11.4 → Next.js 16.3.4 standalone → mocked services →
 Chrome playback of a licensed MP4, seeking, stopping/cancellation, range/HEAD/416,
 link revocation, bundled/local subtitles, mocked Gemini recommendations and dismissal,
@@ -324,19 +324,33 @@ Gemini review. Advice appears directly on each source row, without a separate
 assist status box. The best available choice stays first, including when sorting
 by seeders, size or title. Each listing has a **Good**, **Unsure** or **Sketchy**
 verdict with at most one sentence explaining its main evidence or concern.
-The target is direct browser playback at 1080p: format compatibility, healthy
-seed counts, reasonable sizes, episode matches and suspicious release details
-matter more than extra resolution. Listing metadata cannot verify actual
-contents, safety or successful playback. Known format risks cannot be upgraded
-to Good by the model.
+Movie/show identity is required before quality ranking. Catalogue selections
+provide the canonical title, original and alternate names, year, synopsis,
+companies and IDs from TMDB, even with indexer ID queries disabled. Direct
+searches use the title/year/episode in the query. Full-name, movie-year, type,
+episode and conflicting-ID checks exclude different works before Gemini;
+shared words alone never establish a match. Gemini also returns a separate
+identity decision and can reject ambiguous candidates. **Not a match** and
+**Uncertain match** listings are never highlighted, even if every correct
+release is dismissed. A failed Gemini request uses the same identity checks.
+
+Among matching releases, prioritize 1080p, at least **3,000 reported seeders**,
+reasonable sizes and suspicious release details. Below 3,000 (or with an unknown
+count), a release is at most **Unsure** and receives a streaming warning, even
+if Gemini calls it Good. A healthy 720p swarm can outrank 1080p below the target;
+if every matching swarm is weak, the least weak choice remains available with
+its warning. Video/audio codecs and containers do not affect
+recommendations; browser compatibility is intentionally excluded in anticipation
+of transcoding handled separately by the player.
+Listing metadata cannot verify actual contents, safety or successful playback.
 
 **Doesn’t work** hides that release and matching title/size duplicates in the
 current browser tab, stops its local player if selected, and highlights the next
-ranked option without another Gemini call or starting a torrent. Dismissals
+matching option without another Gemini call or starting a torrent. Dismissals
 survive a refreshed search and tab reload; **Restore hidden sources** clears them.
 This does not remove torrents from TorrServer or report failures to an indexer.
 
-Gemini reviews at most the 60 most promising listings in each loaded batch;
+Gemini reviews at most the 60 most promising matching listings in each loaded batch;
 the rest retain basic assessments. Missing keys, timeouts, quota errors and
 invalid model output retain usable basic advice. Reviews and session-owned
 search snapshots are bounded to 40 entries for two minutes, with 12 review
@@ -347,21 +361,65 @@ the automated browser fixture mocks Gemini as well as the existing providers.
 
 ## 8. Playback and external players
 
-Native controls, inline playback and available fullscreen support user-initiated
-playback. No transcoding: H.264/AAC MP4 is a useful target, not a guarantee.
-Extensions do not reveal actual codecs. MKV/HEVC/DTS may fail or have no audio;
-HLS.js cannot automatically transcode it. Actual mobile/smart-TV support needs
-device testing.
+Pressing Play probes the selected file with ffprobe, then checks the actual
+container and codec MIME strings with this browser's `canPlayType`. File extensions
+and release names do not decide compatibility. The backend picks the cheapest
+supported option, in this order:
+
+| Source and browser support | Playback path |
+| --- | --- |
+| Container, video and audio supported | Direct original stream; no FFmpeg conversion process. |
+| Video/audio supported in another container | Remux with both tracks copied, to fragmented MP4 or streaming WebM. |
+| Audio unsupported, video supported | Copy video; encode audio to AAC or Opus. |
+| Video unsupported, audio supported | Encode video to H.264 or VP9; copy audio. |
+| Neither codec supported | Encode both tracks. |
+
+HEVC, AV1, VP9, AC-3 and other supported tracks remain unchanged when the browser
+reports support in an available output container. The default video/audio tracks
+are selected (otherwise the first of each); cover art, additional tracks, embedded
+subtitles and attachments are excluded from converted output. Unknown codec
+configurations are treated conservatively. Capability reporting is a browser hint;
+actual hardware/profile support still needs device testing. A decode failure does
+not silently trigger full transcoding.
+
+FFmpeg and ffprobe are installed in the backend Docker runtime. For local development,
+install a build linked from [FFmpeg downloads](https://ffmpeg.org/download.html) and
+put both binaries on PATH, or set `FFMPEG_PATH` and `FFPROBE_PATH` in `backend/.env`
+to their executable paths. Restart the backend after changing configuration.
+Compose overrides these two values with `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`
+so local Windows paths do not break the Linux container.
+`MEDIA_PROBE_TIMEOUT_MS` defaults to 90000 (1000–180000); successful probes are
+cached for 30 minutes, up to 128 files. At most two probes run concurrently.
+`MEDIA_MAX_CONVERSIONS` defaults to 2 (1–8), shared across remuxing and transcoding;
+direct streams do not consume those slots. Software encoding uses two threads;
+audio conversion produces stereo at 192 kbit/s. There is no hardware-acceleration
+or HDR tone-mapping pipeline in this implementation.
+
+The input is a token-scoped loopback HTTP bridge to the selected TorrServer file,
+with authenticated range reads. No upstream credentials appear in FFmpeg arguments
+or browser responses. Restricted input demuxers/protocols exclude playlists and
+local-file inputs. Processes have startup/idle timeouts and terminate on stream
+cancellation. Output uses backpressure and is never saved or buffered as a full file.
+See [FFmpeg stream copying](https://ffmpeg.org/ffmpeg.html#Streamcopy) and
+[fragmented MP4 output](https://ffmpeg.org/ffmpeg-formats.html#mov_002c-mp4_002c-ismv).
+
+Direct playback retains native byte-range seeking. Converted output uses HTTP 200
+with `Accept-Ranges: none`; original file byte offsets cannot address it. Native
+controls can seek within buffered output. **Jump to (seconds)** starts a new
+conversion at a source timestamp, including unbuffered positions, when the probe
+provides duration. Copied video can resume at the next keyframe. Subtitle timing
+is adjusted to the new timeline. External-player links always serve the original
+file and work even when probing or conversion is unavailable.
 
 Download speed/connected peers come only from supplied TorrServer data.
 Received bytes (`bytes_read_data`) are traffic totals; completed bytes
 (`loaded_size`) are not configured cache capacity. Capacity is not estimated
 in the UI. Buffer-ahead seconds come from the browser's real TimeRanges;
 optional upstream preload data is torrent-wide and may include another viewer.
-There are no artificial progress bars. A 30-second player wait produces a
+There are no artificial progress bars. A 90-second player wait produces a
 stalled error and retry/alternate-source options.
 
-The proxy preserves Range/If-Range, content headers and 200/206/416 with
+The original-file proxy preserves Range/If-Range, content headers and 200/206/416 with
 backpressure and client-disconnect cancellation. Video bodies are not cached,
 compressed or collected in memory. Caddy uses a **positive** 100 ms flush
 interval; a negative interval would disable its upstream cancellation.
@@ -479,8 +537,10 @@ captions off until you choose the downloaded file.
    subtitle and confirm you can choose another file after the error.
 5. Stop/close/navigate away. Video requests and polling end; another viewer
    continues and the shared torrent is not deleted.
-6. Try a known incompatible file/audio codec. Confirm a useful error or note
-   silent audio. Create a link/M3U, try VLC on a permitted device, revoke it,
+6. Try H.264/AAC in an unsupported container and confirm Remuxing; try H.264/DTS
+   and confirm Converting audio with audible sound; try unsupported video with
+   AAC and confirm Converting video. Verify Jump, subtitles and Stop for converted
+   streams. Create a link/M3U, try VLC on a permitted device, revoke it,
    and confirm new requests return 410. Repeat on your actual tablet/mobile/TV.
 7. Exercise missing credentials, bad auth, no peers, unavailable services,
    indexer failures and metadata timeout. Restore only the settings you changed;
@@ -534,6 +594,18 @@ hidden Chrome against loopback mock services. Its TMDB/SubDL fetch override is l
 only into that test process; production has no mock toggle or alternate TMDB
 origin. It overrides all media credentials with fixture values.
 
+Playback planner/API tests cover all five playback paths, actual codec profiles,
+silent files, default tracks, ownership and invalid capability/seek requests.
+The optional real-FFmpeg test generates its own clips, verifies compressed-packet
+hashes for copied video/audio, and exercises conversion, range input, time seeking,
+HEAD, process limits, cancellation and missing/corrupt inputs. With FFmpeg installed,
+run from `backend` in PowerShell:
+
+```powershell
+$env:MEDIA_FFMPEG_TESTS = '1'
+node --env-file=.env --test tests/ffmpeg.test.mjs
+```
+
 **PC PowerShell, repo root:** obtain Caddy from [official releases](https://github.com/caddyserver/caddy/releases)
 and verify its checksum, have Chrome installed, and supply a licensed H.264/AAC
 MP4. The implementation run used the Blender Foundation's Big Buck Bunny trailer,
@@ -544,14 +616,16 @@ and fixtures outside Git; the mock run retrieves no torrent pieces.
 $env:CADDY_BIN = 'C:\tools\caddy.exe'
 $env:CHROME_BIN = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 $env:TV_TEST_MP4 = 'C:\test-media\authorized-h264-aac.mp4'
-node scripts/test-tv-media.mjs
+node --env-file=backend/.env scripts/test-tv-media.mjs
 ```
 
 The same environment variables work with Linux/macOS binary paths. Reports and
 screenshots go to `frontend/node_modules/.cache/tv-review/`. The tracked Caddyfile
 gets only local root/upstream/listener substitutions and a loopback bind;
-proxy rules/timeouts remain intact. The error fixture supplies undecodable bytes
-with an AVI MIME type. That tests fallback UI, **not real HEVC/MKV/DTS support**.
+proxy rules/timeouts remain intact. FFmpeg must be available for this browser test:
+it probes the licensed MP4 and generates additional clips to test H.264/AAC TS
+remuxing, H.264/DTS audio conversion, MPEG-4/PCM full conversion, and subtitles
+after converted time seeking. The separate invalid AVI fixture tests probe errors.
 Docker execution, live networking, actual seeding and device tests remain pending.
 
 ## 11. Rollback without deleting volumes
