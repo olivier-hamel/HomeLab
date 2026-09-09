@@ -9,10 +9,22 @@
 	root * /srv
 	encode zstd gzip
 	log
+	# Stream links are temporary bearer credentials; never write media URLs to logs.
+	log_skip /api/media/*
 
 	# route preserves this order even when matchers have different specificity.
 	route {
 		header X-Content-Type-Options nosniff
+		header Referrer-Policy no-referrer
+		header X-Frame-Options SAMEORIGIN
+
+		# No public media controls. remote_ip is the socket peer, never untrusted XFF.
+		# A public reverse proxy on a private address needs its own access boundary.
+		@publicMedia {
+			path /api/media/*
+			not remote_ip 127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7
+		}
+		respond @publicMedia "Media access requires a trusted network" 403
 
 		handle /healthz {
 			header Cache-Control no-store
@@ -20,6 +32,20 @@
 		}
 
 		@api path /api /api/*
+		@streams path /api/media/stream/* /api/media/external/*
+		handle @streams {
+			# Small positive interval flushes promptly AND cancels upstream on disconnect.
+			# A negative flush_interval disables that cancellation in Caddy.
+			reverse_proxy backend:3001 {
+				flush_interval 100ms
+				transport http {
+					dial_timeout 5s
+					response_header_timeout 100s
+					read_timeout 0
+					write_timeout 0
+				}
+			}
+		}
 		handle @api {
 			# handle preserves /api; handle_path would strip it.
 			reverse_proxy backend:3001

@@ -7,8 +7,10 @@ You can also use an existing Ubuntu server without Proxmox.
 
 The repository supplies the dashboard and its deployment files. Your hypervisor,
 other guests, storage, backups, and remote-access service are separate parts of
-your lab. The dashboard currently shows sample data and has no login system.
-Start with access from your home network.
+your lab. The Proxmox sections show sample data and the dashboard has no login
+system. Start with access from your home network. The optional TV & Movies
+integration has its own [setup and verification guide](tv-media.md), including
+backend-to-media Tailscale connectivity, credentials and private-access controls.
 
 ## Choose your own settings
 
@@ -115,14 +117,15 @@ use that port in the browser URLs and checks below too.
 | File or setting | Used by | What to configure |
 | --- | --- | --- |
 | Root `.env` | Compose, when resolving `compose.yml` | Project name, frontend bind address, and published port |
-| `backend/.env` | The backend container, when it is created | No values needed yet; keep the comment-only file |
+| `backend/.env` | The backend container, when it is created | Optional TV/media URLs, server-side credentials, origins and timeouts; see [TV setup](tv-media.md) |
 | `frontend/.env.example` | Documentation for future frontend settings | No frontend env file is needed for this deployment |
 | Future `VITE_*` settings | Vite, while building browser assets | Public values only; explicitly wire any new setting into the build |
 
 Compose fixes backend `NODE_ENV=production`, `HOSTNAME=0.0.0.0`, `PORT=3001`, and
 `NEXT_TELEMETRY_DISABLED=1`. These values override matching entries in
 `backend/.env`. Add future integration secrets to that runtime file only when
-backend code needs them. Single-quote literal values containing `$` to avoid
+backend code needs them. TV/media settings are documented in `backend/.env.example`.
+Single-quote literal values containing `$` to avoid
 Compose interpolation. Never place secrets in build arguments or Next.js `env`
 configuration.
 
@@ -176,6 +179,7 @@ requests in this order:
 | Request | Result |
 | --- | --- |
 | `/healthz` | Lightweight Caddy health response |
+| `/api/media/stream/*`, `/api/media/external/*` | Private media streaming proxy with separate timeouts and disconnect cancellation |
 | `/api` or `/api/*` | Proxy to `backend:3001`, preserving the `/api` prefix |
 | `/assets`, `/assets/*`, or a path with a dotted component | Serve a real file or return a file-server error |
 | Other paths | Serve a matching file or fall back to the SPA's `index.html` |
@@ -184,6 +188,8 @@ Browser code uses relative paths such as `fetch('/api/health')`.
 `backend:3001` is Docker service DNS for server-side use. There is no published
 backend port and no extra edge proxy in this stack. The project-scoped bridge
 network permits backend outbound traffic, subject to your VM's network policy.
+Access through a separate subnet router does not prove the backend container
+can reach a media VM's Tailscale IP. Run the container check in [TV setup](tv-media.md#6-verify-from-the-backend-container).
 
 Both services run as UID/GID `10001:10001`, with capabilities dropped and
 privilege escalation disabled. Caddy's low-port binary capability is removed,

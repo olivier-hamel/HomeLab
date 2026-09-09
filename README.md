@@ -1,8 +1,11 @@
 # HomeLab
 
-**Current status:** the dashboard uses temporary sample data. Navigation works;
-search fields and action buttons are disabled. The backend provides
-`GET /api/health`, but the dashboard does not yet fetch live data.
+**Current status:** the Proxmox sections use temporary sample data and their
+service actions remain disabled. **TV & Movies** adds an optional TMDB catalogue,
+Prowlarr search and TorrServer playback through backend APIs. It requires private
+network configuration and your own credentials. Follow the
+[TV & Movies setup and verification guide](docs/tv-media.md). Live media services
+still need verification on your homelab; implementation tests used mocks.
 
 ## How it fits into a home lab
 
@@ -25,8 +28,8 @@ flowchart LR
 | `frontend` | Caddy serves the Vite build, handles SPA routes, and proxies `/api` | 8080, published as host port 3000 |
 | `backend` | Next.js standalone server hosts API routes | 3001, unpublished |
 
-Both containers run as non-root users. The backend retains outbound network
-access for future integrations.
+Both containers run as non-root users. The backend uses outbound network access
+for configured media integrations.
 
 ## Try it locally with Docker
 
@@ -60,8 +63,8 @@ if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
 ```
 
 The root example binds to `127.0.0.1:3000` for local use. If you already have a
-`.env`, check its address and port before starting. The backend env file can stay
-comment-only; no credentials are required by the current application.
+`.env`, check its address and port before starting. No credentials are required
+to view the sample dashboard. TV & Movies stays disabled until configured.
 
 Build and start the stack from the repository root:
 
@@ -131,6 +134,7 @@ Run the checks inside **each** app directory:
 ```sh
 npm run lint
 npm run typecheck
+npm test
 npm run build
 ```
 
