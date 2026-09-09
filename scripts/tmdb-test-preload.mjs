@@ -7,5 +7,6 @@ globalThis.fetch = (input, init) => {
   }
   if (url.origin === 'https://api.subdl.com') return nativeFetch(new URL('/subdl-api' + url.pathname + url.search, process.env.TV_TEST_UPSTREAM), init);
   if (url.origin === 'https://dl.subdl.com') return nativeFetch(new URL('/subdl-download' + url.pathname + url.search, process.env.TV_TEST_UPSTREAM), init);
+  if (url.origin === 'https://generativelanguage.googleapis.com') return nativeFetch(new URL('/gemini' + url.pathname, process.env.TV_TEST_UPSTREAM), init);
   return nativeFetch(input, init);
 };

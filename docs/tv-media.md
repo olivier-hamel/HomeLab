@@ -4,10 +4,11 @@ The optional TV page browses TMDB metadata, searches existing Prowlarr indexers,
 selects TorrServer files, and plays same-origin video. Other dashboard sections
 still show sample data. Browsing a title never starts a torrent.
 
-**Verified on September 9, 2026:** lint, typecheck, build and 39 focused tests in
+**Verified on September 9, 2026:** lint, typecheck, build and 52 focused tests in
 both apps; actual Caddy 2.11.4 → Next.js 16.3.4 standalone → mocked services →
 Chrome playback of a licensed MP4, seeking, stopping/cancellation, range/HEAD/416,
-link revocation, bundled/local subtitles and an unsupported-format error fixture. Layouts fit at 1440,
+link revocation, bundled/local subtitles, mocked Gemini recommendations and dismissal,
+and an unsupported-format error fixture. Layouts fit at 1440,
 768, 390 and 320 pixels. A live SubDL search for Obsession (2026) returned six
 English releases / seven individual subtitle files, and one authenticated raw
 subtitle download was verified. **Live torrent playback and VM deployment were not tested.**
@@ -165,6 +166,8 @@ Keep the generated output private.
 | `TORRSERVER_BASE_URL` | Backend-reachable HTTP(S) URL; example `http://100.64.162.49:8090`. |
 | `TORRSERVER_USERNAME`, `TORRSERVER_PASSWORD` | Both blank, or both set for existing HTTP Basic auth. |
 | `TMDB_READ_ACCESS_TOKEN` | Optional Bearer token. Direct source search works independently. |
+| `GEMINI_API_KEY` | Optional server-side Gemini key for source assist; basic recommendations work without it. |
+| `MEDIA_AI_TIMEOUT_MS` | `20000`; range 1000–60000 ms for a Gemini review. |
 | `MEDIA_METADATA_TIMEOUT_MS` | `10000`; range 1000–60000 ms, for TMDB/TorrServer JSON. |
 | `MEDIA_SEARCH_TIMEOUT_MS` | `20000`; range 1000–60000 ms per indexer, four concurrent. |
 | `MEDIA_STREAM_HEADER_TIMEOUT_MS` | `90000`; range 1000–180000 ms. Keep below Caddy's 100-second header timeout, or adjust Caddy and rebuild together. |
@@ -304,6 +307,43 @@ Use one backend instance; multiple replicas need shared state. Limits include
 streams globally, eight streams/session, eight searches/session/minute and
 45 status polls/session/minute. Browser search deadline is 120 seconds and
 initial metadata polling ends after about 60 seconds with retry/cancel.
+
+### AI source assist
+
+Set `GEMINI_API_KEY` in `backend/.env` using a key from
+[Google AI Studio](https://aistudio.google.com/apikey), then restart the backend
+(or recreate it with Compose to reload its env file). The integration uses
+[`gemini-3.5-flash-lite`](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
+and Google's [structured JSON generation API](https://ai.google.dev/api/generate-content).
+The key stays on the backend. Searches and candidate listing metadata are sent
+to Google; torrent links, indexer configuration, credentials and file contents
+are excluded.
+
+Search results appear with basic recommendations immediately, followed by the
+Gemini review. Advice appears directly on each source row, without a separate
+assist status box. The best available choice stays first, including when sorting
+by seeders, size or title. Each listing has a **Good**, **Unsure** or **Sketchy**
+verdict with at most one sentence explaining its main evidence or concern.
+The target is direct browser playback at 1080p: format compatibility, healthy
+seed counts, reasonable sizes, episode matches and suspicious release details
+matter more than extra resolution. Listing metadata cannot verify actual
+contents, safety or successful playback. Known format risks cannot be upgraded
+to Good by the model.
+
+**Doesn’t work** hides that release and matching title/size duplicates in the
+current browser tab, stops its local player if selected, and highlights the next
+ranked option without another Gemini call or starting a torrent. Dismissals
+survive a refreshed search and tab reload; **Restore hidden sources** clears them.
+This does not remove torrents from TorrServer or report failures to an indexer.
+
+Gemini reviews at most the 60 most promising listings in each loaded batch;
+the rest retain basic assessments. Missing keys, timeouts, quota errors and
+invalid model output retain usable basic advice. Reviews and session-owned
+search snapshots are bounded to 40 entries for two minutes, with 12 review
+requests per session per minute and 60 globally. Responses enforce supplied
+source IDs, known verdicts and a single short explanation; listing text is
+treated as untrusted data. No live Gemini request was verified without a key;
+the automated browser fixture mocks Gemini as well as the existing providers.
 
 ## 8. Playback and external players
 

@@ -4,7 +4,9 @@ export type Details = Title & { imdbId: string | null; tvdbId: number | null; se
 export type SearchContext = { kind: Kind; imdbId?: string; tvdbId?: number; tmdbId?: number; season?: number; episode?: number };
 export type SearchIntent = { query: string; context?: SearchContext; label?: string };
 export type Source = { id: string; title: string; size: number | null; seeders: number | null; leechers: number | null; peers: number | null; indexer: string; quality: string[]; match: string };
-export type SearchResults = { results: Source[]; reports: { indexer: string; query: string; strategy: string; error: string | null }[]; more: boolean; batch: number; warning: string | null };
+export type Assessment = { id: string; verdict: "good" | "unsure" | "sketchy"; reason: string; method: "gemini" | "heuristic" };
+export type SourceAdvice = { provider: "gemini" | "heuristic"; model: string | null; warning: string | null; reviewed: number; ranking: Assessment[] };
+export type SearchResults = { searchId: string; advice: SourceAdvice; results: Source[]; reports: { indexer: string; query: string; strategy: string; error: string | null }[]; more: boolean; batch: number; warning: string | null };
 export type TorrentFile = { id: number; path: string; size: number | null; kind: "video" | "subtitle" | "other"; sample: boolean };
 export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
 export type Selection = { id: string; stream: string; file: TorrentFile };
@@ -34,4 +36,27 @@ export function sortSources(results: Source[], sort: string): Source[] {
     if (bv === null) return -1;
     return bv - av;
   });
+}
+
+// Stable across refreshed searches, whose opaque source IDs may change.
+export function sourceFingerprint(source: Source): string {
+  return JSON.stringify([source.title.trim().toLowerCase(), source.size]);
+}
+export function recommendedSources(results: Source[], advice: SourceAdvice | null, dismissed: Set<string>, sort: string): Source[] {
+  const visible = results.filter(source => !dismissed.has(sourceFingerprint(source)));
+  const ranks = new Map(advice?.ranking.map((item, index) => [item.id, index]));
+  const ranked = [...visible].sort((a, b) => (ranks.get(a.id) ?? Infinity) - (ranks.get(b.id) ?? Infinity));
+  if (sort === "recommended" || !ranked.length || !ranks.has(ranked[0].id)) return ranked;
+  // Keep the recommendation visible on page one even with a manual sort.
+  return [ranked[0], ...sortSources(visible.filter(source => source.id !== ranked[0].id), sort)];
+}
+const dismissedKey = "homelab:failed-media-sources:v1";
+export function loadDismissedSources(): Set<string> {
+  try {
+    const value: unknown = JSON.parse(sessionStorage.getItem(dismissedKey) ?? "[]");
+    return new Set(Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && v.length <= 1100).slice(-200) : []);
+  } catch { return new Set(); }
+}
+export function saveDismissedSources(dismissed: Set<string>): void {
+  try { sessionStorage.setItem(dismissedKey, JSON.stringify([...dismissed].slice(-200))); } catch { /* In-memory dismissal works when browser storage is unavailable. */ }
 }

@@ -1,7 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { BoundedCache, integer, kind, magnet, MediaError, query, record, string, type Fetcher } from "./core.ts";
 import { readLimited } from "./http.ts";
-import { Prowlarr, type SearchContext } from "./prowlarr.ts";
+import { Prowlarr, type SearchContext, type Source } from "./prowlarr.ts";
+import { baselineAdvice, SourceAssist } from "./source-assist.ts";
 import { boundary, limited, rate, requireSession, startSession } from "./security.ts";
 import { Tmdb } from "./tmdb.ts";
 import { TorrServer, type TorrentFile } from "./torrserver.ts";
@@ -24,6 +25,8 @@ export function createMediaApi(fetcher: Fetcher = fetch) {
   const prowlarr = new Prowlarr(fetcher);
   const torrents = new TorrServer(fetcher);
   const subdl = new Subdl(fetcher);
+  const assist = new SourceAssist(fetcher);
+  const sourceSearches = new BoundedCache<{ owner: string; query: string; context?: SearchContext; sources: Source[] }>(40, 2 * 60_000);
   const subtitleChoices = new BoundedCache<{ owner: string; playback: string; file: SubdlFile }>(2000, 10 * 60_000);
   const playbacks = new BoundedCache<Playback>(128, 8 * 60 * 60_000);
   const shares = new BoundedCache<Share>(256, 15 * 60_000);
@@ -133,7 +136,19 @@ export function createMediaApi(fetcher: Fetcher = fetch) {
           }
           if (path[0] === "search") {
             rate(`search:${owner}`, 8);
-            return json(await prowlarr.search(query(body.query), integer(body.batch ?? 1, 1, 20), context(body.context), request.signal));
+            const q = query(body.query);
+            const searchContext = context(body.context);
+            const result = await prowlarr.search(q, integer(body.batch ?? 1, 1, 20), searchContext, request.signal);
+            const searchId = randomUUID();
+            sourceSearches.set(searchId, { owner, query: q, context: searchContext, sources: result.results });
+            return json({ ...result, searchId, advice: baselineAdvice(result.results, searchContext) });
+          }
+          if (path[0] === "recommend" && path.length === 1) {
+            rate(`recommend:${owner}`, 12);
+            rate("recommend:global", 60);
+            const found = sourceSearches.get(string(body.searchId, 64));
+            if (!found || found.owner !== owner) throw new MediaError("expired", "Source recommendations expired. Search again.", 410);
+            return json(await assist.recommend(found.query, found.sources, found.context, request.signal));
           }
           if (path[0] === "playback" && path.length === 1) {
             rate(`add:${owner}`, 10);

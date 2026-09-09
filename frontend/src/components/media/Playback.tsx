@@ -78,7 +78,7 @@ function Player({ selection, initial, search }: { selection: Selection; initial:
   }, []);
   useEffect(() => {
     if (state !== "buffering") return;
-    const timer = setTimeout(() => { setState("stalled"); setError("No playable data arrived for 30 seconds. Retry, choose another source, or use an external player."); setAttached(false); }, 30_000);
+    const timer = setTimeout(() => { setState("stalled"); setError("No playable data arrived for 30 seconds. Retry, choose another source, or use an external player."); setAttached(false); }, 60_000);
     return () => clearTimeout(timer);
   }, [state]);
   useEffect(() => {

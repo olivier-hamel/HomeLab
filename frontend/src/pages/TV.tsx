@@ -5,7 +5,7 @@ import Catalogue from "../components/media/Catalogue";
 import Sources from "../components/media/Sources";
 import Playback from "../components/media/Playback";
 import { useMediaTask } from "../components/media/useMediaTask";
-import { mediaApi, type SearchIntent, type Source } from "../lib/media";
+import { mediaApi, sourceFingerprint, type SearchIntent, type Source } from "../lib/media";
 
 export default function TV() {
   const [config, setConfig] = useState<{ tmdb: boolean; prowlarr: boolean; torrserver: boolean } | null>(null);
@@ -33,7 +33,7 @@ export default function TV() {
       {mode === "catalogue" ? config.tmdb ? <Catalogue find={find} /> : <div className="space-y-3 rounded border border-neutral-700 p-6"><h2 className="text-white">Connect the catalogue</h2><p className="text-sm text-neutral-400">Set TMDB_READ_ACCESS_TOKEN in backend/.env to browse titles, posters and descriptions. Direct source search works independently.</p><Button variant="outline" onClick={() => setMode("sources")}>Search sources</Button></div> : <>
         {!config.prowlarr && <p className="rounded border border-orange-500/30 p-4 text-sm text-neutral-400">Set PROWLARR_BASE_URL and PROWLARR_API_KEY in backend/.env to search indexers. Manual magnets remain available when TorrServer is configured.</p>}
         {!config.torrserver && <p className="rounded border border-orange-500/30 p-4 text-sm text-neutral-400">Set TORRSERVER_BASE_URL in backend/.env to load files and play sources.</p>}
-        <Sources key={JSON.stringify(intent)} intent={intent} disabled={!config.torrserver} choose={(source, search) => { setChosen({ source, search, key: Date.now() }); document.getElementById("dashboard-content")?.scrollTo({ top: 0, behavior: "smooth" }); }} />
+        <Sources key={JSON.stringify(intent)} intent={intent} disabled={!config.torrserver} reject={source => { if (chosen && typeof chosen.source !== "string" && sourceFingerprint(chosen.source) === sourceFingerprint(source)) setChosen(null); }} choose={(source, search) => { setChosen({ source, search, key: Date.now() }); document.getElementById("dashboard-content")?.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </>}
     </>}
   </div>;
