@@ -261,8 +261,8 @@ try {
   await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 640, y: 360, deltaX: 0, deltaY: 400 });
   await until('window.scrollY > 0');
   await evaluate('window.scrollTo(0, 0)');
-  await focus('.tv-header button'); await press('PageDown');
-  assert.ok(await evaluate('window.scrollY > 0'), 'PageDown scrolls even with header focus');
+  await focus('[aria-label="Advanced mode"]'); await press('PageDown');
+  assert.ok(await evaluate('window.scrollY > 0'), 'PageDown scrolls from a focused page control');
   await press('PageUp'); assert.equal(await evaluate('window.scrollY'), 0);
   await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: 710 });
   await until('window.scrollY > 60');
@@ -346,7 +346,14 @@ try {
   await until('!document.querySelector("video")');
   assert.ok((await active()).includes('Choose source'), `Closing playback restores the source button (got ${await active()}; ${JSON.stringify(await evaluate('window.focusTrail'))})`);
   await press('Escape'); await until('!!document.querySelector("#catalogue-query")');
-  await activate('.tv-desktop-link'); await until('!!document.querySelector("aside")');
+  assert.equal(await evaluate('document.querySelector(".tv-header")'), null, 'TV mode has no top bar');
+  assert.ok(await evaluate('document.querySelector(".tv-footer")?.innerText.includes("BUILD")'), 'TV build information is in the footer');
+  assert.ok(await evaluate('!!document.querySelector(".tv-footer #tv-dashboard-section")'), 'Dashboard navigation is in the footer');
+  await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'overview'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await until('document.querySelector("#tv-dashboard-section").value === "overview"');
+  await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'tv'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await until('!!document.querySelector("#catalogue-query")');
+  await call('Page.navigate', { url: `${origin}/?tv=0` }); await until('!!document.querySelector("aside")');
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), undefined);
   await call('Page.navigate', { url: origin }); await until('!!document.querySelector("aside")');
   assert.equal(await evaluate('localStorage.getItem("homelab:tv-mode")'), '0', 'Desktop override persists on this browser');
@@ -355,6 +362,22 @@ try {
   await call('Page.navigate', { url: origin }); await until('!!document.querySelector(".tv-shell")');
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), 'true', 'Fire TV auto-detection');
   assert.deepEqual(errors, [], 'No browser exceptions');
+  // Reproduce the native-3 failure: Android interface exists, but no injected plugin headers.
+  const missingBridge = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'window.androidBridge = {};' });
+  await call('Page.navigate', { url: `${origin}/?tv=1` });
+  await until('document.querySelector("#startup-error")?.hidden === false');
+  assert.match(await evaluate('document.querySelector("#startup-details").textContent'), /Bootstrap failed[\s\S]*Preferences.*not implemented on android/);
+  assert.equal(await active(), 'startup-retry', 'Startup failure focuses Retry for the remote');
+  await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: missingBridge.identifier });
+  await activate('#startup-retry');
+  await until('!!document.querySelector(".tv-shell")');
+  assert.equal(await evaluate('document.querySelector("#startup-error").hidden'), true, 'Retry recovers after bridge failure');
+  // The footer controls a native select during TV render; force that render to throw.
+  const renderFailure = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'Object.defineProperty(HTMLSelectElement.prototype, "value", { get() { throw new Error("Fixture React render failure"); }, set() { throw new Error("Fixture React render failure"); } });' });
+  await call('Page.navigate', { url: `${origin}/?tv=1` });
+  await until('document.querySelector("#startup-error")?.hidden === false');
+  assert.match(await evaluate('document.querySelector("#startup-details").textContent'), /React render error[\s\S]*Fixture React render failure/);
+  await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: renderFailure.identifier });
   console.log(JSON.stringify({ passed: true, viewports: [1280, 1920, 960, 390], checks: 'simple default and saved advanced mode, automatic Gemini selection, largest main video, autoplay denial recovery, automatic English ZIP selection, subtitle offset and cancellation, next source and failed-source fallback, exhausted sources, AI cancellation, desktop isolation, auto-detection, fallback APIs, scrolling, D-pad, dialogs, manual selection, seeking, fullscreen and Back', screenshots: output }, null, 2));
 } finally {
   if (call && socket?.readyState === WebSocket.OPEN) {

@@ -90,7 +90,6 @@ export default function useTvNavigation(enabled: boolean) {
       if (!active || !available.includes(active)) { event.preventDefault(); initial(); return; }
       const activeCard = active.closest(".title-card");
       const candidates = available.filter(element => element !== active
-        && !(key === "ArrowDown" && active.closest("main") && element.closest(".tv-header"))
         // An overlaid info button must not steal movement to a different card.
         && !(element.matches(".catalogue-info-button") && element.closest(".title-card") !== activeCard))
         .map(element => ({ element, bounds: element.getBoundingClientRect() }));

@@ -6,9 +6,72 @@
     <meta name="description" content="Proxmox homelab dashboard with sample nodes, VMs, containers, backups, and Tailscale status." />
     <meta name="theme-color" content="#171717" />
     <title>HomeLab | Proxmox Dashboard</title>
+    <script>
+      // Keep this independent of modules, React, Capacitor and external assets.
+      (function () {
+        var stage = "Loading JavaScript assets";
+        var failure = "";
+        var ready = false;
+        var timer;
+        function draw() {
+          var status = document.getElementById("startup-status");
+          if (status) status.textContent = stage;
+          var panel = document.getElementById("startup-error");
+          if (!panel || !failure) return;
+          panel.hidden = false;
+          document.getElementById("startup-details").textContent = failure;
+          document.getElementById("startup-retry").focus();
+        }
+        function fail(kind, error) {
+          var detail;
+          try { detail = error && (error.stack || error.message) || String(error); }
+          catch (_) { detail = "Unable to read error details"; }
+          console.error("[HomeLab startup] " + kind + ": " + detail);
+          if (failure) return;
+          clearTimeout(timer);
+          failure = kind + "\nStage: " + stage + "\nPage: " + location.origin + location.pathname +
+            "\nWebView: " + navigator.userAgent + "\n\n" + detail;
+          draw();
+        }
+        window.homeLabStartup = {
+          stage: function (value) { stage = value; console.info("[HomeLab startup] " + value); draw(); },
+          fail: fail,
+          complete: function () { ready = true; clearTimeout(timer); stage = "React mounted"; console.info("[HomeLab startup] " + stage); }
+        };
+        window.addEventListener("error", function (event) {
+          var target = event.target;
+          if (target && target !== window) {
+            if (!ready && (target.tagName === "SCRIPT" || (target.tagName === "LINK" && target.rel === "stylesheet"))) {
+              fail("Asset failed to load", target.src || target.href);
+            }
+            return;
+          }
+          fail("JavaScript error", event.error || (event.message + " at " + event.filename + ":" + event.lineno + ":" + event.colno));
+        }, true);
+        window.addEventListener("unhandledrejection", function (event) { fail("Unhandled promise rejection", event.reason); });
+        document.addEventListener("DOMContentLoaded", function () {
+          draw();
+          document.getElementById("startup-retry").addEventListener("click", function () { location.reload(); });
+        });
+        timer = setTimeout(function () { if (!ready) fail("Startup timed out after 15 seconds", "The last startup stage did not finish. Capture the HomeLabWebView and Capacitor logs."); }, 15000);
+      })();
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <section id="startup-error" role="alert" hidden style="position:fixed;inset:0;z-index:2147483647;overflow:auto;padding:40px;background:#171717;color:#fff;font:20px/1.5 sans-serif">
+      <h1>HomeLab could not start</h1>
+      <p>BUILD 2026.09.10-native-4</p>
+      <pre id="startup-details" style="white-space:pre-wrap;overflow-wrap:anywhere;font:16px/1.5 monospace"></pre>
+      <button id="startup-retry" type="button" style="padding:16px 32px;background:#c2410c;color:white;border:2px solid white;font:inherit">Retry</button>
+    </section>
+    <div id="root">
+      <main style="min-height:100vh;box-sizing:border-box;padding:48px;background:#171717;color:#fff;font:24px/1.5 sans-serif">
+        <h1>Loading build native-4</h1>
+        <p>BUILD 2026.09.10-native-4</p>
+        <p id="startup-status">Waiting for JavaScript startup</p>
+        <noscript>JavaScript is disabled in this WebView.</noscript>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -9,9 +9,9 @@ import Infrastructure from "./pages/Infrastructure";
 import TV from "./pages/TV";
 import { useTvMode } from "./lib/tv";
 import useTvNavigation from "./components/useTvNavigation";
-import { hasNativeVideoPlayer, isNativeApp, openNativeServerSetup } from "./native";
+import { hasNativeVideoPlayer, isNativeApp } from "./native";
 
-const buildTag = "2026.09.10-native-3";
+const buildTag = "2026.09.10-native-4";
 
 const sections = [
   { id: "overview", icon: Monitor, label: "OVERVIEW", component: Overview },
@@ -32,29 +32,21 @@ export default function App() {
   const Page = selectedSection.component;
 
   if (tvMode) {
-    const desktopUrl = new URL(window.location.href);
-    desktopUrl.searchParams.set("tv", "0");
     return <div className="tv-shell">
-      <header className="tv-header">
-        <div className="tv-brand"><strong>HOMELAB</strong><span>TV MODE</span></div>
-        <nav aria-label="TV navigation" className="flex flex-wrap items-center gap-3">
-          <Button variant="ghost" aria-current={activeSection === "tv" ? "page" : undefined} data-tv-back={activeSection !== "tv" ? "" : undefined} onClick={() => setActiveSection("tv")}><Clapperboard />TV & Movies</Button>
-          <label className="sr-only" htmlFor="tv-dashboard-section">Dashboard section</label>
-          <select id="tv-dashboard-section" value={activeSection === "tv" ? "" : activeSection} onChange={event => { if (event.target.value) setActiveSection(event.target.value as typeof activeSection); }}>
-            <option value="" disabled>Dashboard</option>
-            {sections.filter(section => section.id !== "tv").map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
-          </select>
-          <a className="tv-desktop-link" href={desktopUrl.href}>Desktop view</a>
-          {isNativeApp() && <Button variant="ghost" onClick={() => { void openNativeServerSetup(); }}>Server</Button>}
-          <span data-build-tag="" className="rounded border border-orange-500/60 bg-orange-950 px-3 py-2 text-xs font-semibold tracking-wide text-orange-200">
-            BUILD {buildTag} · {hasNativeVideoPlayer() ? "NATIVE PLAYER READY" : isNativeApp() ? "NATIVE PLUGIN MISSING" : "WEB PLAYER"}
-          </span>
-        </nav>
-      </header>
       <main id="dashboard-content" tabIndex={-1} className="min-w-0 flex-1 focus:outline-none">
         {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
         <Page />
       </main>
+      <footer className="tv-footer">
+        <label htmlFor="tv-dashboard-section">Dashboard</label>
+        <select id="tv-dashboard-section" value={activeSection} onChange={event => setActiveSection(event.target.value as typeof activeSection)}>
+          <option value="tv">TV &amp; Movies</option>
+          {sections.filter(section => section.id !== "tv").map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
+        </select>
+        <span data-build-tag="">
+          BUILD {buildTag} · {hasNativeVideoPlayer() ? "NATIVE PLAYER READY" : isNativeApp() ? "NATIVE PLUGIN MISSING" : "WEB PLAYER"}
+        </span>
+      </footer>
     </div>;
   }
 

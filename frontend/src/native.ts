@@ -5,8 +5,23 @@ import { Preferences } from "@capacitor/preferences";
 const serverKey = "homelab-server-url";
 const shellKey = "homelab-shell-url";
 
-export const isNativeApp = () => Capacitor.isNativePlatform();
-export const hasNativeVideoPlayer = () => isNativeApp() && Capacitor.isPluginAvailable("NativeVideoPlayer");
+export function isNativeApp(): boolean {
+  try {
+    return typeof Capacitor?.isNativePlatform === "function" && Capacitor.isNativePlatform() === true;
+  } catch (error) {
+    console.warn("[HomeLab startup] Native platform detection failed", error);
+    return false;
+  }
+}
+
+export function hasNativeVideoPlayer(): boolean {
+  try {
+    return isNativeApp() && typeof Capacitor?.isPluginAvailable === "function" && Capacitor.isPluginAvailable("NativeVideoPlayer") === true;
+  } catch (error) {
+    console.warn("[HomeLab startup] Native player detection failed", error);
+    return false;
+  }
+}
 
 type NativePlaybackResult = { position: number; duration: number; ended: boolean };
 export type NativeSubtitle = { name: string; language: string; content: string };
@@ -17,7 +32,8 @@ export function playNativeVideo(url: string, title: string, position = 0, subtit
 }
 
 export function normalizedServerUrl(value: string): string {
-  const url = new URL(value.trim());
+  const address = value.trim();
+  const url = new URL(address.includes("://") ? address : `http://${address}`);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
     throw new Error("Enter an HTTP or HTTPS address without a username or password.");
   }
@@ -39,12 +55,16 @@ export async function saveNativeServer(value: string): Promise<void> {
   location.replace(tvUrl(server));
 }
 
-export async function prepareNativeApp(): Promise<"browser" | "setup" | "ready" | "redirecting"> {
+export async function prepareNativeApp(report: (stage: string) => void = () => {}): Promise<"browser" | "setup" | "ready" | "redirecting"> {
   if (!isNativeApp()) return "browser";
 
   const localShell = location.hostname === "localhost";
-  if (localShell) await Preferences.set({ key: shellKey, value: `${location.origin}/` });
+  if (localShell) {
+    report("Saving the APK shell address (Preferences.set)");
+    await Preferences.set({ key: shellKey, value: `${location.origin}/` });
+  }
   const configure = new URLSearchParams(location.search).get("configure") === "1";
+  report("Reading the saved server (Preferences.get)");
   const { value } = await Preferences.get({ key: serverKey });
 
   if (localShell && (configure || !value)) return "setup";
@@ -53,6 +73,7 @@ export async function prepareNativeApp(): Promise<"browser" | "setup" | "ready" 
   const server = normalizedServerUrl(value);
   const destination = tvUrl(server);
   if (location.origin !== new URL(server).origin || location.pathname !== new URL(server).pathname || new URLSearchParams(location.search).get("tv") !== "1") {
+    report(`Navigating to ${destination}`);
     location.replace(destination);
     return "redirecting";
   }

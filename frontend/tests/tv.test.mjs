@@ -3,12 +3,37 @@ import { test } from 'node:test';
 import { nearestControl, resolveTvMode } from '../src/lib/tv.ts';
 import { installAbortSignalFallbacks } from '../src/lib/browser-compat.ts';
 import { normalizedServerUrl } from '../src/native.ts';
+import { Capacitor } from '@capacitor/core';
+import { isNativeApp, hasNativeVideoPlayer } from '../src/native.ts';
 
 test('native server addresses are normalized and reject unsafe URL forms', () => {
   assert.equal(normalizedServerUrl(' http://192.168.1.50:3000/ '), 'http://192.168.1.50:3000');
+  assert.equal(normalizedServerUrl('192.168.0.46:3000'), 'http://192.168.0.46:3000');
   assert.equal(normalizedServerUrl('https://home.example.test/dashboard/?old=1#section'), 'https://home.example.test/dashboard');
   assert.throws(() => normalizedServerUrl('ftp://192.168.1.50'), /HTTP or HTTPS/);
   assert.throws(() => normalizedServerUrl('http://user:password@192.168.1.50'), /username or password/);
+});
+
+test('native detection tolerates missing and throwing bridge methods', () => {
+  const platform = Capacitor.isNativePlatform;
+  const plugin = Capacitor.isPluginAvailable;
+  try {
+    Capacitor.isNativePlatform = undefined;
+    assert.equal(isNativeApp(), false);
+    assert.equal(hasNativeVideoPlayer(), false);
+    Capacitor.isNativePlatform = () => { throw new Error('Broken bridge'); };
+    assert.equal(isNativeApp(), false);
+    Capacitor.isNativePlatform = () => true;
+    Capacitor.isPluginAvailable = undefined;
+    assert.equal(hasNativeVideoPlayer(), false);
+    Capacitor.isPluginAvailable = () => { throw new Error('Missing headers'); };
+    assert.equal(hasNativeVideoPlayer(), false);
+    Capacitor.isPluginAvailable = name => name === 'NativeVideoPlayer';
+    assert.equal(hasNativeVideoPlayer(), true);
+  } finally {
+    Capacitor.isNativePlatform = platform;
+    Capacitor.isPluginAvailable = plugin;
+  }
 });
 
 test('Fire TV detection keeps desktop, Android phones and Silk tablets on the original UI', () => {

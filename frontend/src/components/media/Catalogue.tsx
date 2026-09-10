@@ -119,7 +119,7 @@ function CatalogueResults({ kind, query, page, setPage, choose, showDetails, ret
   </>;
 }
 
-function TitleDetails({ title, close, find, simple }: { title: Title; close: () => void; find: (intent: SearchIntent, resumeAt?: number) => void; simple: boolean }) {
+export function TitleDetails({ title, close, find, simple, initialProgress }: { title: Title; close: () => void; find: (intent: SearchIntent, resumeAt?: number) => void; simple: boolean; initialProgress?: ContinueWatchingMovie }) {
   const tvMode = useTvMode();
   const tvDetails = simple && tvMode;
   const panel = useRef<HTMLDialogElement>(null);
@@ -127,7 +127,9 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
   const [error, setError] = useState("");
   const [season, setSeason] = useState<number | undefined>();
   const [failedPoster, setFailedPoster] = useState<string | null>(null);
-  const [progress, setProgress] = useState<ContinueWatchingMovie | null | undefined>(tvDetails && title.kind === "movie" ? undefined : null);
+  const [progress, setProgress] = useState<ContinueWatchingMovie | null | undefined>(initialProgress ?? (tvDetails && title.kind === "movie" ? undefined : null));
+  const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState("");
   const poster = data?.poster || title.poster;
   useEffect(() => {
     const dialog = panel.current;
@@ -148,13 +150,24 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
     return () => controller.abort();
   }, [title.id, title.kind]);
   useEffect(() => {
-    if (!tvDetails || title.kind !== "movie") return;
+    if (!tvDetails || title.kind !== "movie" || initialProgress) return;
     const controller = new AbortController();
     void mediaApi<{ movies: ContinueWatchingMovie[] }>("continue-watching", AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]))
       .then(result => { if (!controller.signal.aborted) setProgress(result.movies.find(movie => movie.movieId === title.id) ?? null); })
       .catch(() => { if (!controller.signal.aborted) setProgress(null); });
     return () => controller.abort();
-  }, [tvDetails, title.id, title.kind]);
+  }, [initialProgress, tvDetails, title.id, title.kind]);
+  const restart = async (details: Details) => {
+    setRestarting(true);
+    setRestartError("");
+    try {
+      await mediaApi("continue-watching/remove", AbortSignal.timeout(10_000), { movieId: details.id });
+      find(sourceIntent(details), 0);
+    } catch (cause) {
+      setRestartError(cause instanceof Error ? cause.message : "Could not restart this movie.");
+      setRestarting(false);
+    }
+  };
   return <dialog ref={panel} aria-labelledby="catalogue-details-title" onCancel={e => { e.preventDefault(); close(); }} onClick={e => {
     if (e.target !== e.currentTarget) return;
     const bounds = e.currentTarget.getBoundingClientRect();
@@ -165,9 +178,10 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
     <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
     {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <div className="flex flex-wrap gap-3">
-      <Button disabled={tvDetails && progress === undefined} className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data), progress?.playbackPositionSeconds ?? 0)}>{tvDetails && progress === undefined ? "Checking progress…" : tvDetails ? "Watch" : simple ? "Watch now" : "Find sources"}</Button>
-      {tvDetails && progress && <Button variant="outline" onClick={() => find(sourceIntent(data), 0)}>Watch from beginning</Button>}
+      <Button disabled={restarting || (tvDetails && progress === undefined)} className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data), progress?.playbackPositionSeconds ?? 0)}>{tvDetails && progress === undefined ? "Checking progress…" : tvDetails ? progress ? "Continue" : "Watch" : simple ? "Watch now" : "Find sources"}</Button>
+      {tvDetails && progress && <Button variant="outline" disabled={restarting} onClick={() => { void restart(data); }}>{restarting ? "Starting…" : "Watch from beginning"}</Button>}
       {tvDetails && <Button variant="ghost" onClick={close}>Close</Button>}
+      {restartError && <p role="alert" className="w-full text-sm text-orange-400">{restartError}</p>}
     </div> : <div className="space-y-4">
       <label className="flex flex-wrap items-center gap-3 text-sm">Season<select className={field} value={season ?? ""} onChange={e => setSeason(Number(e.target.value))}>{data.seasons.map(s => <option key={s.number} value={s.number}>{s.name} ({s.episodes ?? "?"} episodes)</option>)}</select></label>
       {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} simple={simple} /> : <p>No season information is available.</p>}

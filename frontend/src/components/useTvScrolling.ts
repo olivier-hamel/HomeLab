@@ -35,13 +35,13 @@ export default function useTvScrolling(enabled: boolean) {
       frame = 0;
       if (!pointer || document.hidden || document.fullscreenElement) return;
       const target = document.elementFromPoint(pointer.x, pointer.y);
-      if (target?.closest(".tv-header, [data-tv-scroll-controls], input, select, textarea, video, [contenteditable='true']")) return;
+      if (target?.closest(".tv-footer, [data-tv-scroll-controls], input, select, textarea, video, [contenteditable='true']")) return;
       const container = scrollContainer(target);
       if (!container) return;
       const isPage = container === document.scrollingElement;
       const bounds = container.getBoundingClientRect();
       if (!isPage && (pointer.x < bounds.left || pointer.x > bounds.right)) return;
-      const top = isPage ? document.querySelector(".tv-header")?.getBoundingClientRect().bottom ?? 0 : Math.max(0, bounds.top);
+      const top = isPage ? 0 : Math.max(0, bounds.top);
       const bottom = isPage ? window.innerHeight : Math.min(window.innerHeight, bounds.bottom);
       const edge = Math.min(72, (bottom - top) / 4);
       const direction = pointer.y >= bottom - edge && pointer.y <= bottom ? 1 : pointer.y >= top && pointer.y < top + edge ? -1 : 0;

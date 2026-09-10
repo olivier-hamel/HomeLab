@@ -149,3 +149,47 @@ adb install -r artifacts\HomeLab-TV-debug.apk
 If using the project-local SDK, replace `adb` with
 `.tools\android-sdk\platform-tools\adb.exe`. The Fire TV and computer must be
 on a network that permits the ADB connection.
+
+### Remote page startup diagnostics (native-4)
+
+The APK setup screen and hosted frontend both identify themselves as
+`BUILD 2026.09.10-native-4`; the Android package is version code `3`, version
+name `1.1.0-native-4`. Rebuild/redeploy the hosted frontend as well as the APK
+to get the new diagnostics on both origins.
+
+The native-3 black screen was reproduced on the AFTKA WebView (Chrome 138).
+Its remote HTML and JavaScript loaded, but `prepareNativeApp()` rejected with
+`"Preferences" plugin is not implemented on android`. Capacitor's native
+callbacks also reported missing `fromNative` and `triggerEvent` functions.
+In the installed Capacitor 6.2.2 Android source, `Bridge.loadWebView()` registers
+document-start injection only for the local app origin, then disables the HTML
+injector. An allowed remote navigation therefore receives no bridge script.
+
+`RemoteBridgeWebViewClient` registers the bridge at document start for the
+saved server's exact origin before navigation. It exports App, Preferences,
+NativeVideoPlayer and Capacitor's built-in plugins. Keep that export list in
+sync if another native plugin is added. Older WebViews retain Capacitor's
+HTML injection fallback. The normal Capacitor navigation and request handlers
+are preserved.
+
+The HTML now displays a static loading build before modules run. An independent
+error panel captures JavaScript, stylesheet/module loading, promise rejection,
+bootstrap and React render failures. A 15-second watchdog shows the last
+startup stage if a bridge call or bundle load stalls. Retry reloads the page.
+If even the loading text is absent, inspect native navigation and HTTP errors.
+
+For a bounded capture after reproducing the problem, from the repository root:
+
+```powershell
+$adb = '.\.tools\android-sdk\platform-tools\adb.exe'
+# The device was connected at this address during the native-4 investigation.
+& $adb connect 192.168.0.92:5555
+& $adb -s 192.168.0.92:5555 shell am start -n ca.olivierhamel.homelab/.MainActivity
+& $adb -s 192.168.0.92:5555 logcat -d -t 3000 'HomeLabWebView:V' 'Capacitor:V' 'Capacitor/Console:V' 'chromium:V' 'AndroidRuntime:E' '*:S' > artifacts/fire-tv-startup.log
+& $adb -s 192.168.0.92:5555 shell dumpsys package ca.olivierhamel.homelab | Select-String 'versionCode|versionName'
+```
+
+`HomeLabWebView` logs the APK version, actual WebView user agent, bridge
+registration, page loads, HTTP/load errors and plugin headers. Use the Fire
+TV's current IP if it changes; `192.168.92.255:5555` timed out during this
+investigation.

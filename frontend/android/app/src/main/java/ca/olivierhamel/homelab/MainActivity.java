@@ -8,5 +8,6 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeVideoPlayerPlugin.class);
         super.onCreate(savedInstanceState);
+        if (bridge != null) bridge.setWebViewClient(new RemoteBridgeWebViewClient(bridge));
     }
 }

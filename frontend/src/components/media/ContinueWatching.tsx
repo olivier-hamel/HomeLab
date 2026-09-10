@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Film, Play, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Film } from "lucide-react";
 import { Button } from "../ui/button";
 import { mediaApi, type ContinueWatchingMovie, type SearchIntent } from "../../lib/media";
 import { useTvMode } from "../../lib/tv";
+import { TitleDetails } from "./Catalogue";
 
 function clock(seconds: number) {
   const minutes = Math.max(0, Math.floor(seconds / 60));
@@ -15,6 +16,7 @@ export default function ContinueWatching({ onResume }: { onResume: (intent: Sear
   const row = useRef<HTMLDivElement>(null);
   const [movies, setMovies] = useState<ContinueWatchingMovie[]>([]);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<ContinueWatchingMovie | null>(null);
   const load = () => {
     const controller = new AbortController();
     void mediaApi<{ movies: ContinueWatchingMovie[] }>("continue-watching", AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]))
@@ -28,13 +30,6 @@ export default function ContinueWatching({ onResume }: { onResume: (intent: Sear
     window.addEventListener("homelab:continue-watching-changed", refresh);
     return () => { active.abort(); window.removeEventListener("homelab:continue-watching-changed", refresh); };
   }, []);
-  const remove = (movieId: number) => {
-    setMovies(current => current.filter(movie => movie.movieId !== movieId));
-    void mediaApi("continue-watching/remove", AbortSignal.timeout(10_000), { movieId }).catch(e => {
-      setError(e instanceof Error ? e.message : "Could not remove this movie.");
-      load();
-    });
-  };
   if (!movies.length && !error) return null;
   return <section aria-labelledby="continue-watching-title" className="continue-watching space-y-3">
     <div className="flex items-center justify-between gap-3">
@@ -45,20 +40,18 @@ export default function ContinueWatching({ onResume }: { onResume: (intent: Sear
       </div>}
     </div>
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}
+    {selected && <TitleDetails title={{ id: selected.movieId, kind: "movie", title: selected.title, year: selected.year, overview: "", poster: selected.poster }} initialProgress={selected} simple close={() => setSelected(null)} find={(intent, position) => { setSelected(null); onResume(intent, position ?? 0); }} />}
     {!!movies.length && <div ref={row} className="continue-watching-row" aria-label="In-progress movies">
       {movies.map(movie => {
         const percent = Math.max(0, Math.min(100, movie.playbackPositionSeconds / movie.durationSeconds * 100));
-        const intent: SearchIntent = { query: movie.query, label: movie.title, context: movie.context, target: { kind: "movie", tmdbId: movie.movieId }, movie: { id: movie.movieId, title: movie.title, year: movie.year, poster: movie.poster } };
         return <article key={movie.movieId} className="continue-card">
-          <button type="button" className="continue-card-main" aria-label={`Resume ${movie.title} at ${clock(movie.playbackPositionSeconds)}`} onClick={() => onResume(intent, movie.playbackPositionSeconds)}>
+          <button type="button" className="continue-card-main" aria-label={`Details for ${movie.title}`} onClick={() => setSelected(movie)}>
             <span className="continue-poster">{movie.poster ? <img src={movie.poster} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <Film aria-hidden="true" />}
-              <span className="continue-play"><Play className="fill-current" aria-hidden="true" />Resume</span>
               <span className="continue-progress" aria-hidden="true"><span style={{ width: `${percent}%` }} /></span>
             </span>
             <strong>{movie.title}</strong>
             <span>{Math.round(percent)}% · {clock(movie.playbackPositionSeconds)} of {clock(movie.durationSeconds)}</span>
           </button>
-          <button type="button" className="continue-remove" aria-label={`Remove ${movie.title} from Continue Watching`} onClick={() => remove(movie.movieId)}><X aria-hidden="true" /><span>Remove</span></button>
         </article>;
       })}
     </div>}

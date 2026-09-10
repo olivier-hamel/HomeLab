@@ -17,6 +17,7 @@ export default function NativeServerSetup() {
     <form onSubmit={submit} className="w-full max-w-2xl space-y-6 rounded-2xl border border-neutral-700 bg-neutral-900 p-8">
       <div className="space-y-2">
         <p className="text-sm tracking-[0.2em] text-orange-400">HOMELAB TV</p>
+        <p className="text-sm text-orange-300">BUILD 2026.09.10-native-4</p>
         <h1 className="text-3xl font-semibold">Connect to your server</h1>
         <p className="leading-relaxed text-neutral-300">Enter the same dashboard address that works in a browser on your home network or tailnet.</p>
       </div>
