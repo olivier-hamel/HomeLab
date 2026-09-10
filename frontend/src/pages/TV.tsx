@@ -40,6 +40,12 @@ export default function TV() {
     void mediaApi<NonNullable<typeof config>>("status", AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)])).then(c => { if (!controller.signal.aborted) { setConfig(c); setError(""); if (!c.tmdb) setMode("sources"); } }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [retry]);
+  useEffect(() => {
+    if (!tvMode || !watchIntent) return;
+    document.documentElement.dataset.tvWatching = "true";
+    window.scrollTo({ top: 0, behavior: "auto" });
+    return () => { delete document.documentElement.dataset.tvWatching; };
+  }, [tvMode, watchIntent]);
   const find = (value: SearchIntent, resumeAt = 0) => {
     if (advanced) { setIntent(value); setMode("sources"); }
     else setWatchIntent({ intent: value, resumeAt });

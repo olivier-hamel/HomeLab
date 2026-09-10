@@ -206,6 +206,11 @@ html[data-tv-mode="true"] {
 [data-tv-mode="true"] .tv-footer select { border: 1px solid #525252; border-radius: .375rem; background: #171717; color: #d4d4d4; }
 [data-tv-mode="true"] .tv-footer [data-build-tag] { border: 1px solid #c2410c99; border-radius: .25rem; padding: .5rem .75rem; background: #431407; color: #fed7aa; font-size: .85rem; font-weight: 600; letter-spacing: .025em; }
 html[data-tv-mode="true"][data-tv-profile-chooser="true"] .tv-footer { display: none; }
+html[data-tv-mode="true"][data-tv-watching="true"],
+html[data-tv-mode="true"][data-tv-watching="true"] body { height: 100%; overflow: hidden; }
+html[data-tv-mode="true"][data-tv-watching="true"] .tv-shell { height: 100vh; height: 100svh; overflow: hidden; }
+html[data-tv-mode="true"][data-tv-watching="true"] #dashboard-content { overflow: hidden; }
+html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
 [data-tv-mode="true"] #dashboard-content { scroll-padding: 1.5rem; }
 [data-tv-mode="true"] .tv-media-page { max-width: 1800px; padding: 1.5rem 4vw 2rem; }
 [data-tv-mode="true"] .tv-media-page > .sr-only + * { margin-top: 0; }
@@ -260,10 +265,11 @@ html[data-tv-mode="true"][data-tv-profile-chooser="true"] .tv-footer { display: 
 [data-tv-mode="true"] .simple-media > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
 [data-tv-mode="true"] .simple-card-action svg { width: 1.2rem; height: 1.2rem; }
 [data-tv-mode="true"] .continue-watching-row { gap: 1.4rem; padding: .5rem .5rem 1rem; scroll-snap-type: none; }
-[data-tv-mode="true"] .continue-card { --continue-card-width: clamp(11rem, 20vw, 15rem); }
+[data-tv-mode="true"] .continue-card { --continue-card-width: clamp(7rem, 10vw, 8rem); }
 [data-tv-mode="true"] .continue-card-main > strong { font-size: 1rem; }
 [data-tv-mode="true"] .continue-card-main > span:last-child { font-size: .8rem; }
 [data-tv-mode="true"] *, [data-tv-mode="true"] *::before, [data-tv-mode="true"] *::after { animation: none !important; transition: none !important; }
+[data-tv-mode="true"] .animate-spin { animation: spin 1s linear infinite !important; }
 
 @media (min-width: 1800px) {
   html[data-tv-mode="true"] { font-size: 22px; }
