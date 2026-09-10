@@ -1,6 +1,6 @@
 # TV & Movies
 
-The optional TV page browses TMDB metadata, searches existing Prowlarr indexers,
+The optional TV page browses TMDB metadata, displays IMDb ratings through OMDb, searches existing Prowlarr indexers,
 selects TorrServer files, and plays same-origin video. Other dashboard sections
 still show sample data. Browsing the catalogue never starts a torrent; selecting
 a movie in Simple mode starts automatic source selection and playback.
@@ -11,7 +11,7 @@ Simple mode is the default. The **Advanced mode** switch at the top remembers
 the choice in this browser and restores the existing manual source, file,
 subtitle and diagnostic controls. Changing modes stops the current player.
 
-In Simple mode, click a movie poster to watch, or open a TV show and choose an
+In Simple mode, click a movie poster to watch, use its info button to see details and an IMDb rating when `OMDB_API_KEY` is configured, or open a TV show and choose an
 episode. The app searches the indexers, waits for Gemini's ranking, and starts
 the best confirmed title match. When Gemini is unavailable it uses the existing
 basic ranking and indicates that fallback. Uncertain and different titles are

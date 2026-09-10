@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Film, Info, Play, Search, X } from "lucide-react";
+import { Film, Info, Play, Search, Star, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { mediaApi, sourceIntent, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
@@ -33,7 +33,7 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [kind, text, suggestionFocus]);
   const choose = (title: Title) => {
-    if (simple && title.kind === "movie") find(sourceIntent({ ...title, imdbId: null, tvdbId: null, seasons: [] }));
+    if (simple && title.kind === "movie") find(sourceIntent({ ...title, imdbId: null, tvdbId: null, rating: null, seasons: [] }));
     else setChosen(title);
   };
   return <div className="space-y-5">
@@ -146,7 +146,7 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
     const bounds = e.currentTarget.getBoundingClientRect();
     if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) close();
   }} className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl space-y-4 overflow-y-auto overscroll-contain rounded-lg border border-orange-500/40 bg-neutral-900 p-4 text-neutral-200 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm sm:p-6">
-    <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 id="catalogue-details-title" className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2></div><Button size="icon" variant="ghost" className="shrink-0" aria-label="Close details" onClick={close}><X /></Button></div>
+    <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 id="catalogue-details-title" className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2>{data?.kind === "movie" && data.rating !== null && <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-300" aria-label={`IMDb rating ${data.rating} out of 10`}><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" /><strong className="text-white">{data.rating.toFixed(1)}</strong><span className="text-neutral-500">/ 10 IMDb</span></p>}</div><Button size="icon" variant="ghost" className="shrink-0" aria-label="Close details" onClick={close}><X /></Button></div>
     <div className="grid items-start gap-6 sm:grid-cols-[minmax(0,1fr)_10rem]">
     <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>

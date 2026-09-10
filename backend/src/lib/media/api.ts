@@ -14,6 +14,7 @@ import { FFmpeg } from "./ffmpeg.ts";
 import { choosePlayback, inspectPlayback, type MediaProbe, type PlaybackOption } from "./playback-plan.ts";
 import { ProgressStore, WatchHistoryStore, type ContinueWatchingRecord, type WatchHistoryRecord } from "./progress-store.ts";
 import { MediaRecommendations } from "./recommendations.ts";
+import { Omdb } from "./omdb.ts";
 
 type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe };
 type Share = { owner: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
@@ -45,6 +46,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
   const progress = new ProgressStore();
   const history = new WatchHistoryStore();
   const recommendations = new MediaRecommendations(fetcher, tmdb);
+  const omdb = new Omdb(fetcher);
   const sourceSearches = new BoundedCache<{ owner: string; query: string; context?: SearchContext; target: SourceTarget; sources: Source[] }>(40, 2 * 60_000);
   const subtitleChoices = new BoundedCache<{ owner: string; playback: string; file: SubdlFile }>(2000, 10 * 60_000);
   const playbacks = new BoundedCache<Playback>(128, 8 * 60 * 60_000);
@@ -150,7 +152,11 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
             return json({ titles: result.titles.slice(0, 6) });
           }
           if (path[0] === "catalogue") return json(await catalogue.browse(kind(url.searchParams.get("kind")), query(url.searchParams.get("q") ?? "", true), integer(url.searchParams.get("page") ?? "1", 1, 500), request.signal));
-          if (path[0] === "details") return json(await tmdb.details(kind(path[1]), integer(path[2]), request.signal));
+          if (path[0] === "details") {
+            const details = await tmdb.details(kind(path[1]), integer(path[2]), request.signal);
+            const rating = details.kind === "movie" ? await omdb.rating(details.imdbId, request.signal).catch(() => null) : null;
+            return json({ ...details, rating });
+          }
           if (path[0] === "season") return json(await tmdb.season(integer(path[1]), integer(path[2], 0, 1000), request.signal));
           if (path[0] === "playback") {
             rate(`poll:${owner}`, 45);

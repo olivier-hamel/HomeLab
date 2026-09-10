@@ -1,6 +1,6 @@
 export type Kind = "movie" | "tv";
 export type Title = { id: number; kind: Kind; title: string; year: string; overview: string; poster: string | null };
-export type Details = Title & { imdbId: string | null; tvdbId: number | null; seasons: { number: number; name: string; episodes: number | null }[] };
+export type Details = Title & { imdbId: string | null; tvdbId: number | null; rating: number | null; seasons: { number: number; name: string; episodes: number | null }[] };
 export type SearchContext = { kind: Kind; imdbId?: string; tvdbId?: number; tmdbId?: number; season?: number; episode?: number };
 export type MovieSnapshot = { id: number; title: string; year: string; poster: string | null };
 export type MediaSnapshot = MovieSnapshot & { kind: Kind };
