@@ -13,6 +13,7 @@ import { Subdl, type SubdlFile } from "./subdl.ts";
 import { FFmpeg } from "./ffmpeg.ts";
 import { choosePlayback, inspectPlayback, type MediaProbe, type PlaybackOption } from "./playback-plan.ts";
 import { ProgressStore, WatchHistoryStore, type ContinueWatchingRecord, type WatchHistoryRecord } from "./progress-store.ts";
+import { MediaRecommendations } from "./recommendations.ts";
 
 type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe };
 type Share = { owner: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
@@ -43,6 +44,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
   const welcome = new Welcome(fetcher);
   const progress = new ProgressStore();
   const history = new WatchHistoryStore();
+  const recommendations = new MediaRecommendations(fetcher, tmdb);
   const sourceSearches = new BoundedCache<{ owner: string; query: string; context?: SearchContext; target: SourceTarget; sources: Source[] }>(40, 2 * 60_000);
   const subtitleChoices = new BoundedCache<{ owner: string; playback: string; file: SubdlFile }>(2000, 10 * 60_000);
   const playbacks = new BoundedCache<Playback>(128, 8 * 60 * 60_000);
@@ -87,7 +89,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         rate("session-start", 60);
         const { cookie } = startSession(request);
         // Configuration states are independent; connectivity is checked explicitly below.
-        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
+        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), recommendations: ProgressStore.configured() && !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
       }
       if (path[0] === "external" && ["GET", "HEAD"].includes(request.method)) {
         const share = shares.get(path[1]);
@@ -119,6 +121,10 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
           if (path[0] === "continue-watching" && path.length === 1) {
             rate(`progress-list:${owner}`, 30);
             return json({ movies: await progress.list(profile) });
+          }
+          if (path[0] === "recommendations" && path.length === 1) {
+            rate(`media-recommendations:${owner}`, 12);
+            return json(await recommendations.get(await history.list(profile, 25), request.signal));
           }
           if (path[0] === "welcome" && path.length === 1) return json(await welcome.get(request.signal));
           if (path[0] === "subtitles" && path[1] === "provider" && path.length === 2) return json({ configured: !!process.env.SUBDL_API_KEY });

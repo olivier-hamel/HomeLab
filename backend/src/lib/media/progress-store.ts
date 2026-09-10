@@ -126,6 +126,11 @@ export class ProgressStore {
 }
 
 export class WatchHistoryStore {
+  async list(profileId?: string, limit = 25): Promise<WatchHistoryRecord[]> {
+    const rows = await (await historyCollection()).find(owner(profileId), { projection: { _id: 0, userId: 0, profileId: 0, watchedAt: 0 } }).sort({ watchedAt: -1 }).limit(limit).toArray();
+    return rows;
+  }
+
   async add(record: WatchHistoryRecord, profileId?: string) {
     const key = { ...owner(profileId), playbackId: record.playbackId };
     const result = await (await historyCollection()).updateOne(key, { $setOnInsert: { ...key, ...record, watchedAt: new Date() } }, { upsert: true });

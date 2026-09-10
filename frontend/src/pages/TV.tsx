@@ -19,7 +19,7 @@ export default function TV() {
   const [choosingProfile, setChoosingProfile] = useState(() => loadMediaProfile() === null);
   const [advanced, setAdvanced] = useState(() => { try { return localStorage.getItem("homelab:advanced-media") === "true"; } catch { return false; } });
   const [watchIntent, setWatchIntent] = useState<{ intent: SearchIntent; resumeAt: number } | null>(null);
-  const [config, setConfig] = useState<{ tmdb: boolean; prowlarr: boolean; torrserver: boolean; continueWatching?: boolean } | null>(null);
+  const [config, setConfig] = useState<{ tmdb: boolean; prowlarr: boolean; torrserver: boolean; continueWatching?: boolean; recommendations?: boolean } | null>(null);
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"catalogue" | "sources">("catalogue");
   const [intent, setIntent] = useState<SearchIntent>({ query: "" });
@@ -66,13 +66,13 @@ export default function TV() {
       {!advanced ? <>
         <Welcome />
         <div>
-          {config.tmdb && config.prowlarr && config.torrserver ? <Catalogue find={find} simple continueWatching={continueWatching} /> : <div className="space-y-3 rounded-xl border border-neutral-700 bg-neutral-900 p-6"><h2 className="text-lg text-white">Movie night needs a little setup</h2><p className="text-sm text-neutral-400">Turn on Advanced mode to connect the catalogue and playback services.</p></div>}
+          {config.tmdb && config.prowlarr && config.torrserver ? <Catalogue find={find} simple continueWatching={continueWatching} recommendations={config.recommendations} /> : <div className="space-y-3 rounded-xl border border-neutral-700 bg-neutral-900 p-6"><h2 className="text-lg text-white">Movie night needs a little setup</h2><p className="text-sm text-neutral-400">Turn on Advanced mode to connect the catalogue and playback services.</p></div>}
         </div>
       </> : <>
       {!tvMode && <><div className="flex items-center gap-2 text-xs text-neutral-400"><Radio className="h-4 w-4 text-orange-400" />LAN / tailnet access</div>{connections}</>}
       {chosen && <Playback key={chosen.key} source={chosen.source} search={chosen.search} close={() => setChosen(null)} />}
       <div className="flex gap-2 border-b border-neutral-700 pb-3" role="group" aria-label="Media mode"><Button data-tv-initial-focus={mode === "catalogue" ? "" : undefined} data-tv-back={tvMode && mode === "sources" && !chosen ? "" : undefined} aria-pressed={mode === "catalogue"} variant="ghost" className={mode === "catalogue" ? "bg-orange-500/15 text-orange-400" : "text-neutral-400"} onClick={() => { setMode("catalogue"); setChosen(null); }}><Clapperboard />Catalogue</Button><Button aria-pressed={mode === "sources"} variant="ghost" className={mode === "sources" ? "bg-orange-500/15 text-orange-400" : "text-neutral-400"} onClick={() => { setMode("sources"); setChosen(null); }}><Search />Source search</Button></div>
-      {mode === "catalogue" ? config.tmdb ? <Catalogue find={find} continueWatching={continueWatching} /> : <div className="space-y-3 rounded border border-neutral-700 p-6"><h2 className="text-white">Connect the catalogue</h2><p className="text-sm text-neutral-400">Set TMDB_READ_ACCESS_TOKEN in backend/.env to browse titles, posters and descriptions. Direct source search works independently.</p><Button variant="outline" onClick={() => setMode("sources")}>Search sources</Button></div> : <>
+      {mode === "catalogue" ? config.tmdb ? <Catalogue find={find} continueWatching={continueWatching} recommendations={config.recommendations} /> : <div className="space-y-3 rounded border border-neutral-700 p-6"><h2 className="text-white">Connect the catalogue</h2><p className="text-sm text-neutral-400">Set TMDB_READ_ACCESS_TOKEN in backend/.env to browse titles, posters and descriptions. Direct source search works independently.</p><Button variant="outline" onClick={() => setMode("sources")}>Search sources</Button></div> : <>
         {!config.prowlarr && <p className="rounded border border-orange-500/30 p-4 text-sm text-neutral-400">Set PROWLARR_BASE_URL and PROWLARR_API_KEY in backend/.env to search indexers. Manual magnets remain available when TorrServer is configured.</p>}
         {!config.torrserver && <p className="rounded border border-orange-500/30 p-4 text-sm text-neutral-400">Set TORRSERVER_BASE_URL in backend/.env to load files and play sources.</p>}
         <Sources key={JSON.stringify(intent)} intent={intent} disabled={!config.torrserver} reject={source => { if (chosen && typeof chosen.source !== "string" && sourceFingerprint(chosen.source) === sourceFingerprint(source)) setChosen(null); }} choose={(source, search) => { setChosen({ source, search, key: Date.now() }); (tvMode ? document.scrollingElement : document.getElementById("dashboard-content"))?.scrollTo({ top: 0, behavior: tvMode ? "auto" : "smooth" }); }} />

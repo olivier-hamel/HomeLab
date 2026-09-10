@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Film, Play, Search, X } from "lucide-react";
+import { Film, Info, Play, Search, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { mediaApi, sourceIntent, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
@@ -8,7 +8,8 @@ import TvScrollControls from "../TvScrollControls";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 type CatalogueResponse = { titles: Title[]; pages: number; originalQuery?: string; correctedQuery?: string; correctionProvider?: "gemini" };
-export default function Catalogue({ find, simple = false, continueWatching }: { find: (intent: SearchIntent) => void; simple?: boolean; continueWatching?: ReactNode }) {
+type RecommendationResponse = { provider: "gemini"; basedOn: number; titles: Title[] };
+export default function Catalogue({ find, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
   const [kind, setKind] = useState<Kind>("movie");
   const [text, setText] = useState("");
   const [q, setQuery] = useState("");
@@ -52,15 +53,48 @@ export default function Catalogue({ find, simple = false, continueWatching }: { 
       <Button className="h-11 bg-orange-600 text-white hover:bg-orange-700"><Search />Search</Button>
     </form>
     {!q && continueWatching}
+    {!q && recommendations && <RecommendedTitles choose={choose} showDetails={setChosen} simple={simple} />}
     <div className="flex flex-wrap items-start justify-between gap-3">
       <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? kind === "movie" ? "Popular movies" : "Popular TV shows" : "Popular on TMDB"}{!simple && " · Metadata only."}</p>
     </div>
     {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={intent => { setChosen(null); find(intent); }} simple={simple} />}
-    <CatalogueResults key={`${kind}/${q}/${page}/${retry}`} kind={kind} query={q} page={page} setPage={setPage} choose={choose} retry={() => setRetry(r => r + 1)} simple={simple} />
+    <CatalogueResults key={`${kind}/${q}/${page}/${retry}`} kind={kind} query={q} page={page} setPage={setPage} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
   </div>;
 }
 
-function CatalogueResults({ kind, query, page, setPage, choose, retry, simple }: { kind: Kind; query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; retry: () => void; simple: boolean }) {
+function RecommendedTitles({ choose, showDetails, simple }: { choose: (title: Title) => void; showDetails: (title: Title) => void; simple: boolean }) {
+  const [result, setResult] = useState<RecommendationResponse | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void mediaApi<RecommendationResponse>("recommendations", AbortSignal.any([controller.signal, AbortSignal.timeout(45_000)]))
+      .then(value => { if (!controller.signal.aborted) setResult(value); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Recommendations are unavailable."); });
+    return () => controller.abort();
+  }, [retry]);
+  if (result && !result.titles.length && !error) return null;
+  return <section aria-labelledby="recommended-title" className="space-y-3 py-4">
+    <div><h2 id="recommended-title" className="text-xl font-semibold text-white">Recommended for you</h2><p className="mt-1 text-xs text-neutral-400">{result?.basedOn ? `Picked from your ${result.basedOn} most recent watches.` : "Picking from your recent watches…"}</p></div>
+    {error ? <div role="alert" className="flex flex-wrap items-center gap-3 rounded border border-orange-500/40 p-4 text-sm"><span>{error}</span><Button variant="outline" onClick={() => { setError(""); setResult(null); setRetry(value => value + 1); }}>Retry recommendations</Button></div>
+      : !result ? <p role="status" className="py-5 text-sm text-neutral-400">Finding recommendations…</p>
+      : <TitleGrid titles={result.titles} choose={choose} showDetails={showDetails} simple={simple} />}
+  </section>;
+}
+
+function TitleGrid({ titles, choose, showDetails, simple }: { titles: Title[]; choose: (title: Title) => void; showDetails: (title: Title) => void; simple: boolean }) {
+  return <div className="tv-catalogue-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+    {titles.map(title => <div key={`${title.kind}/${title.id}`} className={`title-card group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 transition-colors hover:border-orange-500 focus-within:border-orange-500 focus-within:outline focus-within:outline-2 focus-within:outline-orange-500 ${simple ? "simple-title-card" : ""}`}>
+      <button className="block w-full text-left focus-visible:outline-none" onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" ? "Watch" : "Choose episode of" : "Details for"} ${title.title}`}>
+        <div className="relative flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}{simple && <span className="simple-card-action"><Play className="h-5 w-5 fill-current" />{title.kind === "movie" ? "Watch now" : "Choose episode"}</span>}</div>
+        <div className="space-y-2 p-3"><p className="line-clamp-2 text-sm font-semibold text-white group-hover:text-orange-400">{title.title}</p><p className="text-xs text-neutral-400">{title.year || "Year unknown"} · {title.kind === "movie" ? "Movie" : "TV"}</p>{!simple && <><p className="line-clamp-2 text-xs leading-relaxed text-neutral-500">{title.overview || "No overview available."}</p><span className="block text-xs text-orange-400">View details</span></>}</div>
+      </button>
+      {title.kind === "movie" && <button type="button" className="catalogue-info-button absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-black/75 text-white shadow-md backdrop-blur-sm transition-colors hover:border-orange-400 hover:bg-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400" onClick={() => showDetails(title)} aria-label={`More information about ${title.title}`} title={`More information about ${title.title}`}><Info aria-hidden="true" className="h-4 w-4" /></button>}
+    </div>)}
+  </div>;
+}
+
+function CatalogueResults({ kind, query, page, setPage, choose, showDetails, retry, simple }: { kind: Kind; query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; showDetails: (t: Title) => void; retry: () => void; simple: boolean }) {
   const [result, setResult] = useState<CatalogueResponse | null>(null);
   const [error, setError] = useState("");
   const [cancelled, setCancelled] = useState(false);
@@ -76,12 +110,7 @@ function CatalogueResults({ kind, query, page, setPage, choose, retry, simple }:
   return <>
     {result.correctedQuery && <p role="status" className="rounded border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-neutral-200">Showing likely matches for <strong className="text-white">{result.correctedQuery}</strong>. Results for your original search are included too.</p>}
     {!result.titles.length && <p className="py-10 text-neutral-400">No titles found. Try a different name.</p>}
-    <div className="tv-catalogue-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-      {result.titles.map(title => <button key={title.id} className={`group overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-left transition-colors hover:border-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500 ${simple ? "simple-title-card" : ""}`} onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" ? "Watch" : "Choose episode of" : "Details for"} ${title.title}`}>
-        <div className="relative flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}{simple && <span className="simple-card-action"><Play className="h-5 w-5 fill-current" />{title.kind === "movie" ? "Watch now" : "Choose episode"}</span>}</div>
-        <div className="space-y-2 p-3"><p className="line-clamp-2 text-sm font-semibold text-white group-hover:text-orange-400">{title.title}</p><p className="text-xs text-neutral-400">{title.year || "Year unknown"} · {title.kind === "movie" ? "Movie" : "TV"}</p>{!simple && <><p className="line-clamp-2 text-xs leading-relaxed text-neutral-500">{title.overview || "No overview available."}</p><span className="block text-xs text-orange-400">View details</span></>}</div>
-      </button>)}
-    </div>
+    <TitleGrid titles={result.titles} choose={choose} showDetails={showDetails} simple={simple} />
     <div className="flex items-center justify-center gap-4"><Button variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-xs text-neutral-400">Page {page} / {result.pages || 1}</span><Button variant="outline" disabled={page >= result.pages} onClick={() => setPage(page + 1)}>Next</Button></div>
   </>;
 }
@@ -121,7 +150,7 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
     <div className="grid items-start gap-6 sm:grid-cols-[minmax(0,1fr)_10rem]">
     <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
-    {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data))}>Find sources</Button> : <div className="space-y-4">
+    {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data))}>{simple ? "Watch now" : "Find sources"}</Button> : <div className="space-y-4">
       <label className="flex flex-wrap items-center gap-3 text-sm">Season<select className={field} value={season ?? ""} onChange={e => setSeason(Number(e.target.value))}>{data.seasons.map(s => <option key={s.number} value={s.number}>{s.name} ({s.episodes ?? "?"} episodes)</option>)}</select></label>
       {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} simple={simple} /> : <p>No season information is available.</p>}
     </div>}

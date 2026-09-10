@@ -45,12 +45,20 @@ Movies are automatically removed at 95% watched or within two minutes of the
 end. `MEDIA_USER_ID` and `MEDIA_PROFILE_ID` identify the shared household
 profile, so browsers and Fire TV devices connected to this backend share history.
 
-MongoDB also keeps an append-only `watch_history` collection for future use.
+MongoDB also keeps an append-only `watch_history` collection.
 A row is added when catalogue playback actually starts, for both movies and TV
 episodes. Each row includes its user/profile owner, title identifiers and
 artwork, season/episode when applicable, selected file, query, and `watchedAt`
 timestamp. Restarting or buffering the same playback session does not duplicate
 the row; choosing the title again creates a new history event.
+
+When MongoDB, TMDB, and Gemini are configured, **Recommended for you** appears
+between Continue Watching and the popular catalogue. The backend sends Gemini
+only the metadata from the profile's 25 latest watch-history rows (never file
+paths, torrent links, or credentials), asks for a mix of movies and TV shows,
+then resolves and validates those suggestions through TMDB. Watched and duplicate
+TMDB titles are removed. Results are cached for six hours and refresh immediately
+when the latest 25 history rows change.
 
 Turn on **English subtitles** to load matching bundled English SRT/VTT captions
 or search SubDL automatically. Online matching favors the video's release name,
@@ -233,7 +241,7 @@ Keep the generated output private.
 | `MONGODB_USERNAME`, `MONGODB_PASSWORD` | Optional credentials inserted into the URI placeholders and URL-encoded by the backend. |
 | `MONGODB_DATABASE` | `homelab`; database containing the `playback_progress` and `watch_history` collections. |
 | `MEDIA_USER_ID`, `MEDIA_PROFILE_ID` | `home` / `default`; shared identity used by all devices until authentication is added. |
-| `GEMINI_API_KEY` | Optional server-side Gemini key for catalogue correction and source assist; TMDB search and basic recommendations work without it. |
+| `GEMINI_API_KEY` | Optional server-side Gemini key for catalogue correction, source assist, cinema copy, and personalized movie/TV recommendations based on the 25 latest watch-history entries. |
 | `MEDIA_AI_TIMEOUT_MS` | `20000`; range 1000–60000 ms for a Gemini review. |
 | `MEDIA_METADATA_TIMEOUT_MS` | `10000`; range 1000–60000 ms, for TMDB/TorrServer JSON. |
 | `MEDIA_SEARCH_TIMEOUT_MS` | `20000`; range 1000–60000 ms per indexer, four concurrent. |
