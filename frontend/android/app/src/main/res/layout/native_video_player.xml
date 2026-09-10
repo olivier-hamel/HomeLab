@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/native_player_root"
     android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000">
     <androidx.media3.ui.PlayerView
         android:id="@+id/native_player"
@@ -30,16 +31,44 @@
         android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:layout_gravity="top|end" android:layout_marginTop="24dp" android:layout_marginEnd="32dp"
         android:orientation="horizontal">
+    <Button android:id="@+id/native_hide_controls"
+        android:layout_width="wrap_content" android:layout_height="48dp"
+        android:layout_marginEnd="12dp" android:nextFocusRight="@id/native_subtitle_toggle"
+        android:paddingLeft="18dp" android:paddingRight="18dp" android:text="@string/player_hide_controls"
+        android:textAllCaps="false" android:textSize="16sp"
+        android:textColor="@color/player_button_text" android:background="@drawable/player_button" />
     <Button android:id="@+id/native_subtitle_toggle"
         android:layout_width="wrap_content" android:layout_height="48dp"
-        android:layout_marginEnd="12dp" android:nextFocusRight="@id/native_options"
-        android:paddingLeft="24dp" android:paddingRight="24dp" android:text="@string/player_subtitles_off"
+        android:layout_marginEnd="12dp" android:nextFocusLeft="@id/native_hide_controls"
+        android:nextFocusRight="@id/native_subtitle_timing"
+        android:paddingLeft="18dp" android:paddingRight="18dp" android:text="@string/player_subtitles_off"
+        android:textAllCaps="false" android:textSize="16sp"
+        android:textColor="@color/player_button_text" android:background="@drawable/player_button" />
+    <Button android:id="@+id/native_subtitle_timing"
+        android:layout_width="wrap_content" android:layout_height="48dp"
+        android:layout_marginEnd="12dp" android:nextFocusLeft="@id/native_subtitle_toggle"
+        android:nextFocusRight="@id/native_another_source"
+        android:paddingLeft="18dp" android:paddingRight="18dp" android:text="@string/player_subtitle_timing"
+        android:textAllCaps="false" android:textSize="16sp"
+        android:textColor="@color/player_button_text" android:background="@drawable/player_button" />
+    <Button android:id="@+id/native_another_source"
+        android:layout_width="wrap_content" android:layout_height="48dp"
+        android:layout_marginEnd="12dp" android:nextFocusLeft="@id/native_subtitle_timing"
+        android:nextFocusRight="@id/native_options"
+        android:paddingLeft="18dp" android:paddingRight="18dp" android:text="@string/player_another_source"
         android:textAllCaps="false" android:textSize="16sp"
         android:textColor="@color/player_button_text" android:background="@drawable/player_button" />
     <Button android:id="@+id/native_options"
         android:layout_width="wrap_content" android:layout_height="48dp"
-        android:nextFocusLeft="@id/native_subtitle_toggle"
-        android:paddingLeft="24dp" android:paddingRight="24dp" android:text="@string/player_options"
+        android:layout_marginEnd="12dp" android:nextFocusLeft="@id/native_another_source"
+        android:nextFocusRight="@id/native_quit"
+        android:paddingLeft="18dp" android:paddingRight="18dp" android:text="@string/player_options"
+        android:textAllCaps="false" android:textSize="16sp"
+        android:textColor="@color/player_button_text" android:background="@drawable/player_button" />
+    <Button android:id="@+id/native_quit"
+        android:layout_width="wrap_content" android:layout_height="48dp"
+        android:nextFocusLeft="@id/native_options"
+        android:paddingLeft="18dp" android:paddingRight="18dp" android:text="@string/player_quit"
         android:textAllCaps="false" android:textSize="16sp"
         android:textColor="@color/player_button_text" android:background="@drawable/player_button" />
     </LinearLayout>

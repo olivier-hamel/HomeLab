@@ -41,6 +41,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import org.json.JSONObject;
 
 @UnstableApi
@@ -54,9 +55,12 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
     }
 
     private PlayerView playerView;
+    private View playerRoot;
     private ExoPlayer player;
     private NativeSubtitleOverlay subtitles;
     private Button options;
+    private Button anotherSource;
+    private ViewGroup playerActions;
     private AlertDialog dialog;
     private long positionMs;
     private long durationMs;
@@ -68,6 +72,7 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
     private TrackSelectionParameters trackParameters;
     private float speed = 1f;
     private Button subtitleToggle;
+    private Button subtitleTiming;
     private boolean subtitlesEnabled;
     private boolean subtitlesLoading;
 
@@ -78,18 +83,32 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         setContentView(R.layout.native_video_player);
+        playerRoot = findViewById(R.id.native_player_root);
+        playerRoot.setFocusable(true);
         playerView = findViewById(R.id.native_player);
         // Captions use the same automatic English selection as desktop.
         playerView.setShowSubtitleButton(false);
         configureTvControls();
+        playerActions = findViewById(R.id.native_player_actions);
         options = findViewById(R.id.native_options);
         subtitleToggle = findViewById(R.id.native_subtitle_toggle);
+        subtitleTiming = findViewById(R.id.native_subtitle_timing);
+        Button hideButton = findViewById(R.id.native_hide_controls);
+        anotherSource = findViewById(R.id.native_another_source);
+        Button quit = findViewById(R.id.native_quit);
+        hideButton.setOnClickListener(view -> hideControls());
+        updateSourceButton(getIntent());
+        anotherSource.setOnClickListener(view -> nextSource());
+        quit.setOnClickListener(view -> closePlayer());
         subtitleToggle.setOnClickListener(view -> toggleSubtitles());
-        subtitleToggle.setOnFocusChangeListener((view, focused) -> playerView.setControllerShowTimeoutMs(focused ? 0 : CONTROLLER_TIMEOUT_MS));
+        subtitleTiming.setOnClickListener(view -> showSubtitleTiming());
         options.setOnClickListener(view -> showOptions());
-        options.setOnFocusChangeListener((view, focused) -> playerView.setControllerShowTimeoutMs(focused ? 0 : CONTROLLER_TIMEOUT_MS));
+        for (int i = 0; i < playerActions.getChildCount(); i++) {
+            playerActions.getChildAt(i).setOnFocusChangeListener((view, focused) ->
+                playerView.setControllerShowTimeoutMs(focused ? 0 : CONTROLLER_TIMEOUT_MS));
+        }
         playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {
-            findViewById(R.id.native_player_actions).setVisibility(waitingForSource ? View.GONE : visibility);
+            playerActions.setVisibility(waitingForSource ? View.GONE : visibility);
         });
         findViewById(R.id.native_source_retry).setOnClickListener(view -> nextSource());
         findViewById(R.id.native_source_quit).setOnClickListener(view -> closePlayer());
@@ -159,7 +178,8 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         waitingForSource = false;
         trackParameters = null;
         findViewById(R.id.native_source_status).setVisibility(View.GONE);
-        findViewById(R.id.native_player_actions).setVisibility(View.VISIBLE);
+        playerActions.setVisibility(View.VISIBLE);
+        updateSourceButton(intent);
         if (getIntent().hasExtra("subtitlePath")) { subtitlesEnabled = true; loadInitialSubtitle(); }
         else if (subtitlesEnabled) requestAutomaticSubtitles();
         updateSubtitleButton();
@@ -288,7 +308,7 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         findViewById(R.id.native_source_spinner).setVisibility(error ? View.GONE : View.VISIBLE);
         boolean canRetry = error && getIntent().getBooleanExtra("allowNext", false);
         findViewById(R.id.native_source_retry).setVisibility(canRetry ? View.VISIBLE : View.GONE);
-        findViewById(R.id.native_player_actions).setVisibility(View.GONE);
+        playerActions.setVisibility(View.GONE);
         findViewById(canRetry ? R.id.native_source_retry : R.id.native_source_quit).requestFocus();
     }
 
@@ -303,6 +323,32 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         requestId++;
         NativeVideoPlayerPlugin.complete(result("close", null, 0));
         finish();
+    }
+
+    private void hideControls() {
+        playerView.hideController();
+        // Requesting focus on PlayerView selects one of its controller children.
+        // That child's TV focus listener calls showController(), undoing the hide.
+        // Keep remote focus on the neutral full-screen container until the viewer
+        // deliberately opens or navigates the controls again.
+        playerRoot.requestFocus();
+    }
+
+    private void updateSourceButton(Intent intent) {
+        boolean available = intent.getBooleanExtra("allowNext", false);
+        anotherSource.setVisibility(available ? View.VISIBLE : View.GONE);
+        updateActionNavigation();
+    }
+
+    private void updateActionNavigation() {
+        boolean timingAvailable = subtitleTiming.isEnabled();
+        boolean sourceAvailable = anotherSource.getVisibility() == View.VISIBLE;
+        subtitleToggle.setNextFocusRightId(timingAvailable ? R.id.native_subtitle_timing :
+            sourceAvailable ? R.id.native_another_source : R.id.native_options);
+        subtitleTiming.setNextFocusRightId(sourceAvailable ? R.id.native_another_source : R.id.native_options);
+        anotherSource.setNextFocusLeftId(timingAvailable ? R.id.native_subtitle_timing : R.id.native_subtitle_toggle);
+        options.setNextFocusLeftId(sourceAvailable ? R.id.native_another_source :
+            timingAvailable ? R.id.native_subtitle_timing : R.id.native_subtitle_toggle);
     }
 
     private AlertDialog.Builder menu(String title) {
@@ -329,14 +375,9 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
 
     private void showOptions() {
         if (waitingForSource) return;
-        boolean allowNext = getIntent().getBooleanExtra("allowNext", false);
-        String[] items = allowNext ? new String[] {"Audio track", "Picture size", "Try another source", "Quit to main page"}
-            : new String[] {"Audio track", "Picture size", "Quit to main page"};
-        show(menu("Player options").setItems(items, (d, which) -> {
+        show(menu("Player options").setItems(new String[] {"Audio track", "Picture size"}, (d, which) -> {
             if (which == 0) showTracks(C.TRACK_TYPE_AUDIO);
             if (which == 1) showPictureSize();
-            if (which == 2) { if (allowNext) nextSource(); else closePlayer(); }
-            if (which == 3) closePlayer();
         }).create());
     }
 
@@ -344,6 +385,40 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         subtitleToggle.setText(subtitlesLoading ? R.string.player_subtitles_loading :
             subtitlesEnabled ? R.string.player_subtitles_on : R.string.player_subtitles_off);
         subtitleToggle.setSelected(subtitlesEnabled);
+        boolean timingAvailable = subtitles.hasSubtitle();
+        subtitleTiming.setEnabled(timingAvailable);
+        subtitleTiming.setAlpha(timingAvailable ? 1f : 0.45f);
+        updateActionNavigation();
+    }
+
+    private void showSubtitleTiming() {
+        if (!subtitles.hasSubtitle()) return;
+        AlertDialog timingDialog = menu("Subtitle timing").setView(R.layout.native_subtitle_timing).create();
+        playerView.hideController();
+        show(timingDialog);
+        if (timingDialog.getWindow() != null) timingDialog.getWindow().setDimAmount(0.25f);
+        TextView offset = timingDialog.findViewById(R.id.native_subtitle_offset);
+        View earlierFine = timingDialog.findViewById(R.id.native_subtitle_earlier_fine);
+        View laterFine = timingDialog.findViewById(R.id.native_subtitle_later_fine);
+        View earlierCoarse = timingDialog.findViewById(R.id.native_subtitle_earlier_coarse);
+        View laterCoarse = timingDialog.findViewById(R.id.native_subtitle_later_coarse);
+        View reset = timingDialog.findViewById(R.id.native_subtitle_reset);
+        earlierFine.setOnClickListener(view -> adjustSubtitleTiming(-500, offset));
+        laterFine.setOnClickListener(view -> adjustSubtitleTiming(500, offset));
+        earlierCoarse.setOnClickListener(view -> adjustSubtitleTiming(-5_000, offset));
+        laterCoarse.setOnClickListener(view -> adjustSubtitleTiming(5_000, offset));
+        reset.setOnClickListener(view -> { subtitles.adjust(0); updateSubtitleTimingLabel(offset); });
+        updateSubtitleTimingLabel(offset);
+        earlierFine.requestFocus();
+    }
+
+    private void adjustSubtitleTiming(long amountMs, TextView label) {
+        subtitles.adjust(subtitles.adjustmentMs() + amountMs);
+        updateSubtitleTimingLabel(label);
+    }
+
+    private void updateSubtitleTimingLabel(TextView label) {
+        label.setText(String.format(Locale.US, "%+.1f s", subtitles.adjustmentMs() / 1000.0));
     }
 
     private void toggleSubtitles() {
@@ -457,10 +532,10 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) showOptions();
             return true;
         }
-        if (!waitingForSource && !options.hasFocus() && !subtitleToggle.hasFocus() && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && event.getAction() == KeyEvent.ACTION_DOWN) {
+        if (!waitingForSource && !playerActions.hasFocus() && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && event.getAction() == KeyEvent.ACTION_DOWN) {
             playerView.showController(); options.requestFocus(); return true;
         }
-        if (waitingForSource || options.hasFocus() || subtitleToggle.hasFocus()) return super.dispatchKeyEvent(event);
+        if (waitingForSource || playerActions.hasFocus()) return super.dispatchKeyEvent(event);
         return playerView.dispatchKeyEvent(event) || super.dispatchKeyEvent(event);
     }
     @Override public void onBackPressed() { closePlayer(); }

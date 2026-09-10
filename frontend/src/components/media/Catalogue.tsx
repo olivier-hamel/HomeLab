@@ -123,6 +123,8 @@ export function TitleDetails({ title, close, find, simple, initialProgress }: { 
   const tvMode = useTvMode();
   const tvDetails = simple && tvMode;
   const panel = useRef<HTMLDialogElement>(null);
+  const primaryAction = useRef<HTMLButtonElement>(null);
+  const primaryFocused = useRef(false);
   const [data, setData] = useState<Details | null>(null);
   const [error, setError] = useState("");
   const [season, setSeason] = useState<number | undefined>();
@@ -157,6 +159,12 @@ export function TitleDetails({ title, close, find, simple, initialProgress }: { 
       .catch(() => { if (!controller.signal.aborted) setProgress(null); });
     return () => controller.abort();
   }, [initialProgress, tvDetails, title.id, title.kind]);
+  useEffect(() => {
+    if (!tvDetails || data?.kind !== "movie" || progress === undefined || primaryFocused.current) return;
+    primaryFocused.current = true;
+    primaryAction.current?.focus({ preventScroll: true });
+    primaryAction.current?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
+  }, [data, progress, tvDetails]);
   const restart = async (details: Details) => {
     setRestarting(true);
     setRestartError("");
@@ -178,7 +186,7 @@ export function TitleDetails({ title, close, find, simple, initialProgress }: { 
     <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
     {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <div className="flex flex-wrap gap-3">
-      <Button disabled={restarting || (tvDetails && progress === undefined)} className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data), progress?.playbackPositionSeconds ?? 0)}>{tvDetails && progress === undefined ? "Checking progress…" : tvDetails ? progress ? "Continue" : "Watch" : simple ? "Watch now" : "Find sources"}</Button>
+      <Button ref={primaryAction} data-tv-initial-focus={tvDetails ? "" : undefined} disabled={restarting || (tvDetails && progress === undefined)} className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data), progress?.playbackPositionSeconds ?? 0)}>{tvDetails && progress === undefined ? "Checking progress…" : tvDetails ? progress ? "Continue" : "Watch" : simple ? "Watch now" : "Find sources"}</Button>
       {tvDetails && progress && <Button variant="outline" disabled={restarting} onClick={() => { void restart(data); }}>{restarting ? "Starting…" : "Watch from beginning"}</Button>}
       {tvDetails && <Button variant="ghost" onClick={close}>Close</Button>}
       {restartError && <p role="alert" className="w-full text-sm text-orange-400">{restartError}</p>}

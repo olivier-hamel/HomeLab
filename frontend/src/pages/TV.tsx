@@ -60,13 +60,13 @@ export default function TV() {
   if (!profile || choosingProfile) return <ProfileChooser current={profile} choose={chooseProfile} />;
   const activeProfile = mediaProfiles.find(item => item.id === profile)!;
   return <div className={`tv-media-page mx-auto max-w-[1600px] space-y-6 p-4 text-neutral-200 sm:p-6 lg:p-8 ${advanced ? "" : "simple-media"}`}>
-    <div className="flex flex-wrap items-center justify-between gap-4">
+    {!(tvMode && watchIntent) && <div className="flex flex-wrap items-center justify-between gap-4">
       <div><p className="mb-2 text-xs tracking-[0.2em] text-orange-400">TV & Movies</p><h1 className="text-2xl font-semibold text-white sm:text-3xl">HomeLab Cinema</h1></div>
       <div className="media-profile-actions"><Switch label="Advanced mode" checked={advanced} onChange={enabled => {
         setAdvanced(enabled); setChosen(null); setWatchIntent(null); setMode("catalogue");
         try { localStorage.setItem("homelab:advanced-media", String(enabled)); } catch { /* The switch still works without storage. */ }
       }} /><button type="button" className={`media-account-button media-profile-${activeProfile.color}`} aria-label={`Current account: ${activeProfile.name}. Switch account`} onClick={() => setChoosingProfile(true)}><span className="media-account-avatar"><UserRound aria-hidden="true" /></span><span>{activeProfile.name}</span><ChevronDown aria-hidden="true" /></button></div>
-    </div>
+    </div>}
     {error ? <div role="alert" className="space-y-3 rounded-lg border border-orange-500/40 bg-neutral-900 p-5"><h2 className="font-semibold text-white">Set up TV & Movies</h2><p className="text-sm leading-relaxed">{error}</p><Button variant="outline" onClick={() => { setError(""); setRetry(r => r + 1); }}>Retry setup</Button></div> : !config ? <p role="status">Checking media configuration…</p> : <>
       {watchIntent ? <AutoPlayback key={JSON.stringify(watchIntent)} intent={watchIntent.intent} resumeAt={watchIntent.resumeAt} close={() => setWatchIntent(null)} /> : <>
       {!advanced ? <>

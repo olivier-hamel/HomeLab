@@ -67,6 +67,8 @@ release group and format details, excludes known different episodes, and selects
 the matching English file from ZIP packs. Failed downloads try up to three
 releases. SubDL requires the existing `SUBDL_API_KEY`; bundled subtitles do not.
 The **Earlier/Later 0.5 s** and **Reset timing** controls remain available.
+In the native Fire TV player, **Subtitle timing** opens a calibration popup with
+0.5-second and 5-second adjustments while the movie continues playing.
 Turning captions off cancels pending work; turning them back on reuses the
 downloaded file and timing. Changing sources keeps English subtitles enabled
 and finds captions for the new video, with a fresh offset.

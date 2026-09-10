@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="24dp"
+    android:paddingRight="24dp"
+    android:paddingBottom="12dp">
+
+    <TextView
+        android:id="@+id/native_subtitle_offset"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="16dp"
+        android:gravity="center"
+        android:textColor="#FB923C"
+        android:textSize="24sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+        <Button
+            android:id="@+id/native_subtitle_earlier_fine"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="@string/player_subtitle_earlier_fine"
+            android:textAllCaps="false"
+            android:textColor="@color/player_button_text"
+            android:background="@drawable/player_button" />
+        <Button
+            android:id="@+id/native_subtitle_later_fine"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="@string/player_subtitle_later_fine"
+            android:textAllCaps="false"
+            android:textColor="@color/player_button_text"
+            android:background="@drawable/player_button" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal"
+        android:gravity="center">
+        <Button
+            android:id="@+id/native_subtitle_earlier_coarse"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="@string/player_subtitle_earlier_coarse"
+            android:textAllCaps="false"
+            android:textColor="@color/player_button_text"
+            android:background="@drawable/player_button" />
+        <Button
+            android:id="@+id/native_subtitle_later_coarse"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="@string/player_subtitle_later_coarse"
+            android:textAllCaps="false"
+            android:textColor="@color/player_button_text"
+            android:background="@drawable/player_button" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/native_subtitle_reset"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginTop="12dp"
+        android:text="@string/player_subtitle_reset"
+        android:textAllCaps="false"
+        android:textColor="@color/player_button_text"
+        android:background="@drawable/player_button" />
+</LinearLayout>
