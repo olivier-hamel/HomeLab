@@ -97,18 +97,23 @@ html, body, #root { min-height: 100%; }
 html[data-tv-mode="true"] {
   font-size: 18px;
   scroll-behavior: auto;
+  scroll-padding-top: 9rem;
+  scroll-padding-bottom: 7rem;
 }
 
 [data-tv-mode="true"] .tv-shell {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100svh;
-  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding-bottom: 7rem;
   background: #0a0a0a;
 }
 
 [data-tv-mode="true"] .tv-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -129,7 +134,7 @@ html[data-tv-mode="true"] {
 [data-tv-mode="true"] #dashboard-content { scroll-padding: 1.5rem; }
 [data-tv-mode="true"] .tv-media-page { max-width: 1800px; padding: 1.5rem 4vw 2rem; }
 [data-tv-mode="true"] .tv-media-page > .sr-only + * { margin-top: 0; }
-[data-tv-mode="true"] .tv-remote-hint { flex-shrink: 0; padding: .6rem 4vw 1rem; background: #171717; color: #a3a3a3; font-size: .8rem; }
+[data-tv-mode="true"] .tv-remote-hint { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem 4vw 1rem; background: #171717; color: #a3a3a3; font-size: .8rem; }
 [data-tv-mode="true"] .tv-remote-hint span { margin-left: 1rem; }
 
 [data-tv-mode="true"] :is(button, select, summary, a[href], input:not([type="checkbox"]):not([type="radio"])) {
@@ -154,7 +159,7 @@ html[data-tv-mode="true"] {
 [data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; padding: .4rem; }
 [data-tv-mode="true"] .tv-catalogue-grid button:focus { border-color: #fb923c; }
 [data-tv-mode="true"] .tv-catalogue-grid button:focus .font-semibold { color: #fdba74; }
-[data-tv-mode="true"] .tv-catalogue-grid button > div:first-child { height: 30vh; min-height: 10rem; aspect-ratio: auto; }
+[data-tv-mode="true"] .tv-catalogue-grid button > div:first-child { height: 28vh; min-height: 10rem; aspect-ratio: auto; }
 [data-tv-mode="true"] .tv-catalogue-grid img { object-fit: contain; }
 [data-tv-mode="true"] .tv-catalogue-grid svg { width: 3rem; height: 3rem; }
 [data-tv-mode="true"] .tv-catalogue-grid .line-clamp-2.text-xs,

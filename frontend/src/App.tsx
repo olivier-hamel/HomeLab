@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, Bell, Boxes, ChevronRight, Clapperboard, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, Bell, Boxes, ChevronRight, Clapperboard, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import Overview from "./pages/Overview";
 import Guests from "./pages/Guests";
@@ -9,6 +9,7 @@ import Infrastructure from "./pages/Infrastructure";
 import TV from "./pages/TV";
 import { useTvMode } from "./lib/tv";
 import useTvNavigation from "./components/useTvNavigation";
+import { scrollTvPage } from "./components/useTvScrolling";
 
 const sections = [
   { id: "overview", icon: Monitor, label: "OVERVIEW", component: Overview },
@@ -44,11 +45,17 @@ export default function App() {
           <a className="tv-desktop-link" href={desktopUrl.href}>Desktop view</a>
         </nav>
       </header>
-      <main id="dashboard-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-auto focus:outline-none">
+      <main id="dashboard-content" tabIndex={-1} className="min-w-0 flex-1 focus:outline-none">
         {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
         <Page />
       </main>
-      <footer className="tv-remote-hint">Arrows: move <span> Select: open </span> Back: return <span> In fields, Up / Down: choose; Left / Right: leave a menu</span></footer>
+      <footer className="tv-remote-hint">
+        <p>Arrows: move <span>Select: open</span><span>Cursor at screen edge: scroll</span></p>
+        <div data-tv-scroll-controls="" className="flex shrink-0 gap-3" role="group" aria-label="Page scrolling">
+          <Button variant="outline" aria-label="Scroll page up" onClick={() => scrollTvPage(-1)}><ArrowUp />Up</Button>
+          <Button variant="outline" aria-label="Scroll page down" onClick={() => scrollTvPage(1)}><ArrowDown />Down</Button>
+        </div>
+      </footer>
     </div>;
   }
 

@@ -20,6 +20,12 @@ extra space around the screen edges, a strong orange focus outline, and access
 to the other dashboard sections through the header menu.
 
 - **Arrows / D-pad:** move between controls; focused items scroll into view.
+- **Scrolling:** the TV view uses normal browser page scrolling. Use Silk's
+  scroll controls, Page Up / Page Down, or the fixed **Up / Down** buttons.
+  When there is no next control, Up / Down arrows scroll through remaining text.
+- **Cursor scrolling:** hold the cursor near the bottom of the screen to scroll
+  down, or just below the top navigation to scroll up. Move away to stop.
+  It starts after a brief pause and stops during clicks, typing, or fullscreen.
 - **Select / Enter:** activate a button or open a menu. Use the visible Search
   button after entering text with the on-screen keyboard.
 - **Text fields:** Left / Right edits text; Up / Down leaves the field.
@@ -48,7 +54,8 @@ From `frontend`, run `npm run lint`, `npm test`, and `npm run build`.
 From the repository root, run `node scripts/test-tv-ui.mjs` after building.
 The browser check uses a local server with mock media responses and headless
 Chrome (`CHROME_BIN` can override its executable); it does not contact your media
-services. It checks TV and desktop layouts, remote navigation, dialog focus,
+services. It checks TV and desktop layouts, browser/cursor/button scrolling,
+remote navigation, dialog focus,
 source/file selection, player controls, and fallback APIs. It simulates media
 events rather than verifying video decoding.
 

@@ -3,6 +3,7 @@ import { Film, Search, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { mediaApi, sourceIntent, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
+import { useTvMode } from "../../lib/tv";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 export default function Catalogue({ find }: { find: (intent: SearchIntent) => void }) {
@@ -54,6 +55,7 @@ function CatalogueResults({ kind, query, page, setPage, choose, retry }: { kind:
 }
 
 function TitleDetails({ title, close, find }: { title: Title; close: () => void; find: (intent: SearchIntent) => void }) {
+  const tvMode = useTvMode();
   const panel = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<Details | null>(null);
   const [error, setError] = useState("");
@@ -63,7 +65,7 @@ function TitleDetails({ title, close, find }: { title: Title; close: () => void;
   useEffect(() => {
     const dialog = panel.current;
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const scroller = document.getElementById("dashboard-content") ?? document.body;
+    const scroller = tvMode ? document.documentElement : document.getElementById("dashboard-content") ?? document.body;
     const previousOverflow = scroller.style.overflow;
     dialog?.showModal();
     scroller.style.overflow = "hidden";
@@ -72,7 +74,7 @@ function TitleDetails({ title, close, find }: { title: Title; close: () => void;
       scroller.style.overflow = previousOverflow;
       if (trigger?.isConnected) trigger.focus({ preventScroll: true });
     };
-  }, []);
+  }, [tvMode]);
   useEffect(() => {
     const controller = new AbortController();
     void mediaApi<Details>(`details/${title.kind}/${title.id}`, AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])).then(d => { if (!controller.signal.aborted) { setData(d); setSeason(d.seasons.find(s => s.number > 0)?.number ?? d.seasons[0]?.number); } }).catch(e => { if (!controller.signal.aborted) setError(e.message); });

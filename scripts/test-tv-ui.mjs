@@ -80,7 +80,7 @@ try {
   };
   const focus = async selector => { await evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`); };
   const press = async key => {
-    const code = ({ Enter: 13, Escape: 27, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 })[key];
+    const code = ({ Enter: 13, Escape: 27, PageUp: 33, PageDown: 34, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 })[key];
     await call('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code || 0, ...(key === 'Enter' ? { text: '\r' } : {}) });
     await call('Input.dispatchKeyEvent', { type: 'keyUp', key, windowsVirtualKeyCode: code || 0 });
     await delay(70);
@@ -114,21 +114,68 @@ try {
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".tv-catalogue-grid")).gridTemplateColumns.split(" ").length'), columns);
     assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth && document.querySelector("main").scrollWidth <= document.querySelector("main").clientWidth + 1'), `No horizontal overflow at ${width}`);
     if (width >= 1280) {
-      await evaluate('document.querySelector("main").scrollTop = 0');
+      await evaluate('window.scrollTo(0, 0)');
       const screenshot = await call('Page.captureScreenshot', { format: 'png' });
       writeFileSync(resolve(output, `tv-${width}.png`), Buffer.from(screenshot.data, 'base64'));
     }
   }
   await resize(1280, 720);
+  assert.ok(await evaluate('document.scrollingElement.scrollHeight > innerHeight'), 'TV content scrolls the browser document');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("main")).overflowY'), 'visible', 'No nested page scrollbar');
+  await activate('[aria-label="Scroll page down"]');
+  assert.ok(await evaluate('window.scrollY > 0'), 'Visible Down button scrolls the document');
+  const afterDown = await evaluate('window.scrollY');
+  await activate('[aria-label="Scroll page up"]');
+  assert.ok(await evaluate('window.scrollY < ' + afterDown), 'Visible Up button scrolls back');
+  await evaluate('window.scrollTo(0, 0)');
+  await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 640, y: 360, deltaX: 0, deltaY: 400 });
+  await until('window.scrollY > 0');
+  await evaluate('window.scrollTo(0, 0)');
+  await focus('.tv-header button'); await press('PageDown');
+  assert.ok(await evaluate('window.scrollY > 0'), 'PageDown scrolls even with header focus');
+  await press('PageUp'); assert.equal(await evaluate('window.scrollY'), 0);
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: 710 });
+  await until('window.scrollY > 60');
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 640, y: 360 });
+  const afterEdge = await evaluate('window.scrollY');
+  await delay(450);
+  assert.equal(await evaluate('window.scrollY'), afterEdge, 'Moving the cursor away stops edge scrolling');
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: 105 });
+  await until('window.scrollY < ' + afterEdge);
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 640, y: 360 });
+  await evaluate(`(() => {
+    const section = document.createElement('section'); section.id = 'scroll-regression';
+    section.innerHTML = '<button id="last-content-control">Last control</button><p style="height:1800px">Long text after the last control</p>';
+    document.querySelector('main').append(section);
+    document.querySelector('#last-content-control').focus();
+    document.querySelector('#last-content-control').scrollIntoView({ block: 'start' });
+  })()`);
+  const beforeFallback = await evaluate('window.scrollY');
+  await press('ArrowDown');
+  assert.ok(await evaluate('window.scrollY > ' + beforeFallback), 'Down scrolls long text when there is no next control');
+  await evaluate('document.querySelector("#scroll-regression").remove()');
   await focus('.tv-catalogue-grid button');
   await press('ArrowRight'); assert.equal(await active(), 'Details for Example movie 2');
   await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 6');
   await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 10');
-  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector("main").getBoundingClientRect().bottom + 1'), 'Offscreen poster scrolled into view');
+  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector(".tv-remote-hint").getBoundingClientRect().top'), 'Offscreen poster scrolled above the fixed footer');
   await press('Enter'); await until('!!document.querySelector("dialog[open]")');
   for (const key of ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp']) {
     await press(key); assert.ok(await evaluate('!!document.activeElement.closest("dialog")'), 'Focus stays in title details');
   }
+  const behindDialog = await evaluate('window.scrollY');
+  await evaluate(`document.querySelector('dialog').style.maxHeight = '260px'; document.querySelector('dialog .max-w-4xl').style.minHeight = '900px'`);
+  await focus('dialog button'); await press('PageDown');
+  assert.ok(await evaluate('document.querySelector("dialog").scrollTop > 0'), 'PageDown scrolls long dialog content');
+  const dialogScroll = await evaluate('document.querySelector("dialog").scrollTop');
+  const dialogBottom = await evaluate('document.querySelector("dialog").getBoundingClientRect().bottom');
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: dialogBottom - 10 });
+  await delay(500);
+  assert.equal(await evaluate('document.querySelector("dialog").scrollTop'), dialogScroll, 'Cursor beside a dialog does not scroll it');
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: 710 });
+  await delay(500);
+  assert.equal(await evaluate('window.scrollY'), behindDialog, 'Dialog scrolling and cursor edges leave the background still');
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 640, y: 360 });
   await press('Escape');
   assert.equal(await active(), 'Details for Example movie 10', 'Dialog returns focus to the selected poster');
   await focus('#catalogue-query');
@@ -176,7 +223,7 @@ try {
   await call('Page.navigate', { url: origin }); await until('!!document.querySelector(".tv-shell")');
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), 'true', 'Fire TV auto-detection');
   assert.deepEqual(errors, [], 'No browser exceptions');
-  console.log(JSON.stringify({ passed: true, viewports: [1280, 1920, 960, 390], checks: 'desktop isolation, auto-detection, saved override, fallback APIs, D-pad scrolling, fields, dialogs, source/file selection, seeking, fullscreen and Back', screenshots: output }, null, 2));
+  console.log(JSON.stringify({ passed: true, viewports: [1280, 1920, 960, 390], checks: 'desktop isolation, auto-detection, saved override, fallback APIs, document/wheel scrolling, cursor edges, scroll buttons, PageUp/Down, D-pad fallback, fields, dialogs, source/file selection, seeking, fullscreen and Back', screenshots: output }, null, 2));
 } finally {
   if (call && socket?.readyState === WebSocket.OPEN) {
     await Promise.race([call('Browser.close').catch(() => {}), delay(1000)]); socket.close();

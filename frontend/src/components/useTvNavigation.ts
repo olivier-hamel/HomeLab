@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { nearestControl, useTvMode, type Direction } from "../lib/tv";
+import useTvScrolling, { scrollTvPage } from "./useTvScrolling";
 
 const selector = "button, a[href], input, select, textarea, summary, video[controls], [tabindex]";
 
@@ -34,6 +35,7 @@ export function useTvFocus(ref: RefObject<HTMLElement | null>) {
 }
 
 export default function useTvNavigation(enabled: boolean) {
+  useTvScrolling(enabled);
   useEffect(() => {
     if (!enabled) return;
     const root = () => document.fullscreenElement ?? document.querySelector("dialog[open]") ?? document;
@@ -49,7 +51,11 @@ export default function useTvNavigation(enabled: boolean) {
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
       const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       const text = active?.matches("textarea, input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit'])") || active?.isContentEditable;
-      const key = event.key && event.key !== "Unidentified" ? event.key : ({ 37: "ArrowLeft", 38: "ArrowUp", 39: "ArrowRight", 40: "ArrowDown" } as Record<number, string>)[event.keyCode];
+      const key = event.key && event.key !== "Unidentified" ? event.key : ({ 33: "PageUp", 34: "PageDown", 37: "ArrowLeft", 38: "ArrowUp", 39: "ArrowRight", 40: "ArrowDown" } as Record<number, string>)[event.keyCode];
+      if (key === "PageUp" || key === "PageDown") {
+        if (!text && !active?.matches("select, input, video") && scrollTvPage(key === "PageUp" ? -1 : 1, active)) event.preventDefault();
+        return;
+      }
       if (["Escape", "BrowserBack", "GoBack", "Backspace"].includes(key) || event.keyCode === 4) {
         if (text) return;
         if (document.fullscreenElement) {
@@ -81,10 +87,16 @@ export default function useTvNavigation(enabled: boolean) {
       if (active?.matches("select") && !horizontal) return;
       if (active?.matches("input[type='range'], video") && (horizontal || document.fullscreenElement)) return;
       const available = controls(root());
-      event.preventDefault();
-      if (!active || !available.includes(active)) { initial(); return; }
-      const next = nearestControl(active.getBoundingClientRect(), available.filter(element => element !== active).map(element => ({ element, bounds: element.getBoundingClientRect() })), key as Direction);
-      focus(next?.element);
+      if (!active || !available.includes(active)) { event.preventDefault(); initial(); return; }
+      const candidates = available.filter(element => element !== active && !(key === "ArrowDown" && active.closest("main") && element.closest(".tv-header"))).map(element => ({ element, bounds: element.getBoundingClientRect() }));
+      // Fixed scroll buttons must not interrupt navigation through offscreen rows.
+      const next = nearestControl(active.getBoundingClientRect(), candidates.filter(({ element }) => !element.closest("[data-tv-scroll-controls]")), key as Direction);
+      if (next) { event.preventDefault(); focus(next.element); }
+      else if (!horizontal && scrollTvPage(key === "ArrowUp" ? -1 : 1, active, window.innerHeight * 0.2)) event.preventDefault();
+      else {
+        const toolbar = nearestControl(active.getBoundingClientRect(), candidates, key as Direction);
+        if (toolbar) { event.preventDefault(); focus(toolbar.element); }
+      }
     };
     document.addEventListener("keydown", keydown);
     document.addEventListener("focusin", focusin);
