@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { Archive, Bell, Boxes, ChevronRight, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
+import { Archive, Bell, Boxes, ChevronRight, Clapperboard, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import Overview from "./pages/Overview";
 import Guests from "./pages/Guests";
 import Tasks from "./pages/Tasks";
 import Backups from "./pages/Backups";
 import Infrastructure from "./pages/Infrastructure";
+import TV from "./pages/TV";
+import { useTvMode } from "./lib/tv";
+import useTvNavigation from "./components/useTvNavigation";
+import TvScrollControls from "./components/TvScrollControls";
 
 const sections = [
   { id: "overview", icon: Monitor, label: "OVERVIEW", component: Overview },
@@ -13,14 +17,41 @@ const sections = [
   { id: "tasks", icon: ListChecks, label: "TASKS", component: Tasks },
   { id: "backups", icon: Archive, label: "BACKUPS", component: Backups },
   { id: "infrastructure", icon: Server, label: "INFRASTRUCTURE", component: Infrastructure },
+  { id: "tv", icon: Clapperboard, label: "TV & Movies", component: TV },
 ] as const;
 
 export default function App() {
-  const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>("overview");
+  const tvMode = useTvMode();
+  useTvNavigation(tvMode);
+  const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>(tvMode ? "tv" : "overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const selectedSection = sections.find((section) => section.id === activeSection)!;
   const Page = selectedSection.component;
+
+  if (tvMode) {
+    const desktopUrl = new URL(window.location.href);
+    desktopUrl.searchParams.set("tv", "0");
+    return <div className="tv-shell">
+      <header className="tv-header">
+        <div className="tv-brand"><strong>HOMELAB</strong><span>TV MODE</span></div>
+        <nav aria-label="TV navigation" className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" aria-current={activeSection === "tv" ? "page" : undefined} data-tv-back={activeSection !== "tv" ? "" : undefined} onClick={() => setActiveSection("tv")}><Clapperboard />TV & Movies</Button>
+          <label className="sr-only" htmlFor="tv-dashboard-section">Dashboard section</label>
+          <select id="tv-dashboard-section" value={activeSection === "tv" ? "" : activeSection} onChange={event => { if (event.target.value) setActiveSection(event.target.value as typeof activeSection); }}>
+            <option value="" disabled>Dashboard</option>
+            {sections.filter(section => section.id !== "tv").map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
+          </select>
+          <a className="tv-desktop-link" href={desktopUrl.href}>Desktop view</a>
+        </nav>
+      </header>
+      <main id="dashboard-content" tabIndex={-1} className="min-w-0 flex-1 focus:outline-none">
+        {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
+        <Page />
+      </main>
+      <TvScrollControls />
+    </div>;
+  }
 
   return (
     <div className="flex h-svh flex-col overflow-hidden md:flex-row">
@@ -31,7 +62,7 @@ export default function App() {
         <div className={`flex h-20 items-center justify-between gap-2 px-4 ${sidebarCollapsed ? "md:justify-center md:px-2" : ""}`}>
           <div className={sidebarCollapsed ? "md:hidden" : ""}>
             <p className="text-lg font-bold tracking-wider text-orange-500">HOMELAB</p>
-            <p className="text-xs text-neutral-500">PROXMOX VE / DEMO</p>
+            <p className="text-xs text-neutral-500">Work In Progress</p>
           </div>
           <Button
             variant="ghost"
@@ -77,7 +108,7 @@ export default function App() {
             ))}
           </nav>
 
-          {!sidebarCollapsed && (
+          {!sidebarCollapsed && activeSection !== "tv" && (
             <div className="mt-8 hidden rounded border border-neutral-700 bg-neutral-800 p-4 md:block">
               <div className="mb-2 flex items-center gap-2">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
@@ -99,7 +130,7 @@ export default function App() {
             <span className="hidden lg:inline">HOMELAB / </span>
             <span className="text-orange-500">{selectedSection.label}</span>
           </p>
-          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+          {activeSection !== "tv" && <div className="flex shrink-0 items-center gap-2 sm:gap-4">
             <span title="Sample data. Proxmox is not connected." className="rounded border border-orange-500/30 px-2 py-1 text-[10px] tracking-wider text-orange-400">SAMPLE DATA</span>
             <span className="hidden text-xs text-neutral-500 2xl:block">SAMPLE: 2026-09-05 16:45 UTC</span>
             <Button disabled title="Visual preview only" variant="ghost" size="icon" aria-label="Notifications (preview)" className="hidden text-neutral-400 sm:inline-flex">
@@ -108,7 +139,7 @@ export default function App() {
             <Button disabled title="Visual preview only" variant="ghost" size="icon" aria-label="Refresh (preview)" className="hidden text-neutral-400 sm:inline-flex">
               <RefreshCw className="h-4 w-4" />
             </Button>
-          </div>
+          </div>}
         </header>
 
         <main id="dashboard-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-auto focus:outline-none">

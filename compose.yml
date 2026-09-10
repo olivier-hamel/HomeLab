@@ -38,6 +38,9 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       HOSTNAME: 0.0.0.0
       PORT: "3001"
+      # Local .env may contain Windows executable paths; the image uses apt's binaries.
+      FFMPEG_PATH: /usr/bin/ffmpeg
+      FFPROBE_PATH: /usr/bin/ffprobe
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
