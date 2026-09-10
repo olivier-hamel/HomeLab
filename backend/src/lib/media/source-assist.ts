@@ -72,6 +72,8 @@ Shared words or substring matches are insufficient: for requested "Obsession (20
 Use only supplied alternate titles, not invented aliases; distinguish remakes, sequels, similarly named movies and television releases.
 Check season/episode for TV; a season pack containing the requested episode is acceptable, and episode release years need not equal the show's first-air year.
 Return identity=match only with consistent identity evidence; use uncertain for missing or ambiguous evidence, and mismatch for contradictions.
+The user requires English audio: a listing explicitly marked as non-English-only is ineligible; return identity=mismatch and verdict=sketchy so the app will not select it.
+Accept an English dub or a multi/dual-audio release only when its listing indicates English audio is included; do not reject an untagged listing or infer its audio language from the movie title, country, or release group.
 For uncertain or mismatch identities, explain the identity problem in reason and NEVER rate good or suggest choosing it; no matching source is better than the wrong movie.
 If every candidate is uncertain or a mismatch, return those classifications without inventing a best choice; the app will show no recommendation.
 Target 1080p, never reward higher resolutions; a healthy 720p fallback can be better than 4K or a stalled 1080p swarm.
