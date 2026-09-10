@@ -34,7 +34,7 @@ to the other dashboard sections through the header menu.
   or return from source search to the catalogue. In fullscreen, Back exits
   fullscreen first. At the top level, normal browser Back remains available.
 - **Playback:** use the large Play / Pause, rewind / forward 10 seconds, Stop,
-  and Fullscreen buttons. Left / Right on the timeline seeks; Up / Down leaves
+  and Fullscreen buttons. Left / Right on the timeline seeks 10 seconds per press; Up / Down leaves
   it. Delivered media-key events also control play/pause and 10-second seeking.
   Exit fullscreen to change subtitles using the enlarged subtitle controls.
 

@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
@@ -30,6 +31,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.DefaultTrackNameProvider;
+import androidx.media3.ui.DefaultTimeBar;
 import androidx.media3.ui.PlayerView;
 import com.getcapacitor.JSObject;
 import java.io.File;
@@ -43,6 +45,8 @@ import org.json.JSONObject;
 
 @UnstableApi
 public class NativeVideoPlayerActivity extends AppCompatActivity {
+    private static final int CONTROLLER_TIMEOUT_MS = 4_000;
+    private static final long TIMELINE_SEEK_INCREMENT_MS = 10_000;
     private static WeakReference<NativeVideoPlayerActivity> active = new WeakReference<>(null);
     static NativeVideoPlayerActivity current() {
         NativeVideoPlayerActivity activity = active.get();
@@ -77,12 +81,13 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         playerView = findViewById(R.id.native_player);
         // Captions use the same automatic English selection as desktop.
         playerView.setShowSubtitleButton(false);
+        configureTvControls();
         options = findViewById(R.id.native_options);
         subtitleToggle = findViewById(R.id.native_subtitle_toggle);
         subtitleToggle.setOnClickListener(view -> toggleSubtitles());
-        subtitleToggle.setOnFocusChangeListener((view, focused) -> playerView.setControllerShowTimeoutMs(focused ? 0 : 4000));
+        subtitleToggle.setOnFocusChangeListener((view, focused) -> playerView.setControllerShowTimeoutMs(focused ? 0 : CONTROLLER_TIMEOUT_MS));
         options.setOnClickListener(view -> showOptions());
-        options.setOnFocusChangeListener((view, focused) -> playerView.setControllerShowTimeoutMs(focused ? 0 : 4000));
+        options.setOnFocusChangeListener((view, focused) -> playerView.setControllerShowTimeoutMs(focused ? 0 : CONTROLLER_TIMEOUT_MS));
         playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {
             findViewById(R.id.native_player_actions).setVisibility(waitingForSource ? View.GONE : visibility);
         });
@@ -105,6 +110,37 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         updateSubtitleButton();
         if (waitingForSource) showSourceStatus("Waiting for another source…", false);
         else playerView.requestFocus();
+    }
+
+    private void configureTvControls() {
+        // Media3's default focus feedback is designed primarily for touch screens.
+        // Give every D-pad target a high-contrast TV focus ring and keep the
+        // controller visible while the viewer is moving through its controls.
+        styleFocusableControls(playerView);
+
+        View progress = playerView.findViewById(androidx.media3.ui.R.id.exo_progress);
+        if (progress instanceof DefaultTimeBar) {
+            // The Media3 default divides the full duration into 20 key presses,
+            // which can make one press jump several minutes in a long movie.
+            ((DefaultTimeBar) progress).setKeyTimeIncrement(TIMELINE_SEEK_INCREMENT_MS);
+        }
+    }
+
+    private void styleFocusableControls(View view) {
+        if (view != playerView && view.isFocusable() && (view.isClickable() || view instanceof DefaultTimeBar)) {
+            view.setBackgroundResource(R.drawable.player_control_focus);
+            view.setOnFocusChangeListener((control, focused) -> {
+                float focusedScale = control instanceof DefaultTimeBar ? 1f : 1.12f;
+                control.animate().scaleX(focused ? focusedScale : 1f).scaleY(focused ? focusedScale : 1f).setDuration(120).start();
+                control.setElevation(focused ? 12f : 0f);
+                playerView.setControllerShowTimeoutMs(focused ? 0 : CONTROLLER_TIMEOUT_MS);
+                if (focused) playerView.showController();
+            });
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) styleFocusableControls(group.getChildAt(i));
+        }
     }
 
     boolean isWaitingForSource() { return waitingForSource; }
@@ -168,7 +204,7 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
                     .setLoadErrorHandlingPolicy(new DefaultLoadErrorHandlingPolicy(5)))
                 .setLoadControl(new DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 50_000, 2_500, 5_000)
                     .setTargetBufferBytes(32 * 1024 * 1024).setPrioritizeTimeOverSizeThresholds(false).build())
-                .setSeekBackIncrementMs(10_000).setSeekForwardIncrementMs(10_000).build();
+                .setSeekBackIncrementMs(TIMELINE_SEEK_INCREMENT_MS).setSeekForwardIncrementMs(TIMELINE_SEEK_INCREMENT_MS).build();
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true);
             player.setHandleAudioBecomingNoisy(true);
             player.setPlaybackSpeed(speed);
