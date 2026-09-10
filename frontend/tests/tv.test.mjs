@@ -2,6 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { nearestControl, resolveTvMode } from '../src/lib/tv.ts';
 import { installAbortSignalFallbacks } from '../src/lib/browser-compat.ts';
+import { normalizedServerUrl } from '../src/native.ts';
+
+test('native server addresses are normalized and reject unsafe URL forms', () => {
+  assert.equal(normalizedServerUrl(' http://192.168.1.50:3000/ '), 'http://192.168.1.50:3000');
+  assert.equal(normalizedServerUrl('https://home.example.test/dashboard/?old=1#section'), 'https://home.example.test/dashboard');
+  assert.throws(() => normalizedServerUrl('ftp://192.168.1.50'), /HTTP or HTTPS/);
+  assert.throws(() => normalizedServerUrl('http://user:password@192.168.1.50'), /username or password/);
+});
 
 test('Fire TV detection keeps desktop, Android phones and Silk tablets on the original UI', () => {
   const fire = 'Mozilla/5.0 (Linux; Android 9; AFTMM) AppleWebKit/537.36 Silk/120.1 Chrome/120.0 Safari/537.36';

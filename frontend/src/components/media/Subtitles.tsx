@@ -8,6 +8,7 @@ import Switch from "../ui/switch";
 import SubtitleTimingControls from "./SubtitleTimingControls";
 
 type Subtitle = { key: string; name: string; content: string };
+export type NativeSubtitleState = { status: "off" | "loading" } | { status: "ready"; subtitle: { name: string; language: string; content: string; offset: number } };
 
 function disableSubtitles(element: HTMLVideoElement | null) {
   for (const track of element?.textTracks ?? []) {
@@ -15,7 +16,7 @@ function disableSubtitles(element: HTMLVideoElement | null) {
   }
 }
 
-export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0, simple = false, englishEnabled = false, onEnglishChange }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number; simple?: boolean; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void }) {
+export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0, simple = false, englishEnabled = false, onEnglishChange, onNativeSubtitleChange }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number; simple?: boolean; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void; onNativeSubtitleChange?: (state: NativeSubtitleState) => void }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const active = useRef<AbortController | null>(null);
@@ -32,8 +33,14 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
   const [error, setError] = useState("");
   const subtitles = files.filter(file => file.kind === "subtitle" && subtitleFormat(file.path));
   const changedEnglish = useEffectEvent((enabled: boolean) => onEnglishChange?.(enabled));
+  const changedNativeSubtitle = useEffectEvent((state: NativeSubtitleState) => onNativeSubtitleChange?.(state));
 
   useEffect(() => () => active.current?.abort(), []);
+  useEffect(() => {
+    if (busy || (simple && englishEnabled && !error && (!loaded || loaded.key !== selected))) changedNativeSubtitle({ status: "loading" });
+    else if ((!simple || englishEnabled) && loaded && loaded.key === selected) changedNativeSubtitle({ status: "ready", subtitle: { name: loaded.name, language: simple ? "en" : "und", content: loaded.content, offset } });
+    else changedNativeSubtitle({ status: "off" });
+  }, [busy, loaded, selected, offset, simple, englishEnabled, error]);
   useEffect(() => {
     offsetValue.current = offset - timelineStart;
     applyOffset.current?.(offset - timelineStart);

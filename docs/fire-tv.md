@@ -15,7 +15,7 @@ You can also use that URL on a desktop to preview the TV layout. Use the
 only in that browser; `?tv=1` always overrides a saved desktop choice.
 The URL works even when browser storage is blocked.
 
-TV mode provides larger text, four poster columns at 720p and five at 1080p,
+TV mode provides larger text, five poster columns at 720p and seven at 1080p,
 extra space around the screen edges, a strong orange focus outline, and access
 to the other dashboard sections through the header menu.
 
@@ -44,9 +44,15 @@ Home, voice input, and native menus remain controlled by Silk/Fire OS; a web
 page can only handle events the browser delivers.
 
 The build targets Chrome 87 syntax and supplies missing `AbortSignal.any` and
-`AbortSignal.timeout` helpers. This does not guarantee decoding support on every
-Fire Stick: playback still probes the browser and uses the existing preparation
-flow. Configure media services as described in [TV & Movies](tv-media.md).
+`AbortSignal.timeout` helpers. Browser playback probes the formats reported by
+Silk. The Android APK uses a conservative H.264/AAC MP4 stream because Fire OS
+WebView can claim support for video formats that produce audio with a black
+picture on some Fire Stick models. The APK opens that prepared stream in a
+fullscreen native Android player, avoiding WebView video compositing entirely.
+The selected bundled, downloaded, or uploaded subtitle is converted to WebVTT
+and attached to that native player; automatic subtitles finish loading before
+the player opens.
+Configure media services as described in [TV & Movies](tv-media.md).
 
 ## Verification
 
@@ -66,3 +72,80 @@ or device-specific video decoding.
 
 References: [Amazon's Fire TV device identifiers](https://developer.amazon.com/docs/fire-tv/user-agent-strings.html),
 [Silk browser controls](https://digprjsurvey.amazon.co.uk/csad/help/node/TZ6CJ7nVQJW26yiItl).
+
+## Fire OS APK
+
+The React application also ships as a Fire TV-compatible Android APK without
+changing the normal desktop-browser deployment. The APK is a small native shell
+that loads the dashboard from its existing LAN or tailnet address. Keeping the
+hosted page and `/api` on the same origin preserves the backend's origin and
+session checks, and frontend deployments appear on the TV without rebuilding
+the APK.
+
+The first launch asks for the dashboard URL, for example:
+
+```text
+http://192.168.1.50:3000
+```
+
+Use the address that already works from another device on the same network.
+The Compose `FRONTEND_BIND_ADDRESS` must be the server's LAN address or an
+intentional all-interface bind—not `127.0.0.1`. The APK saves the address in
+Android preferences and always requests TV mode. Choose **Server** in the TV
+header to change it later.
+
+The native project uses Capacitor 6 and `minSdkVersion 22`, covering Fire OS 5
+and later. It declares the Leanback launcher, landscape orientation, and no
+touchscreen requirement. Cleartext HTTP is enabled for private home-network
+deployments; prefer HTTPS when the service is reachable beyond a trusted LAN or
+tailnet.
+
+### Build
+
+Install Node.js 24, JDK 17, and Android SDK Platform/Build Tools 34. Set
+`JAVA_HOME` and `ANDROID_SDK_ROOT`, or place portable installations under
+`.tools/jdk17/<jdk-directory>` and `.tools/android-sdk`. Then run:
+
+```powershell
+cd frontend
+npm.cmd install
+npm.cmd run android:apk
+```
+
+The script builds the web application, synchronizes Capacitor, compiles a
+debug-signed APK, and copies it to:
+
+```text
+artifacts/HomeLab-TV-debug.apk
+```
+
+The debug APK is suitable for personal sideloading and testing. Publishing to
+the Amazon Appstore requires a separately protected release signing key and
+store artwork.
+
+To clean the previous build, build a fresh APK, reconnect ADB, and install it
+on the configured Fire TV in one step, run from the repository root:
+
+```bash
+bash ./scripts/build-and-deploy-fire-tv.sh
+```
+
+The script defaults to `192.168.92.255:5555`. Override an address that changes:
+
+```bash
+bash ./scripts/build-and-deploy-fire-tv.sh 192.168.92.42
+```
+
+### Sideload
+
+Enable developer options and ADB debugging on the Fire TV, find its IP address,
+and run:
+
+```powershell
+adb connect FIRE_TV_IP:5555
+adb install -r artifacts\HomeLab-TV-debug.apk
+```
+
+If using the project-local SDK, replace `adb` with
+`.tools\android-sdk\platform-tools\adb.exe`. The Fire TV and computer must be
+on a network that permits the ADB connection.

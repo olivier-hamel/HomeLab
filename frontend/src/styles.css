@@ -242,7 +242,7 @@ html[data-tv-mode="true"] {
 [data-tv-mode="true"] .text-sm { font-size: 1rem; line-height: 1.5; }
 [data-tv-mode="true"] .text-neutral-500 { color: #a3a3a3; }
 [data-tv-mode="true"] button svg { width: 1.3rem; height: 1.3rem; }
-[data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1.25rem; padding: .4rem; }
+[data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: .9rem; padding: .4rem; }
 [data-tv-mode="true"] .tv-catalogue-grid .title-card { display: flex; flex-direction: column; }
 [data-tv-mode="true"] .tv-catalogue-grid .title-card > button:first-child { display: flex; flex: 1; flex-direction: column; align-items: stretch; }
 [data-tv-mode="true"] .tv-catalogue-grid .title-card > button:first-child:focus { outline: none !important; box-shadow: none; }
@@ -255,6 +255,9 @@ html[data-tv-mode="true"] {
 [data-tv-mode="true"] .tv-catalogue-grid .catalogue-info-button svg { width: 1.1rem; height: 1.1rem; }
 [data-tv-mode="true"] .tv-catalogue-grid .line-clamp-2.text-xs,
 [data-tv-mode="true"] .tv-catalogue-grid span.text-orange-400 { display: none; }
+[data-tv-mode="true"] .tv-catalogue-grid .title-card > button:first-child > div:last-child { padding: .55rem .65rem .7rem; }
+[data-tv-mode="true"] .tv-catalogue-grid .title-card .font-semibold { font-size: .8rem; line-height: 1.2; }
+[data-tv-mode="true"] .tv-catalogue-grid .title-card .text-neutral-400 { font-size: .7rem; }
 [data-tv-mode="true"] dialog { width: 88vw; max-width: 64rem; max-height: 82vh; padding: 1.75rem; scroll-padding: 1rem 1rem 5rem; }
 [data-tv-mode="true"] dialog::backdrop { backdrop-filter: none; }
 [data-tv-mode="true"] .tv-player-screen video { max-height: 60vh; object-fit: contain; }
@@ -275,14 +278,9 @@ html[data-tv-mode="true"] {
 
 @media (min-width: 1800px) {
   html[data-tv-mode="true"] { font-size: 22px; }
-  [data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
-}
-@media (min-width: 1400px) and (max-width: 1799px) {
-  [data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 @media (max-width: 1000px) {
   html[data-tv-mode="true"] { font-size: 16px; }
-  [data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 600px) {
   [data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

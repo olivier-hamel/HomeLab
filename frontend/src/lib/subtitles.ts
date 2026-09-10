@@ -74,6 +74,38 @@ export function subtitleTiming(track: Pick<TextTrack, "cues" | "removeCue" | "ad
   };
 }
 
+function vttSeconds(value: string): number {
+  const parts = value.split(":");
+  return Number(parts.at(-1)) + Number(parts.at(-2)) * 60 + (parts.length === 3 ? Number(parts[0]) * 3600 : 0);
+}
+
+function vttTimestamp(value: number): string {
+  const milliseconds = Math.max(0, Math.round(value * 1000));
+  const hours = Math.floor(milliseconds / 3_600_000);
+  const minutes = Math.floor(milliseconds % 3_600_000 / 60_000);
+  const seconds = Math.floor(milliseconds % 60_000 / 1000);
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(milliseconds % 1000).padStart(3, "0")}`;
+}
+
+export function offsetSubtitleVtt(content: string, offset: number): string {
+  if (!Number.isFinite(offset) || offset === 0) return content;
+  const blocks = content.trimEnd().split(/\n{2,}/);
+  const shifted = blocks.flatMap((block, blockIndex) => {
+    if (blockIndex === 0 && block.startsWith("WEBVTT")) return [block];
+    const lines = block.split("\n");
+    const timing = lines.findIndex(line => line.includes("-->"));
+    if (timing < 0) return [block];
+    const match = /^(\d{2,}:\d{2}:\d{2}\.\d{3}|\d{2}:\d{2}\.\d{3})(\s+-->\s+)(\d{2,}:\d{2}:\d{2}\.\d{3}|\d{2}:\d{2}\.\d{3})(.*)$/.exec(lines[timing]);
+    if (!match) return [block];
+    const start = vttSeconds(match[1]) + offset;
+    const end = vttSeconds(match[3]) + offset;
+    if (end <= 0) return [];
+    lines[timing] = `${vttTimestamp(Math.max(0, start))}${match[2]}${vttTimestamp(Math.max(0.001, end))}${match[4]}`;
+    return [lines.join("\n")];
+  });
+  return `${shifted.join("\n\n")}\n`;
+}
+
 // HTML text tracks consume WebVTT. Convert SRT timings, keeping cue markup as
 // text-track payload (never HTML), and let the browser render and synchronize it.
 export function subtitleVtt(bytes: ArrayBuffer, name: string): string {

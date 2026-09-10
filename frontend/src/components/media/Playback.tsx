@@ -3,10 +3,12 @@ import { Copy, Download, FastForward, LoaderCircle, Maximize, Pause, Play, Refre
 import { Button } from "../ui/button";
 import { bytes, mainVideo, mediaApi, preparePlayback, recordWatchHistory, savePlaybackProgress, type PreparedPlayback, type SearchIntent, type Selection, type Source, type TorrentStatus } from "../../lib/media";
 import { useMediaTask } from "./useMediaTask";
-import Subtitles from "./Subtitles";
+import Subtitles, { type NativeSubtitleState } from "./Subtitles";
 import PlaybackTimeline from "./PlaybackTimeline";
 import { useTvMode } from "../../lib/tv";
 import { useTvFocus } from "../useTvNavigation";
+import { hasNativeVideoPlayer, isNativeApp, playNativeVideo } from "../../native";
+import { offsetSubtitleVtt } from "../../lib/subtitles";
 
 function pause(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -95,6 +97,7 @@ function Player({ selection, initial, search, simple = false, resumeAt = 0, onFa
   const [position, setPosition] = useState(0);
   const [share, setShare] = useState<{ token: string; path: string; expiresAt: string } | null>(null);
   const [notice, setNotice] = useState("");
+  const [nativeSubtitle, setNativeSubtitle] = useState<NativeSubtitleState>(() => simple && englishEnabled ? { status: "loading" } : { status: "off" });
   const task = useMediaTask();
   const failedOnce = useRef(false);
   const historyRecorded = useRef(false);
@@ -150,11 +153,12 @@ function Player({ selection, initial, search, simple = false, resumeAt = 0, onFa
   const start = async (at?: number) => {
     const element = video.current;
     if (!element) return;
+    if (hasNativeVideoPlayer() && nativeSubtitle.status === "loading") { setNotice("Waiting for subtitles to finish loadingâ€¦"); return; }
     preparing.current?.abort();
     const controller = new AbortController(); preparing.current = controller;
     setError(""); setState(prepared ? "buffering" : "checking format");
     try {
-      const plan = prepared ?? await preparePlayback(selection.id, AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]), mime => element.canPlayType(mime));
+      const plan = prepared ?? await preparePlayback(selection.id, AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]), mime => element.canPlayType(mime), isNativeApp() ? "android-tv" : "browser");
       if (controller.signal.aborted) return;
       setPrepared(plan); setState("buffering");
       const target = at ?? (!element.getAttribute("src") || element.error ? initialResume.current : 0);
@@ -163,6 +167,17 @@ function Player({ selection, initial, search, simple = false, resumeAt = 0, onFa
         const url = offset ? `${plan.stream}?start=${offset}` : plan.stream;
         setTimelineStart(offset); setPosition(target); latestPosition.current = target; setPlaybackUrl(url);
         pendingDirectSeek.current = plan.mode === "direct" ? target : 0;
+        if (hasNativeVideoPlayer()) {
+          setState("playing"); initialResume.current = 0; recordHistory();
+          const subtitle = nativeSubtitle.status === "ready" ? { ...nativeSubtitle.subtitle, content: offsetSubtitleVtt(nativeSubtitle.subtitle.content, nativeSubtitle.subtitle.offset - offset) } : undefined;
+          const result = await playNativeVideo(new URL(url, window.location.href).href, selection.file.path, plan.mode === "direct" ? target : 0, subtitle);
+          const absolutePosition = offset + result.position;
+          latestPosition.current = result.ended && result.duration > 0 ? offset + result.duration : absolutePosition;
+          latestDuration.current = plan.duration ?? (result.duration > 0 ? offset + result.duration : null);
+          initialResume.current = result.ended ? 0 : latestPosition.current;
+          setPosition(latestPosition.current); setState("ready"); persistNow();
+          return;
+        }
         element.src = url; element.load();
       }
       await element.play();
@@ -176,7 +191,9 @@ function Player({ selection, initial, search, simple = false, resumeAt = 0, onFa
     }
   };
   const autoplay = useEffectEvent(() => { void start(); });
-  useEffect(() => { if (simple) autoplay(); }, [simple]);
+  // Native autoplay must wait until the asynchronous subtitle selection settles.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (simple && nativeSubtitle.status !== "loading") autoplay(); }, [simple, nativeSubtitle.status]);
   const updateBuffer = () => {
     const element = video.current;
     if (!element) return;
@@ -225,7 +242,9 @@ function Player({ selection, initial, search, simple = false, resumeAt = 0, onFa
     return () => document.removeEventListener("keydown", handle);
   }, [tvMode]);
   const fullscreen = () => {
-    const target = video.current;
+    // TV viewers still need the large remote-friendly playback controls while
+    // fullscreen; desktop browsers can use their native video controls.
+    const target = tvMode ? screen.current : video.current;
     if (document.fullscreenElement === target) { void document.exitFullscreen().catch(() => setNotice("Use Back to leave fullscreen.")); return; }
     void target?.requestFullscreen().catch(() => setNotice("Use the native player fullscreen control on this device."));
   };
@@ -249,7 +268,7 @@ function Player({ selection, initial, search, simple = false, resumeAt = 0, onFa
     {playerControls}
     {error && <p role="status" className="text-sm text-orange-300">{error}</p>}
     <div className="simple-player-options">
-      <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} simple englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} />
+      <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} simple englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} onNativeSubtitleChange={setNativeSubtitle} />
       <div className="space-y-2"><Button variant="outline" onClick={onNext}><RefreshCw />Try another source</Button><p className="text-xs text-neutral-400">Playback not working?</p></div>
     </div>
     {notice && <p role="status" className="text-sm text-neutral-300">{notice}</p>}
@@ -263,7 +282,7 @@ function Player({ selection, initial, search, simple = false, resumeAt = 0, onFa
     {stats.preloadBytes !== null && stats.preloadTarget !== null && stats.preloadTarget > 0 && <p className="text-xs text-neutral-500">TorrServer torrent-wide preload: {bytes(stats.preloadBytes)} / {bytes(stats.preloadTarget)}. This may include another viewer’s buffer.</p>}
     {statsError && <p className="text-xs text-orange-400">{statsError}</p>}
     <p className="text-xs leading-relaxed text-neutral-400">Playback checks this browser’s format support and preserves compatible video and audio. External players receive the original file.</p>
-    <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} />
+    <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} onNativeSubtitleChange={setNativeSubtitle} />
     <details className="rounded border border-neutral-700 p-4"><summary className="cursor-pointer text-sm">External player · VLC / M3U</summary><div className="mt-4 space-y-3">
       <p className="text-xs leading-relaxed text-neutral-400">Create a link valid for 15 minutes, scoped to this file. The player must reach this dashboard on your LAN/tailnet. The link works without browser cookies; anyone who has it and network access can use it until expiry or revocation. A separate login proxy may still block VLC.</p>
       <Button variant="outline" disabled={task.busy || !!share} onClick={() => { void task.run(s => mediaApi<NonNullable<typeof share>>("share", s, { id: selection.id }), setShare, 15_000); }}>Create player link</Button>

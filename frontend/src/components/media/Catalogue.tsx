@@ -2,14 +2,13 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Film, Info, Play, Search, Star, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { mediaApi, sourceIntent, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
+import { mediaApi, sourceIntent, type ContinueWatchingMovie, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
 import { useTvMode } from "../../lib/tv";
-import TvScrollControls from "../TvScrollControls";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 type CatalogueResponse = { titles: Title[]; pages: number; originalQuery?: string; correctedQuery?: string; correctionProvider?: "gemini" };
 type RecommendationResponse = { provider: "gemini"; basedOn: number; titles: Title[] };
-export default function Catalogue({ find, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
+export default function Catalogue({ find, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent, resumeAt?: number) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
   const [kind, setKind] = useState<Kind>("movie");
   const [text, setText] = useState("");
   const [q, setQuery] = useState("");
@@ -19,6 +18,7 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
   const [suggestions, setSuggestions] = useState<Title[]>([]);
   const [suggestionFocus, setSuggestionFocus] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  const tvMode = useTvMode();
   useEffect(() => {
     const value = text.trim();
     if (!suggestionFocus || value.length < 2) return;
@@ -33,9 +33,10 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [kind, text, suggestionFocus]);
   const choose = (title: Title) => {
-    if (simple && title.kind === "movie") find(sourceIntent({ ...title, imdbId: null, tvdbId: null, rating: null, seasons: [] }));
+    if (simple && title.kind === "movie" && !tvMode) find(sourceIntent({ ...title, imdbId: null, tvdbId: null, rating: null, seasons: [] }));
     else setChosen(title);
   };
+  const exitSearch = () => { setText(""); setQuery(""); setPage(1); setChosen(null); setSuggestions([]); setSuggestionFocus(false); };
   return <div className="space-y-5">
     <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setSuggestionFocus(false); setQuery(text.trim()); setPage(1); setRetry(r => r + 1); }}>
       {simple ? <div role="group" aria-label="Catalogue type" className="simple-catalogue-tabs">{(["movie", "tv"] as const).map(value => <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKind(value); setPage(1); setChosen(null); }}>{value === "movie" ? "Movies" : "TV shows"}</button>)}</div> : <><label className="sr-only" htmlFor="catalogue-kind">Catalogue type</label>
@@ -54,10 +55,11 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
     </form>
     {!q && continueWatching}
     {!q && recommendations && <RecommendedTitles choose={choose} showDetails={setChosen} simple={simple} />}
-    <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? kind === "movie" ? "Popular movies" : "Popular TV shows" : "Popular on TMDB"}{!simple && " · Metadata only."}</p>
+      {q && <Button type="button" variant="outline" data-tv-back="" onClick={exitSearch}><X />Exit search</Button>}
     </div>
-    {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={intent => { setChosen(null); find(intent); }} simple={simple} />}
+    {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={(intent, resumeAt) => { setChosen(null); find(intent, resumeAt); }} simple={simple} />}
     <CatalogueResults key={`${kind}/${q}/${page}/${retry}`} kind={kind} query={q} page={page} setPage={setPage} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
   </div>;
 }
@@ -83,13 +85,15 @@ function RecommendedTitles({ choose, showDetails, simple }: { choose: (title: Ti
 }
 
 function TitleGrid({ titles, choose, showDetails, simple }: { titles: Title[]; choose: (title: Title) => void; showDetails: (title: Title) => void; simple: boolean }) {
+  const tvMode = useTvMode();
+  const tvDetails = simple && tvMode;
   return <div className="tv-catalogue-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
     {titles.map(title => <div key={`${title.kind}/${title.id}`} className={`title-card group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 transition-colors hover:border-orange-500 focus-within:border-orange-500 focus-within:outline focus-within:outline-2 focus-within:outline-orange-500 ${simple ? "simple-title-card" : ""}`}>
-      <button className="block w-full text-left focus-visible:outline-none" onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" ? "Watch" : "Choose episode of" : "Details for"} ${title.title}`}>
-        <div className="relative flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}{simple && <span className="simple-card-action"><Play className="h-5 w-5 fill-current" />{title.kind === "movie" ? "Watch now" : "Choose episode"}</span>}</div>
+      <button className="block w-full text-left focus-visible:outline-none" onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" && !tvDetails ? "Watch" : title.kind === "tv" ? "Choose episode of" : "Details for" : "Details for"} ${title.title}`}>
+        <div className="relative flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}{simple && <span className="simple-card-action"><Play className="h-5 w-5 fill-current" />{title.kind === "movie" ? tvDetails ? "View details" : "Watch now" : "Choose episode"}</span>}</div>
         <div className="space-y-2 p-3"><p className="line-clamp-2 text-sm font-semibold text-white group-hover:text-orange-400">{title.title}</p><p className="text-xs text-neutral-400">{title.year || "Year unknown"} · {title.kind === "movie" ? "Movie" : "TV"}</p>{!simple && <><p className="line-clamp-2 text-xs leading-relaxed text-neutral-500">{title.overview || "No overview available."}</p><span className="block text-xs text-orange-400">View details</span></>}</div>
       </button>
-      {title.kind === "movie" && <button type="button" className="catalogue-info-button absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-black/75 text-white shadow-md backdrop-blur-sm transition-colors hover:border-orange-400 hover:bg-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400" onClick={() => showDetails(title)} aria-label={`More information about ${title.title}`} title={`More information about ${title.title}`}><Info aria-hidden="true" className="h-4 w-4" /></button>}
+      {(!simple || !tvDetails) && title.kind === "movie" && <button type="button" className="catalogue-info-button absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-black/75 text-white shadow-md backdrop-blur-sm transition-colors hover:border-orange-400 hover:bg-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400" onClick={() => showDetails(title)} aria-label={`More information about ${title.title}`} title={`More information about ${title.title}`}><Info aria-hidden="true" className="h-4 w-4" /></button>}
     </div>)}
   </div>;
 }
@@ -115,13 +119,15 @@ function CatalogueResults({ kind, query, page, setPage, choose, showDetails, ret
   </>;
 }
 
-function TitleDetails({ title, close, find, simple }: { title: Title; close: () => void; find: (intent: SearchIntent) => void; simple: boolean }) {
+function TitleDetails({ title, close, find, simple }: { title: Title; close: () => void; find: (intent: SearchIntent, resumeAt?: number) => void; simple: boolean }) {
   const tvMode = useTvMode();
+  const tvDetails = simple && tvMode;
   const panel = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<Details | null>(null);
   const [error, setError] = useState("");
   const [season, setSeason] = useState<number | undefined>();
   const [failedPoster, setFailedPoster] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ContinueWatchingMovie | null | undefined>(tvDetails && title.kind === "movie" ? undefined : null);
   const poster = data?.poster || title.poster;
   useEffect(() => {
     const dialog = panel.current;
@@ -141,6 +147,14 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
     void mediaApi<Details>(`details/${title.kind}/${title.id}`, AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])).then(d => { if (!controller.signal.aborted) { setData(d); setSeason(d.seasons.find(s => s.number > 0)?.number ?? d.seasons[0]?.number); } }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [title.id, title.kind]);
+  useEffect(() => {
+    if (!tvDetails || title.kind !== "movie") return;
+    const controller = new AbortController();
+    void mediaApi<{ movies: ContinueWatchingMovie[] }>("continue-watching", AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]))
+      .then(result => { if (!controller.signal.aborted) setProgress(result.movies.find(movie => movie.movieId === title.id) ?? null); })
+      .catch(() => { if (!controller.signal.aborted) setProgress(null); });
+    return () => controller.abort();
+  }, [tvDetails, title.id, title.kind]);
   return <dialog ref={panel} aria-labelledby="catalogue-details-title" onCancel={e => { e.preventDefault(); close(); }} onClick={e => {
     if (e.target !== e.currentTarget) return;
     const bounds = e.currentTarget.getBoundingClientRect();
@@ -150,7 +164,11 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
     <div className="grid items-start gap-6 sm:grid-cols-[minmax(0,1fr)_10rem]">
     <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
-    {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data))}>{simple ? "Watch now" : "Find sources"}</Button> : <div className="space-y-4">
+    {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <div className="flex flex-wrap gap-3">
+      <Button disabled={tvDetails && progress === undefined} className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data), progress?.playbackPositionSeconds ?? 0)}>{tvDetails && progress === undefined ? "Checking progress…" : tvDetails ? "Watch" : simple ? "Watch now" : "Find sources"}</Button>
+      {tvDetails && progress && <Button variant="outline" onClick={() => find(sourceIntent(data), 0)}>Watch from beginning</Button>}
+      {tvDetails && <Button variant="ghost" onClick={close}>Close</Button>}
+    </div> : <div className="space-y-4">
       <label className="flex flex-wrap items-center gap-3 text-sm">Season<select className={field} value={season ?? ""} onChange={e => setSeason(Number(e.target.value))}>{data.seasons.map(s => <option key={s.number} value={s.number}>{s.name} ({s.episodes ?? "?"} episodes)</option>)}</select></label>
       {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} simple={simple} /> : <p>No season information is available.</p>}
     </div>}
@@ -159,7 +177,6 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
       {poster && poster !== failedPoster ? <img src={poster} alt={`${title.title} poster`} referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={() => setFailedPoster(poster)} /> : <div className="flex flex-col items-center gap-2 text-neutral-500"><Film className="h-10 w-10" aria-hidden="true" /><span className="text-xs">No poster available</span></div>}
     </div>
     </div>
-    {tvMode && <TvScrollControls dialog />}
   </dialog>;
 }
 function Episodes({ title, season, find, simple }: { title: Details; season: number; find: (intent: SearchIntent) => void; simple: boolean }) {

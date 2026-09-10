@@ -43,7 +43,8 @@ const server = createServer(async (req, res) => {
     if (endpoint === 'subtitles/download') { metrics.subtitleDownloads.push(body.choice); await delay(subtitleDelay); }
     const json = endpoint === 'status' ? { tmdb: true, prowlarr: true, torrserver: true }
       : endpoint === 'catalogue' ? { titles: url.searchParams.get('kind') === 'tv' ? shows : titles, pages: 1 }
-      : endpoint.startsWith('details/') ? { ...(endpoint.startsWith('details/tv/') ? shows : titles)[Number(endpoint.split('/').pop()) - 1], seasons: endpoint.startsWith('details/tv/') ? [{ number: 1, name: 'Season 1', episodes: episodes.length }] : [], imdbId: 'tt123', tvdbId: null }
+      : endpoint.startsWith('details/') ? { ...(endpoint.startsWith('details/tv/') ? shows : titles)[Number(endpoint.split('/').pop()) - 1], seasons: endpoint.startsWith('details/tv/') ? [{ number: 1, name: 'Season 1', episodes: episodes.length }] : [], imdbId: 'tt123', tvdbId: null, rating: 8.1 }
+      : endpoint === 'continue-watching' ? { movies: [] }
       : endpoint.startsWith('season/') ? { episodes }
       : endpoint === 'search' ? { searchId: 'search', results: simpleFixture ? alternatives : [source], reports: [], more: false, batch: 1, advice: { provider: 'heuristic', ranking: [] } }
       : endpoint === 'recommend' ? fallbackAdvice ? { ...advice, provider: 'heuristic', warning: "Gemini's request limit or quota was reached. Using basic matching for this search." } : advice
@@ -99,7 +100,8 @@ try {
   };
   const until = async expression => {
     for (let i = 0; i < 100; i++) { if (await evaluate(expression)) return; await delay(50); }
-    throw new Error(`Timed out: ${expression}`);
+    const body = await evaluate('document.body.innerText.slice(0, 1000)').catch(() => 'unavailable');
+    throw new Error(`Timed out: ${expression}\nPage text: ${body}\nBrowser errors: ${JSON.stringify(errors)}`);
   };
   const focus = async selector => { await evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`); };
   const press = async key => {
@@ -131,10 +133,13 @@ try {
   await focus('nav button'); await press('ArrowRight');
   assert.equal(await active(), 'OVERVIEW', 'TV spatial navigation is inactive on desktop');
   await call('Page.navigate', { url: `${origin}/?tv=1` });
-  await until('document.querySelectorAll(".tv-catalogue-grid button").length === 16');
-  for (const [width, height, columns] of [[1280, 720, 4], [1920, 1080, 5], [960, 540, 3], [390, 844, 2]]) {
+  await until('!!document.querySelector(".media-profile-grid button, .tv-catalogue-grid button")');
+  await evaluate('document.querySelector(".media-profile-grid button")?.click()');
+  await until('document.querySelectorAll(".tv-catalogue-grid .title-card").length === 16');
+  for (const [width, height] of [[1280, 720], [1920, 1080], [960, 540], [390, 844]]) {
     await resize(width, height);
-    assert.equal(await evaluate('getComputedStyle(document.querySelector(".tv-catalogue-grid")).gridTemplateColumns.split(" ").length'), columns);
+    const columns = await evaluate('getComputedStyle(document.querySelector(".tv-catalogue-grid")).gridTemplateColumns.split(" ").length');
+    assert.ok(width < 600 ? columns === 2 : columns >= 5, `Catalogue is dense at ${width}px (${columns} columns)`);
     assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth && document.querySelector("main").scrollWidth <= document.querySelector("main").clientWidth + 1'), `No horizontal overflow at ${width}`);
     if (width >= 1280) {
       await evaluate('window.scrollTo(0, 0)');
@@ -146,35 +151,31 @@ try {
   assert.equal(await evaluate(`document.querySelector('[aria-label="Advanced mode"]').getAttribute('aria-checked')`), 'false', 'Simple mode is the default');
   assert.equal(await evaluate(`!!document.querySelector('#source-query')`), false);
   assert.equal(metrics.adds.length, 0, 'Browsing does not add a torrent');
-  assert.ok(await evaluate('document.querySelector(".tv-page-scroll-controls").getBoundingClientRect().width < innerWidth / 2'), 'Page scroll buttons have no full-width bar');
+  assert.equal(await evaluate('!!document.querySelector("[data-tv-scroll-controls]")'), false, 'TV pages have no Up/Down controls');
   await activate('.simple-catalogue-tabs button:last-child');
   await until('!!document.querySelector(\'[aria-label="Choose episode of Example show 1"]\')');
   await activate('.tv-catalogue-grid button');
   await until('document.querySelectorAll(".simple-episodes button").length === 24');
   const episodeBackground = await evaluate('window.scrollY');
-  // Click where the controls are rendered to check that the modal does not block them.
-  const clickDialogScroll = async direction => {
-    const point = await evaluate(`(() => { const r = document.querySelector('[aria-label="Scroll dialog ${direction}"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-    assert.ok(point.y > 0 && point.y < 720, 'Dialog scroll buttons stay visible');
-    await call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
-    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point });
-  };
-  await clickDialogScroll('down');
+  await focus('dialog button');
+  await press('PageDown');
   await until('document.querySelector("dialog").scrollTop > 0');
-  const episodeScroll = await evaluate('document.querySelector("dialog").scrollTop');
-  await clickDialogScroll('up');
-  assert.ok(await evaluate('document.querySelector("dialog").scrollTop < ' + episodeScroll), 'Up scrolls the episode popup back');
+  await press('PageUp');
   await focus('.simple-episodes button');
   for (let i = 1; i < episodes.length; i++) await press('ArrowDown');
   assert.equal(await active(), 'Watch episode 24: Episode 24', 'Remote can reach the last episode');
-  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector(".tv-dialog-scroll-controls").getBoundingClientRect().top'), 'Last episode is visible above the dialog buttons');
+  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector("dialog").getBoundingClientRect().bottom'), 'Last episode is visible in the dialog');
   assert.equal(await evaluate('window.scrollY'), episodeBackground, 'Episode scrolling leaves the background still');
   await press('Escape');
   await activate('.simple-catalogue-tabs button:first-child');
-  await until('!!document.querySelector(\'[aria-label="Watch Example movie 1"]\')');
+  await until('!!document.querySelector(\'[aria-label="Details for Example movie 1"]\')');
   await evaluate('window.blockAutoplay = true');
   await activate('.tv-catalogue-grid button');
-  assert.equal(metrics.adds.length, 0, 'Movie click waits for the AI review');
+  await until('!!document.querySelector("dialog[open]") && document.body.innerText.includes("8.1")');
+  assert.equal(await evaluate('!!document.querySelector(".simple-title-card .catalogue-info-button")'), false, 'TV cards have no separate information overlay');
+  assert.equal(metrics.adds.length, 0, 'Movie click opens information before playback search');
+  await until('!!document.querySelector("dialog button.bg-orange-600:not(:disabled)")');
+  await activate('dialog button.bg-orange-600');
   await until(`document.body.innerText.includes('Ready to watch. Press Play to start.')`);
   assert.deepEqual(metrics.adds, ['best'], 'Uses Gemini ranking, not source result order');
   assert.ok(await evaluate(`document.body.innerText.includes('Selected with Gemini')`), 'A successful review is accurately labeled');
@@ -216,6 +217,8 @@ try {
   recommendationDelay = 1000;
   const beforeCancel = metrics.adds.length;
   await activate('.tv-catalogue-grid button');
+  await until('!!document.querySelector("dialog button.bg-orange-600:not(:disabled)")');
+  await activate('dialog button.bg-orange-600');
   await delay(100);
   await activate('[data-tv-back]');
   await delay(1100);
@@ -223,6 +226,8 @@ try {
   recommendationDelay = 0;
   subtitleDelay = 500;
   await activate('.tv-catalogue-grid button');
+  await until('!!document.querySelector("dialog button.bg-orange-600:not(:disabled)")');
+  await activate('dialog button.bg-orange-600');
   await until('document.querySelector("video") && !document.querySelector("video").paused');
   await activate('[aria-label="English subtitles"]');
   await until(`document.querySelector('[aria-label="Subtitle controls"]').textContent.includes('Loading subtitles')`);
@@ -233,22 +238,25 @@ try {
   await evaluate('sessionStorage.clear()');
   fallbackAdvice = true;
   await activate('.tv-catalogue-grid button');
+  await until('!!document.querySelector("dialog button.bg-orange-600:not(:disabled)")');
+  await activate('dialog button.bg-orange-600');
   await until('document.querySelector("video") && !document.querySelector("video").paused');
   assert.ok(await evaluate(`document.body.innerText.includes("Gemini's request limit or quota was reached.")`), 'Simple mode explains the actual fallback reason');
   assert.equal(await evaluate(`document.body.innerText.includes('AI unavailable')`), false);
   await activate('[data-tv-back]');
   await evaluate('sessionStorage.clear()');
+  await focus('#catalogue-query');
+  await call('Input.insertText', { text: 'Example' });
+  await press('Enter');
+  await until(`!![...document.querySelectorAll('button')].find(button => button.textContent.includes('Exit search'))`);
+  await activate('[data-tv-back]');
+  await until(`document.querySelector('#catalogue-query').value === '' && document.body.innerText.includes('Popular movies')`);
   await activate('[aria-label="Advanced mode"]');
   simpleFixture = false;
   await until(`!!document.querySelector('#catalogue-kind')`);
   assert.equal(await evaluate('localStorage.getItem("homelab:advanced-media")'), 'true', 'Mode preference is saved');
   assert.ok(await evaluate('document.scrollingElement.scrollHeight > innerHeight'), 'TV content scrolls the browser document');
   assert.equal(await evaluate('getComputedStyle(document.querySelector("main")).overflowY'), 'visible', 'No nested page scrollbar');
-  await activate('[aria-label="Scroll page down"]');
-  assert.ok(await evaluate('window.scrollY > 0'), 'Visible Down button scrolls the document');
-  const afterDown = await evaluate('window.scrollY');
-  await activate('[aria-label="Scroll page up"]');
-  assert.ok(await evaluate('window.scrollY < ' + afterDown), 'Visible Up button scrolls back');
   await evaluate('window.scrollTo(0, 0)');
   await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 640, y: 360, deltaX: 0, deltaY: 400 });
   await until('window.scrollY > 0');
@@ -278,9 +286,9 @@ try {
   await evaluate('document.querySelector("#scroll-regression").remove()');
   await focus('.tv-catalogue-grid button');
   await press('ArrowRight'); assert.equal(await active(), 'Details for Example movie 2');
-  await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 6');
-  await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 10');
-  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector(".tv-page-scroll-controls").getBoundingClientRect().top'), 'Offscreen poster scrolled above the floating buttons');
+  await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 7');
+  await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 12');
+  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= innerHeight'), 'Offscreen poster scrolls into the viewport');
   await press('Enter'); await until('!!document.querySelector("dialog[open]")');
   for (const key of ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp']) {
     await press(key); assert.ok(await evaluate('!!document.activeElement.closest("dialog")'), 'Focus stays in title details');
@@ -299,7 +307,7 @@ try {
   assert.equal(await evaluate('window.scrollY'), behindDialog, 'Dialog scrolling and cursor edges leave the background still');
   await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 640, y: 360 });
   await press('Escape');
-  assert.equal(await active(), 'Details for Example movie 10', 'Dialog returns focus to the selected poster');
+  assert.equal(await active(), 'Details for Example movie 12', 'Dialog returns focus to the selected poster');
   await focus('#catalogue-query');
   await call('Input.insertText', { text: 'Example' });
   await press('ArrowLeft'); assert.equal(await active(), 'catalogue-query', 'Left edits text');

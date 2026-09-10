@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">HomeLab TV</string>
+    <string name="title_activity_main">HomeLab TV</string>
+    <string name="package_name">ca.olivierhamel.homelab</string>
+    <string name="custom_url_scheme">ca.olivierhamel.homelab</string>
+</resources>

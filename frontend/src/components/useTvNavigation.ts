@@ -88,7 +88,12 @@ export default function useTvNavigation(enabled: boolean) {
       if (active?.matches("input[type='range'], video") && (horizontal || document.fullscreenElement)) return;
       const available = controls(root());
       if (!active || !available.includes(active)) { event.preventDefault(); initial(); return; }
-      const candidates = available.filter(element => element !== active && !(key === "ArrowDown" && active.closest("main") && element.closest(".tv-header"))).map(element => ({ element, bounds: element.getBoundingClientRect() }));
+      const activeCard = active.closest(".title-card");
+      const candidates = available.filter(element => element !== active
+        && !(key === "ArrowDown" && active.closest("main") && element.closest(".tv-header"))
+        // An overlaid info button must not steal movement to a different card.
+        && !(element.matches(".catalogue-info-button") && element.closest(".title-card") !== activeCard))
+        .map(element => ({ element, bounds: element.getBoundingClientRect() }));
       // Fixed scroll buttons must not interrupt navigation through offscreen rows.
       const next = nearestControl(active.getBoundingClientRect(), candidates.filter(({ element }) => !element.closest("[data-tv-scroll-controls]")), key as Direction);
       if (next) { event.preventDefault(); focus(next.element); }

@@ -40,9 +40,9 @@ export default function TV() {
     void mediaApi<NonNullable<typeof config>>("status", AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)])).then(c => { if (!controller.signal.aborted) { setConfig(c); setError(""); if (!c.tmdb) setMode("sources"); } }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [retry]);
-  const find = (value: SearchIntent) => {
+  const find = (value: SearchIntent, resumeAt = 0) => {
     if (advanced) { setIntent(value); setMode("sources"); }
-    else setWatchIntent({ intent: value, resumeAt: 0 });
+    else setWatchIntent({ intent: value, resumeAt });
     (tvMode ? document.scrollingElement : document.getElementById("dashboard-content"))?.scrollTo({ top: 0, behavior: "auto" });
   };
   const continueWatching = config?.continueWatching ? <ContinueWatching onResume={(resumeIntent, resumeAt) => { setChosen(null); setWatchIntent({ intent: resumeIntent, resumeAt }); (tvMode ? document.scrollingElement : document.getElementById("dashboard-content"))?.scrollTo({ top: 0, behavior: "auto" }); }} /> : undefined;

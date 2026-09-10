@@ -1,8 +1,13 @@
 # Dependencies and generated output
 node_modules/
+.tools/
+artifacts/
 .next/
 out/
 dist/
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/build/
 next-env.d.ts
 *.tsbuildinfo
 coverage/

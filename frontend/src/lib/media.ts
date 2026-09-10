@@ -37,12 +37,19 @@ export function activeMediaProfile(): MediaProfileId {
   return loadMediaProfile() ?? "default";
 }
 
-export function supportedPlayback(options: PlaybackOption[], canPlayType: (mime: string) => string): string[] {
-  return options.filter(option => canPlayType(option.mime) !== "").map(option => option.id);
+export type PlaybackTarget = "browser" | "android-tv";
+export function supportedPlayback(options: PlaybackOption[], canPlayType: (mime: string) => string, target: PlaybackTarget = "browser"): string[] {
+  return options.filter(option => {
+    if (canPlayType(option.mime) === "") return false;
+    // Fire OS WebView can report support for a codec even when MediaCodec only
+    // decodes its audio track. Prefer a conservative stream for the APK so a
+    // nominally supported HEVC/10-bit/high-level source cannot play as black video.
+    return target === "browser" || (option.container === "mp4" && option.video === "h264" && ["aac", "none"].includes(option.audio));
+  }).map(option => option.id);
 }
-export async function preparePlayback(id: string, signal: AbortSignal, canPlayType: (mime: string) => string): Promise<PreparedPlayback> {
+export async function preparePlayback(id: string, signal: AbortSignal, canPlayType: (mime: string) => string, target: PlaybackTarget = "browser"): Promise<PreparedPlayback> {
   const inspection = await mediaApi<PlaybackInspection>("inspect", signal, { id });
-  return mediaApi<PreparedPlayback>("prepare", signal, { id, supported: supportedPlayback(inspection.options, canPlayType) });
+  return mediaApi<PreparedPlayback>("prepare", signal, { id, supported: supportedPlayback(inspection.options, canPlayType, target) });
 }
 
 export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unknown): Promise<T> {
