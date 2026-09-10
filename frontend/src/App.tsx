@@ -26,6 +26,7 @@ export default function App() {
   const tvMode = useTvMode();
   useTvNavigation(tvMode);
   const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>(tvMode ? "tv" : "overview");
+  const [tvFooterActions, setTvFooterActions] = useState<HTMLDivElement | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const selectedSection = sections.find((section) => section.id === activeSection)!;
@@ -35,9 +36,10 @@ export default function App() {
     return <div className="tv-shell">
       <main id="dashboard-content" tabIndex={-1} className="min-w-0 flex-1 focus:outline-none">
         {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
-        <Page />
+        {activeSection === "tv" ? <TV footerActions={tvFooterActions} /> : <Page />}
       </main>
       <footer className="tv-footer">
+        {activeSection === "tv" && <div ref={setTvFooterActions} className="tv-footer-actions" />}
         <label htmlFor="tv-dashboard-section">Dashboard</label>
         <select id="tv-dashboard-section" value={activeSection} onChange={event => setActiveSection(event.target.value as typeof activeSection)}>
           <option value="tv">TV &amp; Movies</option>

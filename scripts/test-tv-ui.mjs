@@ -358,6 +358,8 @@ try {
   assert.equal(await evaluate('document.querySelector(".tv-header")'), null, 'TV mode has no top bar');
   assert.ok(await evaluate('document.querySelector(".tv-footer")?.innerText.includes("BUILD")'), 'TV build information is in the footer');
   assert.ok(await evaluate('!!document.querySelector(".tv-footer #tv-dashboard-section")'), 'Dashboard navigation is in the footer');
+  assert.ok(await evaluate('!!document.querySelector(".tv-footer [aria-label=\"Advanced mode\"]")'), 'Advanced mode is in the footer');
+  assert.equal(await evaluate('document.querySelectorAll("[aria-label=\"Advanced mode\"]").length'), 1, 'TV page does not duplicate Advanced mode in its header');
   await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'overview'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await until('document.querySelector("#tv-dashboard-section").value === "overview"');
   await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'tv'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
