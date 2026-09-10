@@ -53,8 +53,11 @@ test('conversion handles are opaque and owner-scoped; seek time is validated and
   for (const start of ['-1', 'NaN', '120', 'Infinity', '1e2', '1;bad']) assert.equal((await call(`${path}?start=${start}`)).status, 400);
   assert.equal((await call(`${path}?start=30.5`, undefined, { method: 'HEAD' })).status, 200);
   assert.equal(f.converted.at(-1)[5], 30.5);
+  // HTMLMediaElement.currentTime and persisted MongoDB positions retain sub-ms precision.
+  assert.equal((await call(`${path}?start=30.123456789`)).status, 200);
+  assert.equal(f.converted.at(-1)[5], 30.123456789);
   assert.equal((await call('prepare', { id: selection.id, supported: ['file:///private'] })).status, 422);
   const share = await (await call('share', { id: selection.id })).json();
   const external = await f.api(new Request(`http://playback.test${share.path}`));
-  assert.equal(await external.text(), 'original'); assert.equal(f.converted.length, 1);
+  assert.equal(await external.text(), 'original'); assert.equal(f.converted.length, 2);
 });

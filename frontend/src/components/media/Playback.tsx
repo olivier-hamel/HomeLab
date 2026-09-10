@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Copy, Download, FastForward, LoaderCircle, Maximize, Pause, Play, RefreshCw, Rewind, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
-import { bytes, mainVideo, mediaApi, preparePlayback, type PreparedPlayback, type SearchIntent, type Selection, type Source, type TorrentStatus } from "../../lib/media";
+import { bytes, mainVideo, mediaApi, preparePlayback, recordWatchHistory, savePlaybackProgress, type PreparedPlayback, type SearchIntent, type Selection, type Source, type TorrentStatus } from "../../lib/media";
 import { useMediaTask } from "./useMediaTask";
 import Subtitles from "./Subtitles";
 import PlaybackTimeline from "./PlaybackTimeline";
@@ -16,9 +16,9 @@ function pause(ms: number, signal: AbortSignal) {
     if (signal.aborted) abort();
   });
 }
-type SimplePlayback = { simple?: boolean; onFailure?: () => void; onNext?: () => void; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void };
+type SimplePlayback = { simple?: boolean; resumeAt?: number; onFailure?: () => void; onNext?: () => void; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void };
 
-export default function Playback({ source, search, close, simple = false, onFailure, onNext, englishEnabled, onEnglishChange }: { source: Source | string; search?: SearchIntent; close: () => void } & SimplePlayback) {
+export default function Playback({ source, search, close, simple = false, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { source: Source | string; search?: SearchIntent; close: () => void } & SimplePlayback) {
   const panel = useRef<HTMLElement>(null);
   useTvFocus(panel);
   const [status, setStatus] = useState<TorrentStatus | null>(null);
@@ -57,7 +57,7 @@ export default function Playback({ source, search, close, simple = false, onFail
   }, [source, retry, simple, search]);
   const videos = status?.files.filter(f => f.kind === "video") ?? [];
   if (simple) return <section ref={panel} aria-label="Playback" className="simple-playback">
-    {selection ? <Player key={selection.id} selection={selection} initial={status!} search={search} simple onFailure={onFailure} onNext={onNext} englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} /> : <div className="simple-watch-pending"><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status">{error ? "Trying another version…" : "Torrent found. Getting your video ready…"}</p><Button variant="outline" onClick={onNext}><RefreshCw />Try another source</Button></div>}
+    {selection ? <Player key={selection.id} selection={selection} initial={status!} search={search} simple resumeAt={resumeAt} onFailure={onFailure} onNext={onNext} englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} /> : <div className="simple-watch-pending"><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status">{error ? "Trying another version…" : "Torrent found. Getting your video ready…"}</p><Button variant="outline" onClick={onNext}><RefreshCw />Try another source</Button></div>}
   </section>;
   return <section ref={panel} aria-label="Playback" className="space-y-4 rounded-lg border border-orange-500/50 bg-neutral-900 p-4 sm:p-6">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-2 text-xs tracking-widest text-orange-400">YOUR SELECTION</p><h2 className="break-words text-lg font-semibold text-white">{status?.title || (typeof source === "string" ? "Manual magnet" : source.title)}</h2></div><Button data-tv-back="" aria-label="Close playback" variant="ghost" size="icon" onClick={close}><X /></Button></div>
@@ -77,7 +77,7 @@ export default function Playback({ source, search, close, simple = false, onFail
   </section>;
 }
 
-function Player({ selection, initial, search, simple = false, onFailure, onNext, englishEnabled, onEnglishChange }: { selection: Selection; initial: TorrentStatus; search?: SearchIntent } & SimplePlayback) {
+function Player({ selection, initial, search, simple = false, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { selection: Selection; initial: TorrentStatus; search?: SearchIntent } & SimplePlayback) {
   const tvMode = useTvMode();
   const screen = useRef<HTMLDivElement>(null);
   useTvFocus(screen);
@@ -97,6 +97,21 @@ function Player({ selection, initial, search, simple = false, onFailure, onNext,
   const [notice, setNotice] = useState("");
   const task = useMediaTask();
   const failedOnce = useRef(false);
+  const historyRecorded = useRef(false);
+  const initialResume = useRef(Math.max(0, resumeAt));
+  const pendingDirectSeek = useRef(0);
+  const latestPosition = useRef(0);
+  const latestDuration = useRef<number | null>(null);
+  const isResume = resumeAt > 0;
+  const persistNow = () => {
+    if (search && latestDuration.current) void savePlaybackProgress(search, latestPosition.current, latestDuration.current).catch(() => {});
+  };
+  const persist = useEffectEvent(persistNow);
+  const recordHistory = () => {
+    if (!search || historyRecorded.current) return;
+    historyRecorded.current = true;
+    void recordWatchHistory(selection.id, search).catch(() => { historyRecorded.current = false; });
+  };
   const fail = useEffectEvent(() => {
     if (!simple || failedOnce.current) return;
     failedOnce.current = true;
@@ -104,8 +119,15 @@ function Player({ selection, initial, search, simple = false, onFailure, onNext,
   });
   useEffect(() => {
     const element = video.current;
-    return () => { preparing.current?.abort(); if (element) { element.pause(); element.removeAttribute("src"); element.load(); } };
+    return () => { persist(); preparing.current?.abort(); if (element) { element.pause(); element.removeAttribute("src"); element.load(); } };
   }, []);
+  useEffect(() => {
+    if (state !== "playing") return;
+    const timer = window.setInterval(persist, 60_000);
+    const visibility = () => { if (document.visibilityState === "hidden") persist(); };
+    document.addEventListener("visibilitychange", visibility);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", visibility); };
+  }, [state]);
   useEffect(() => {
     if (state !== "buffering") return;
     const timer = setTimeout(() => { video.current?.pause(); video.current?.removeAttribute("src"); video.current?.load(); setState("stalled"); setError("No playable data arrived for 90 seconds. Retry, choose another source, or use an external player."); setPlaybackUrl(undefined); fail(); }, 90_000);
@@ -135,10 +157,12 @@ function Player({ selection, initial, search, simple = false, onFailure, onNext,
       const plan = prepared ?? await preparePlayback(selection.id, AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]), mime => element.canPlayType(mime));
       if (controller.signal.aborted) return;
       setPrepared(plan); setState("buffering");
+      const target = at ?? (!element.getAttribute("src") || element.error ? initialResume.current : 0);
       if (at !== undefined || !element.getAttribute("src") || element.error) {
-        const offset = plan.mode === "direct" ? 0 : at ?? 0;
+        const offset = plan.mode === "direct" ? 0 : target;
         const url = offset ? `${plan.stream}?start=${offset}` : plan.stream;
-        setTimelineStart(offset); setPosition(offset); setPlaybackUrl(url);
+        setTimelineStart(offset); setPosition(target); latestPosition.current = target; setPlaybackUrl(url);
+        pendingDirectSeek.current = plan.mode === "direct" ? target : 0;
         element.src = url; element.load();
       }
       await element.play();
@@ -146,8 +170,8 @@ function Player({ selection, initial, search, simple = false, onFailure, onNext,
       if (!controller.signal.aborted) {
         const blocked = e instanceof Error && e.name === "NotAllowedError";
         setState(blocked ? "ready" : "failed");
-        setError(blocked ? "Ready to watch. Press Play to start." : simple ? "This version couldn't play. Trying another…" : e instanceof Error ? e.message : "Playback could not start. Retry or use an external player.");
-        if (!blocked && simple && !failedOnce.current) { failedOnce.current = true; onFailure?.(); }
+        setError(blocked ? "Ready to watch. Press Play to start." : simple && isResume ? "Resume couldn't start. Retry playback or choose another source." : simple ? "This version couldn't play. Trying another…" : e instanceof Error ? e.message : "Playback could not start. Retry or use an external player.");
+        if (!blocked && simple && !isResume && !failedOnce.current) { failedOnce.current = true; onFailure?.(); }
       }
     }
   };
@@ -159,7 +183,9 @@ function Player({ selection, initial, search, simple = false, onFailure, onNext,
     let ahead = 0;
     for (let i = 0; i < element.buffered.length; i++) if (element.buffered.start(i) <= element.currentTime && element.buffered.end(i) >= element.currentTime) ahead = element.buffered.end(i) - element.currentTime;
     setBuffer(ahead);
-    setPosition(timelineStart + element.currentTime);
+    const absolute = timelineStart + element.currentTime;
+    latestPosition.current = absolute;
+    setPosition(absolute);
   };
   const seek = (target: number) => {
     const element = video.current;
@@ -177,6 +203,7 @@ function Player({ selection, initial, search, simple = false, onFailure, onNext,
     void start(target);
   };
   const duration = prepared?.duration ?? (prepared?.mode === "direct" ? nativeDuration : null);
+  useEffect(() => { latestDuration.current = duration; }, [duration]);
   const skip = (delta: number) => {
     if (duration && Number.isFinite(duration)) seek(Math.min(Math.max(0, duration - 1), Math.max(0, position + delta)));
   };
@@ -205,9 +232,10 @@ function Player({ selection, initial, search, simple = false, onFailure, onNext,
   const shareUrl = share ? new URL(share.path, window.location.origin).href : "";
   const playerControls = <>
     <video ref={video} controls playsInline preload="none" aria-label="Selected video" className="aspect-video w-full rounded bg-black"
-      onDurationChange={() => { const value = video.current?.duration; if (value && Number.isFinite(value)) setNativeDuration(value); }}
-      onPlaying={() => { setState("playing"); setError(""); }} onWaiting={() => setState("buffering")} onStalled={() => setState("buffering")} onSeeking={() => setState("buffering")} onCanPlay={() => setState(s => s === "playing" ? s : "ready")} onPause={() => setState(s => s === "stalled" || s === "failed" ? s : "ready")} onEnded={() => setState("ready")} onProgress={updateBuffer} onTimeUpdate={updateBuffer}
-      onError={() => { if (!playbackUrl) return; setState("failed"); setError(simple ? "This version couldn't play. Trying another…" : "Playback was interrupted or the browser could not decode the prepared stream. Retry, choose another file, or use an external player."); if (simple && !failedOnce.current) { failedOnce.current = true; onFailure?.(); } }} />
+      onLoadedMetadata={() => { const element = video.current; if (element && pendingDirectSeek.current) { element.currentTime = Math.min(pendingDirectSeek.current, Math.max(0, element.duration - 1)); pendingDirectSeek.current = 0; } }}
+      onDurationChange={() => { const value = video.current?.duration; if (value && Number.isFinite(value)) { setNativeDuration(value); latestDuration.current = prepared?.duration ?? value; } }}
+      onPlaying={() => { initialResume.current = 0; setState("playing"); setError(""); recordHistory(); }} onWaiting={() => setState("buffering")} onStalled={() => setState("buffering")} onSeeking={() => setState("buffering")} onCanPlay={() => setState(s => s === "playing" ? s : "ready")} onPause={() => { setState(s => s === "stalled" || s === "failed" ? s : "ready"); persistNow(); }} onEnded={() => { if (latestDuration.current) latestPosition.current = latestDuration.current; persistNow(); setState("ready"); }} onProgress={updateBuffer} onTimeUpdate={updateBuffer}
+      onError={() => { if (!playbackUrl) return; setState("failed"); setError(simple && isResume ? "Resume couldn't start. Retry playback or choose another source." : simple ? "This version couldn't play. Trying another…" : "Playback was interrupted or the browser could not decode the prepared stream. Retry, choose another file, or use an external player."); if (simple && !isResume && !failedOnce.current) { failedOnce.current = true; onFailure?.(); } }} />
     {prepared && (tvMode || prepared.mode !== "direct") && duration !== null && Number.isFinite(duration) && duration > 0 && <PlaybackTimeline duration={duration} position={position} onSeek={seek} />}
     <div className="tv-playback-controls flex flex-wrap items-center gap-3"><span role="status" className="mr-auto text-sm capitalize text-orange-400">{simple && state === "checking format" ? "Loading media... This can take a few seconds." : state}</span>
       {(tvMode || simple) && <Button variant="outline" disabled={!prepared || !duration || state === "checking format"} aria-label="Rewind 10 seconds" onClick={() => skip(-10)}><Rewind />10 s</Button>}

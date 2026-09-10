@@ -2,7 +2,10 @@ export type Kind = "movie" | "tv";
 export type Title = { id: number; kind: Kind; title: string; year: string; overview: string; poster: string | null };
 export type Details = Title & { imdbId: string | null; tvdbId: number | null; seasons: { number: number; name: string; episodes: number | null }[] };
 export type SearchContext = { kind: Kind; imdbId?: string; tvdbId?: number; tmdbId?: number; season?: number; episode?: number };
-export type SearchIntent = { query: string; context?: SearchContext; target?: Pick<SearchContext, "kind" | "tmdbId" | "season" | "episode">; label?: string };
+export type MovieSnapshot = { id: number; title: string; year: string; poster: string | null };
+export type MediaSnapshot = MovieSnapshot & { kind: Kind };
+export type SearchIntent = { query: string; context?: SearchContext; target?: Pick<SearchContext, "kind" | "tmdbId" | "season" | "episode">; label?: string; movie?: MovieSnapshot; media?: MediaSnapshot };
+export type ContinueWatchingMovie = { movieId: number; title: string; year: string; poster: string | null; query: string; context: SearchContext & { kind: "movie"; tmdbId: number }; playbackPositionSeconds: number; durationSeconds: number; updatedAt: string };
 export type Source = { id: string; title: string; size: number | null; seeders: number | null; leechers: number | null; peers: number | null; indexer: string; quality: string[]; match: string };
 export type Assessment = { id: string; identity: "match" | "uncertain" | "mismatch"; verdict: "good" | "unsure" | "sketchy"; reason: string; method: "gemini" | "heuristic" };
 export type SourceAdvice = { provider: "gemini" | "heuristic"; model: string | null; warning: string | null; reviewed: number; ranking: Assessment[] };
@@ -28,13 +31,24 @@ export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unkn
   if (!response.ok) throw new Error(data.error || `Media request failed (HTTP ${response.status}).`);
   return data as T;
 }
+export async function savePlaybackProgress(intent: SearchIntent, playbackPositionSeconds: number, durationSeconds: number): Promise<void> {
+  if (!intent.movie || !Number.isFinite(playbackPositionSeconds) || !Number.isFinite(durationSeconds) || playbackPositionSeconds < 5 || durationSeconds <= 0) return;
+  const response = await fetch("/api/media/progress", { method: "POST", credentials: "same-origin", cache: "no-store", keepalive: true, headers: { "Content-Type": "application/json", "X-Media-Request": "1" }, body: JSON.stringify({ movie: intent.movie, intent, playbackPositionSeconds, durationSeconds }) });
+  if (!response.ok) throw new Error("Playback progress could not be saved.");
+  window.dispatchEvent(new CustomEvent("homelab:continue-watching-changed"));
+}
+export async function recordWatchHistory(playbackId: string, intent: SearchIntent): Promise<void> {
+  if (!intent.media) return;
+  await mediaApi("history", AbortSignal.timeout(15_000), { id: playbackId, media: intent.media, query: intent.query, context: intent.context, target: intent.target });
+}
 export function sourceIntent(title: Details, season?: number, episode?: number): SearchIntent {
   const suffix = season === undefined ? title.kind === "movie" ? title.year : "" : `S${String(season).padStart(2, "0")}${episode === undefined ? "" : `E${String(episode).padStart(2, "0")}`}`;
   const target = { kind: title.kind, tmdbId: title.id, ...(season === undefined ? {} : { season }), ...(episode === undefined ? {} : { episode }) };
-  return { query: `${title.title} ${suffix}`.trim(), label: `${title.title} ${suffix}`.trim(), target, context: { ...target, ...(title.imdbId ? { imdbId: title.imdbId } : {}), ...(title.tvdbId ? { tvdbId: title.tvdbId } : {}) } };
+  const media = { id: title.id, kind: title.kind, title: title.title, year: title.year, poster: title.poster };
+  return { query: `${title.title} ${suffix}`.trim(), label: `${title.title} ${suffix}`.trim(), target, context: { ...target, ...(title.imdbId ? { imdbId: title.imdbId } : {}), ...(title.tvdbId ? { tvdbId: title.tvdbId } : {}) }, media, ...(title.kind === "movie" ? { movie: media } : {}) };
 }
 export function sourceSearchIntent(intent: SearchIntent, query: string, useIds: boolean): SearchIntent {
-  return { query, ...(query === intent.query ? { target: intent.target, ...(useIds ? { context: intent.context } : {}) } : {}) };
+  return { query, ...(query === intent.query ? { target: intent.target, movie: intent.movie, media: intent.media, ...(useIds ? { context: intent.context } : {}) } : {}) };
 }
 export function bytes(value: number | null | undefined): string {
   if (value === null || value === undefined) return "Unknown";

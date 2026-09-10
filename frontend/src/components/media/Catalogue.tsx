@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Film, Play, Search, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -8,7 +8,7 @@ import TvScrollControls from "../TvScrollControls";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 type CatalogueResponse = { titles: Title[]; pages: number; originalQuery?: string; correctedQuery?: string; correctionProvider?: "gemini" };
-export default function Catalogue({ find, simple = false }: { find: (intent: SearchIntent) => void; simple?: boolean }) {
+export default function Catalogue({ find, simple = false, continueWatching }: { find: (intent: SearchIntent) => void; simple?: boolean; continueWatching?: ReactNode }) {
   const [kind, setKind] = useState<Kind>("movie");
   const [text, setText] = useState("");
   const [q, setQuery] = useState("");
@@ -51,6 +51,7 @@ export default function Catalogue({ find, simple = false }: { find: (intent: Sea
       </div>
       <Button className="h-11 bg-orange-600 text-white hover:bg-orange-700"><Search />Search</Button>
     </form>
+    {!q && continueWatching}
     <div className="flex flex-wrap items-start justify-between gap-3">
       <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? kind === "movie" ? "Popular movies" : "Popular TV shows" : "Popular on TMDB"}{!simple && " · Metadata only."}</p>
     </div>

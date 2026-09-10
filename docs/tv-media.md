@@ -36,6 +36,22 @@ a close title match and `GEMINI_API_KEY` is configured, Gemini proposes one
 corrected title, TMDB validates it, and the catalogue merges those matches ahead
 of the original results. Autocomplete itself never calls Gemini.
 
+When MongoDB is configured, movies watched for at least five seconds appear in
+the horizontal **Continue Watching** row. Progress is saved every minute, on
+pause, when leaving the player, and when the page is backgrounded. Selecting a
+card reacquires a source and resumes at the saved full-video timestamp. The X
+removes a movie; in TV mode it expands into a remote-focusable Remove button.
+Movies are automatically removed at 95% watched or within two minutes of the
+end. `MEDIA_USER_ID` and `MEDIA_PROFILE_ID` identify the shared household
+profile, so browsers and Fire TV devices connected to this backend share history.
+
+MongoDB also keeps an append-only `watch_history` collection for future use.
+A row is added when catalogue playback actually starts, for both movies and TV
+episodes. Each row includes its user/profile owner, title identifiers and
+artwork, season/episode when applicable, selected file, query, and `watchedAt`
+timestamp. Restarting or buffering the same playback session does not duplicate
+the row; choosing the title again creates a new history event.
+
 Turn on **English subtitles** to load matching bundled English SRT/VTT captions
 or search SubDL automatically. Online matching favors the video's release name,
 release group and format details, excludes known different episodes, and selects
@@ -213,6 +229,10 @@ Keep the generated output private.
 | `TORRSERVER_BASE_URL` | Backend-reachable HTTP(S) URL; example `http://100.64.162.49:8090`. |
 | `TORRSERVER_USERNAME`, `TORRSERVER_PASSWORD` | Both blank, or both set for existing HTTP Basic auth. |
 | `TMDB_READ_ACCESS_TOKEN` | Optional Bearer token. Direct source search works independently. |
+| `MONGODB_URI` | Optional MongoDB connection string enabling persistent Continue Watching and watch history. It may use `<db_username>` and `<db_password>` placeholders. |
+| `MONGODB_USERNAME`, `MONGODB_PASSWORD` | Optional credentials inserted into the URI placeholders and URL-encoded by the backend. |
+| `MONGODB_DATABASE` | `homelab`; database containing the `playback_progress` and `watch_history` collections. |
+| `MEDIA_USER_ID`, `MEDIA_PROFILE_ID` | `home` / `default`; shared identity used by all devices until authentication is added. |
 | `GEMINI_API_KEY` | Optional server-side Gemini key for catalogue correction and source assist; TMDB search and basic recommendations work without it. |
 | `MEDIA_AI_TIMEOUT_MS` | `20000`; range 1000–60000 ms for a Gemini review. |
 | `MEDIA_METADATA_TIMEOUT_MS` | `10000`; range 1000–60000 ms, for TMDB/TorrServer JSON. |

@@ -12,6 +12,7 @@ import { TorrServer, type TorrentFile } from "./torrserver.ts";
 import { Subdl, type SubdlFile } from "./subdl.ts";
 import { FFmpeg } from "./ffmpeg.ts";
 import { choosePlayback, inspectPlayback, type MediaProbe, type PlaybackOption } from "./playback-plan.ts";
+import { ProgressStore, WatchHistoryStore, type ContinueWatchingRecord, type WatchHistoryRecord } from "./progress-store.ts";
 
 type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe };
 type Share = { owner: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
@@ -34,6 +35,8 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
   const subdl = new Subdl(fetcher);
   const assist = new SourceAssist(fetcher);
   const welcome = new Welcome(fetcher);
+  const progress = new ProgressStore();
+  const history = new WatchHistoryStore();
   const sourceSearches = new BoundedCache<{ owner: string; query: string; context?: SearchContext; target: SourceTarget; sources: Source[] }>(40, 2 * 60_000);
   const subtitleChoices = new BoundedCache<{ owner: string; playback: string; file: SubdlFile }>(2000, 10 * 60_000);
   const playbacks = new BoundedCache<Playback>(128, 8 * 60 * 60_000);
@@ -78,7 +81,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         rate("session-start", 60);
         const { cookie } = startSession(request);
         // Configuration states are independent; connectivity is checked explicitly below.
-        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
+        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
       }
       if (path[0] === "external" && ["GET", "HEAD"].includes(request.method)) {
         const share = shares.get(path[1]);
@@ -93,7 +96,9 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         if (!entry || entry.owner !== owner) throw new MediaError("expired", "Playback session expired. Choose the source again.", 410);
         const raw = url.searchParams.get("start") ?? "0";
         const start = Number(raw);
-        if (!/^\d+(\.\d{1,3})?$/.test(raw) || !Number.isFinite(start) || start < 0 || start > 604800 || (entry.probe.duration !== null && start >= entry.probe.duration)) throw new MediaError("input", "Choose a time within this video.", 400);
+        // Browser currentTime and saved progress can retain sub-millisecond precision.
+        // Validate the numeric range without rejecting those valid resume positions.
+        if (raw.length > 64 || !/^\d+(\.\d+)?$/.test(raw) || !Number.isFinite(start) || start < 0 || start > 604800 || (entry.probe.duration !== null && start >= entry.probe.duration)) throw new MediaError("input", "Choose a time within this video.", 400);
         return await ffmpeg.stream(entry.hash, entry.file, entry.probe, entry.option, request, start);
       }
       if (path[0] === "stream" && ["GET", "HEAD"].includes(request.method)) {
@@ -104,6 +109,10 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
       if (request.method === "HEAD") return json({ error: "HEAD is supported only for streams." }, 405);
       return await limited(async () => {
         if (request.method === "GET") {
+          if (path[0] === "continue-watching" && path.length === 1) {
+            rate(`progress-list:${owner}`, 30);
+            return json({ movies: await progress.list() });
+          }
           if (path[0] === "welcome" && path.length === 1) return json(await welcome.get(request.signal));
           if (path[0] === "subtitles" && path[1] === "provider" && path.length === 2) return json({ configured: !!process.env.SUBDL_API_KEY });
           if (path[0] === "subtitles" && path.length === 3) {
@@ -140,6 +149,62 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         }
         if (mutation) {
           const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 16_384))));
+          if (path[0] === "history" && path.length === 1) {
+            rate(`history-add:${owner}`, 30);
+            const id = string(body.id, 64);
+            const entry = playback(id, owner);
+            if (!entry.file) throw new MediaError("input", "Choose a video file before recording watch history.", 400);
+            const media = record(body.media);
+            const mediaKind = kind(media.kind);
+            const tmdbId = integer(media.id, 1, 100_000_000);
+            const searchContext = context(body.context ?? body.target);
+            if (!searchContext || searchContext.kind !== mediaKind || searchContext.tmdbId !== tmdbId) throw new MediaError("input", "Watch history requires matching title metadata.", 400);
+            const posterValue = string(media.poster, 500);
+            const historyRecord: WatchHistoryRecord = {
+              playbackId: id,
+              kind: mediaKind,
+              tmdbId,
+              title: string(media.title, 300).trim(),
+              year: string(media.year, 4),
+              poster: /^https:\/\/image\.tmdb\.org\/t\/p\/[a-zA-Z0-9._/-]+$/.test(posterValue) ? posterValue : null,
+              query: query(body.query),
+              filePath: string(entry.file.path, 2000),
+              ...(searchContext.imdbId ? { imdbId: searchContext.imdbId } : {}),
+              ...(searchContext.tvdbId ? { tvdbId: searchContext.tvdbId } : {}),
+              ...(mediaKind === "tv" && searchContext.season !== undefined ? { season: searchContext.season } : {}),
+              ...(mediaKind === "tv" && searchContext.episode !== undefined ? { episode: searchContext.episode } : {}),
+            };
+            if (!historyRecord.title) throw new MediaError("input", "Watch history requires a title.", 400);
+            return json(await history.add(historyRecord));
+          }
+          if (path[0] === "progress" && path.length === 1) {
+            rate(`progress-save:${owner}`, 60);
+            const movie = record(body.movie);
+            const intent = record(body.intent);
+            const movieId = integer(movie.id, 1, 100_000_000);
+            const searchContext = context(intent.context ?? intent.target);
+            if (searchContext?.kind !== "movie" || searchContext.tmdbId !== movieId) throw new MediaError("input", "Playback progress requires matching movie metadata.", 400);
+            const position = Number(body.playbackPositionSeconds);
+            const duration = Number(body.durationSeconds);
+            if (!Number.isFinite(position) || !Number.isFinite(duration) || position < 0 || duration <= 0 || duration > 604800) throw new MediaError("input", "Playback progress is outside the video duration.", 400);
+            const posterValue = string(movie.poster, 500);
+            const progressRecord: Omit<ContinueWatchingRecord, "updatedAt"> = {
+              movieId,
+              title: string(movie.title, 300).trim(),
+              year: string(movie.year, 4),
+              poster: /^https:\/\/image\.tmdb\.org\/t\/p\/[a-zA-Z0-9._/-]+$/.test(posterValue) ? posterValue : null,
+              query: query(intent.query),
+              context: { kind: "movie", tmdbId: movieId, ...(searchContext.imdbId ? { imdbId: searchContext.imdbId } : {}) },
+              playbackPositionSeconds: Math.min(position, duration),
+              durationSeconds: duration,
+            };
+            if (!progressRecord.title) throw new MediaError("input", "Playback progress requires a movie title.", 400);
+            return json(await progress.save(progressRecord));
+          }
+          if (path[0] === "continue-watching" && path[1] === "remove" && path.length === 2) {
+            rate(`progress-remove:${owner}`, 30);
+            return json(await progress.remove(integer(body.movieId, 1, 100_000_000)));
+          }
           if (["inspect", "prepare"].includes(path[0]) && path.length === 1) {
             rate(`prepare:${owner}`, 20);
             const id = string(body.id, 64);

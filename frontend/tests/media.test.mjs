@@ -28,10 +28,12 @@ test('season packs choose the requested episode even when another is larger, and
 });
 
 test('catalogue details create editable title/year or SxxExx queries without implying a source', () => {
-  const title = { id: 4, title: 'Authorized title', year: '2008', kind: 'movie', imdbId: 'tt123', tvdbId: null };
+  const title = { id: 4, title: 'Authorized title', year: '2008', kind: 'movie', imdbId: 'tt123', tvdbId: null, poster: null };
   assert.equal(sourceIntent(title).query, 'Authorized title 2008');
+  assert.deepEqual(sourceIntent(title).media, { id: 4, kind: 'movie', title: 'Authorized title', year: '2008', poster: null });
   const episode = sourceIntent({ ...title, kind: 'tv', tvdbId: 50 }, 2, 3);
   assert.equal(episode.query, 'Authorized title S02E03'); assert.equal(episode.context.episode, 3); assert.equal(episode.sourceId, undefined);
+  assert.equal(episode.media.kind, 'tv'); assert.equal(episode.media.id, 4);
   assert.equal(sourceIntent({ ...title, kind: 'tv' }, 0).query, 'Authorized title S00');
 });
 test('sort puts unknown counts after measured zero and never mutates API results', () => {
@@ -54,6 +56,7 @@ test('rejecting a recommendation hides duplicate releases and promotes the next 
 test('catalogue identity survives disabling indexer IDs but resets when the query changes', () => {
   const intent = sourceIntent({ id: 123, title: 'Obsession', kind: 'movie', year: '2026', imdbId: 'tt37287335' });
   assert.deepEqual(sourceSearchIntent(intent, intent.query, false).target, { kind: 'movie', tmdbId: 123 });
+  assert.equal(sourceSearchIntent(intent, intent.query, false).media.title, 'Obsession');
   assert.equal(sourceSearchIntent(intent, intent.query, false).context, undefined);
   assert.equal(sourceSearchIntent(intent, 'Different film 2026', true).target, undefined);
 });
