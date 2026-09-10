@@ -169,12 +169,26 @@ test('missing API key, provider errors, oversized responses and blocked output p
 test('shortlists are bounded and all remaining sources still get a ranking', async () => {
   const rows = Array.from({ length: 75 }, (_, i) => source(String(i), `Film 1080p H264 AAC ${i}`));
   const advice = await new SourceAssist(async (_url, init) => {
-    const candidates = JSON.parse(JSON.parse(init.body).contents[0].parts[0].text).candidates;
+    const body = JSON.parse(init.body);
+    const candidates = JSON.parse(body.contents[0].parts[0].text).candidates;
     assert.equal(candidates.length, 60);
+    const ranking = body.generationConfig.responseJsonSchema.properties.ranking;
+    assert.equal(ranking.minItems, undefined, 'Large fixed-length arrays are validated by the backend, not encoded in Gemini grammar');
+    assert.equal(ranking.maxItems, undefined);
+    assert.deepEqual(ranking.items.properties.id, { type: 'string' }, 'Source UUIDs do not expand the provider schema');
     return answer(candidates.map(c => good(c.id)));
   }).recommend('Film', rows, undefined, signal());
   assert.equal(advice.ranking.length, 75); assert.equal(new Set(advice.ranking.map(r => r.id)).size, 75);
   assert.equal(advice.reviewed, 60); assert.match(advice.warning, /60/);
+});
+
+test('fallback warnings distinguish provider request, authentication and quota errors without exposing the body', async () => {
+  for (const [status, warning] of [[400, /rejected the recommendation request/], [401, /API key/], [403, /permissions/], [429, /limit or quota/], [503, /couldn't complete/]]) {
+    const result = await new SourceAssist(async () => new Response(secret, { status })).recommend('Film', [source('a')], undefined, signal());
+    assert.equal(result.provider, 'heuristic');
+    assert.match(result.warning, warning);
+    assert.ok(!JSON.stringify(result).includes(secret));
+  }
 });
 
 test('cancellation aborts Gemini and a timed out request returns basic advice', async () => {

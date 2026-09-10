@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState, type RefObject } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type RefObject } from "react";
 import { Captions, Minus, Plus, RotateCcw, Search, Upload } from "lucide-react";
 import { Button } from "../ui/button";
-import { type SearchIntent, type TorrentFile } from "../../lib/media";
-import { MAX_SUBTITLE_BYTES, subtitleFormat, subtitleTiming, subtitleVtt } from "../../lib/subtitles";
+import { mediaApi, type SearchIntent, type TorrentFile } from "../../lib/media";
+import { MAX_SUBTITLE_BYTES, rankEnglishSubtitles, rankSubtitleFiles, subtitleFormat, subtitleSearch, subtitleTiming, subtitleVtt, type SubtitleDownload, type SubtitleSearch } from "../../lib/subtitles";
 import OnlineSubtitles from "./OnlineSubtitles";
+import Switch from "../ui/switch";
 
 type Subtitle = { key: string; name: string; content: string };
 
@@ -13,7 +14,7 @@ function disableSubtitles(element: HTMLVideoElement | null) {
   }
 }
 
-export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0 }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number }) {
+export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0, simple = false, englishEnabled = false, onEnglishChange }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number; simple?: boolean; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const active = useRef<AbortController | null>(null);
@@ -29,6 +30,7 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const subtitles = files.filter(file => file.kind === "subtitle" && subtitleFormat(file.path));
+  const changedEnglish = useEffectEvent((enabled: boolean) => onEnglishChange?.(enabled));
 
   useEffect(() => () => active.current?.abort(), []);
   useEffect(() => {
@@ -40,7 +42,7 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     if (!element || !loaded || loaded.key !== selected) return;
     const url = URL.createObjectURL(new Blob([loaded.content], { type: "text/vtt" }));
     const track = document.createElement("track");
-    track.kind = "subtitles"; track.label = loaded.name; track.srclang = "und"; track.src = url;
+    track.kind = "subtitles"; track.label = simple ? "English" : loaded.name; track.srclang = simple ? "en" : "und"; track.src = url;
     const failed = () => setError("The subtitles could not be read. Try another SRT or VTT file.");
     const ready = () => {
       if (!track.track.cues?.length) { failed(); return; }
@@ -50,7 +52,7 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     // Loading another converted time range temporarily resets native track modes.
     // Keep the user's selection through that reset and restore it after metadata.
     const restore = () => { track.track.mode = "showing"; };
-    const changed = () => { if (element.readyState > 0 && track.track.mode === "disabled") { selectionVersion.current++; setSelected(""); } };
+    const changed = () => { if (element.readyState > 0 && track.track.mode === "disabled") { selectionVersion.current++; setSelected(""); if (simple) changedEnglish(false); } };
     track.addEventListener("load", ready); track.addEventListener("error", failed);
     disableSubtitles(element);
     element.append(track); track.track.mode = "showing";
@@ -63,7 +65,59 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
       track.removeEventListener("load", ready); track.removeEventListener("error", failed);
       track.remove(); URL.revokeObjectURL(url);
     };
-  }, [loaded, selected, video]);
+  }, [loaded, selected, video, simple]);
+
+  const readTorrentSubtitle = async (file: TorrentFile, signal: AbortSignal) => {
+    const response = await fetch(`/api/media/subtitles/${playbackId}/${file.id}`, { signal, credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw new Error("The included subtitles couldn't be downloaded.");
+    return response.arrayBuffer();
+  };
+
+  const loadEnglish = async () => {
+    active.current?.abort();
+    const controller = new AbortController(); active.current = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]);
+    setBusy(true); setError(""); setSelected("auto");
+    try {
+      let subtitle: Subtitle | null = loaded?.key === "auto" ? loaded : null;
+      // Bundled English subtitles are already packaged with this release.
+      const bundled = rankSubtitleFiles(subtitles.map(file => ({ ...file, name: file.path })), filename, search, true);
+      for (const file of subtitle ? [] : bundled.slice(0, 3)) {
+        try { subtitle = { key: "auto", name: file.path, content: subtitleVtt(await readTorrentSubtitle(file, AbortSignal.any([signal, AbortSignal.timeout(15_000)])), file.path) }; break; }
+        catch { signal.throwIfAborted(); }
+      }
+      if (!subtitle) {
+        const query = subtitleSearch(filename, search);
+        const result = await mediaApi<SubtitleSearch>("subtitles/search", AbortSignal.any([signal, AbortSignal.timeout(20_000)]), { id: playbackId, ...query, language: "EN" });
+        const ranked = rankEnglishSubtitles(result.results, filename, search);
+        for (const choice of ranked.slice(0, 3)) {
+          try {
+            const download = await mediaApi<SubtitleDownload>("subtitles/download", AbortSignal.any([signal, AbortSignal.timeout(30_000)]), { id: playbackId, choice: choice.id });
+            for (const file of rankSubtitleFiles(download.files, filename, search)) {
+              try { subtitle = { key: "auto", name: file.name, content: subtitleVtt(Uint8Array.from(atob(file.content), c => c.charCodeAt(0)).buffer, file.name) }; break; }
+              catch { /* Try the next usable English file in this archive. */ }
+            }
+            if (subtitle) break;
+          } catch { signal.throwIfAborted(); }
+        }
+      }
+      signal.throwIfAborted();
+      if (!subtitle) throw new Error("No matching English subtitles found.");
+      if (subtitle !== loaded) setOffset(0);
+      setLoaded(subtitle);
+    } catch {
+      if (!controller.signal.aborted) { setSelected(""); setError("English subtitles aren't available for this version right now. Try again in a moment."); }
+    } finally { if (active.current === controller) setBusy(false); }
+  };
+  const syncEnglish = useEffectEvent(() => {
+    if (englishEnabled) void loadEnglish();
+    else { active.current?.abort(); setBusy(false); setSelected(""); setError(""); disableSubtitles(video.current); }
+  });
+  useEffect(() => {
+    // Keep the native text track and its cancellable download in sync with the switch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (simple) syncEnglish();
+  }, [simple, englishEnabled]);
 
   const load = async (key: string, name: string, read: (signal: AbortSignal) => Promise<ArrayBuffer>) => {
     selectionVersion.current++;
@@ -100,8 +154,8 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     });
   };
 
-  return <div aria-label="Subtitle controls" className="space-y-3 rounded border border-neutral-700 bg-neutral-950 p-4">
-    <div className="flex flex-wrap items-end gap-3">
+  return <div aria-label="Subtitle controls" className={`space-y-3 ${simple ? "simple-subtitles" : "rounded border border-neutral-700 bg-neutral-950 p-4"}`}>
+    {simple ? <Switch label="English subtitles" checked={englishEnabled} onChange={enabled => onEnglishChange?.(enabled)} description={busy ? "Finding the best match…" : selected === "auto" && loaded ? "On · matched to this video" : "Automatically find and load captions"} /> : <div className="flex flex-wrap items-end gap-3">
       <div className="min-w-0 flex-1 basis-56"><label htmlFor={id} className="mb-2 flex items-center gap-2 text-sm"><Captions className="h-4 w-4 text-orange-400" />Subtitles</label>
         <select id={id} value={selected} onChange={event => choose(event.target.value)} className="h-10 w-full min-w-0 rounded border border-neutral-600 bg-neutral-900 px-3 text-sm text-white">
           <option value="">Off</option>
@@ -120,7 +174,7 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
           return file.arrayBuffer();
         });
       }} />
-    </div>
+    </div>}
     {loaded && loaded.key === selected && <div role="group" aria-label="Subtitle timing" className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-neutral-300">Subtitle timing</span>
@@ -130,9 +184,10 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
         <Button variant="ghost" size="sm" disabled={offset === 0} onClick={() => setOffset(0)}><RotateCcw />Reset timing</Button>
       </div>
     </div>}
-    <p className="text-xs leading-relaxed text-neutral-400">{subtitles.length ? "Choose a subtitle file, find one online, or load your own." : "No SRT or VTT files in this torrent. Download subtitle or load your own."} Maximum 2 MiB.</p>
-    {busy && <p role="status" className="text-xs text-orange-400">Loading subtitles… <Button variant="ghost" size="sm" onClick={() => choose("")}>Cancel</Button></p>}
+    {!simple && <p className="text-xs leading-relaxed text-neutral-400">{subtitles.length ? "Choose a subtitle file, find one online, or load your own." : "No SRT or VTT files in this torrent. Download subtitle or load your own."} Maximum 2 MiB.</p>}
+    {busy && <p role="status" className="text-xs text-orange-400">Loading subtitles… {!simple && <Button variant="ghost" size="sm" onClick={() => choose("")}>Cancel</Button>}</p>}
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}
-    <div id={`${id}-online`}>{showOnline && <OnlineSubtitles playbackId={playbackId} filename={filename} search={search} selectionVersion={selectionVersion} onLoad={(name, content) => { void load("online", name, async () => content); }} />}</div>
+    {simple && error && <Button variant="outline" size="sm" disabled={busy} onClick={() => { void loadEnglish(); }}>Retry subtitles</Button>}
+    {!simple && <div id={`${id}-online`}>{showOnline && <OnlineSubtitles playbackId={playbackId} filename={filename} search={search} selectionVersion={selectionVersion} onLoad={(name, content) => { void load("online", name, async () => content); }} />}</div>}
   </div>;
 }

@@ -3,6 +3,7 @@ import { BoundedCache, integer, kind, magnet, MediaError, query, record, string,
 import { readLimited } from "./http.ts";
 import { Prowlarr, type SearchContext, type Source } from "./prowlarr.ts";
 import { baselineAdvice, SourceAssist } from "./source-assist.ts";
+import { Welcome } from "./welcome.ts";
 import { queryTarget, type SourceTarget } from "./source-identity.ts";
 import { boundary, limited, rate, requireSession, startSession } from "./security.ts";
 import { Tmdb } from "./tmdb.ts";
@@ -30,6 +31,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
   const ffmpeg = converter ?? new FFmpeg(torrents);
   const subdl = new Subdl(fetcher);
   const assist = new SourceAssist(fetcher);
+  const welcome = new Welcome(fetcher);
   const sourceSearches = new BoundedCache<{ owner: string; query: string; context?: SearchContext; target: SourceTarget; sources: Source[] }>(40, 2 * 60_000);
   const subtitleChoices = new BoundedCache<{ owner: string; playback: string; file: SubdlFile }>(2000, 10 * 60_000);
   const playbacks = new BoundedCache<Playback>(128, 8 * 60 * 60_000);
@@ -100,6 +102,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
       if (request.method === "HEAD") return json({ error: "HEAD is supported only for streams." }, 405);
       return await limited(async () => {
         if (request.method === "GET") {
+          if (path[0] === "welcome" && path.length === 1) return json(await welcome.get(request.signal));
           if (path[0] === "subtitles" && path[1] === "provider" && path.length === 2) return json({ configured: !!process.env.SUBDL_API_KEY });
           if (path[0] === "subtitles" && path.length === 3) {
             rate(`subtitles:${owner}`, 30);

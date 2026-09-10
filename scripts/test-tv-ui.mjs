@@ -17,19 +17,38 @@ const file = { id: 1, path: 'Example movie.mp4', size: 1000000, kind: 'video', s
 const torrent = { id: 'fixture', title: 'Example movie', state: 'ready', files: [file], downloadSpeed: 1024, connectedPeers: 5, downloadedBytes: 1000, completedBytes: 1000, preloadBytes: null, preloadTarget: null };
 const plan = { id: 'direct', mode: 'direct', mime: 'video/mp4', container: 'mp4', video: 'copy', audio: 'copy', stream: '/api/media/stream/fixture', duration: 120 };
 const source = { id: 'source', title: 'Example movie 2026', indexer: 'Fixture', size: 1000000, seeders: 5000, leechers: 0, peers: 5000, quality: ['1080p'], match: 'Title match' };
-const server = createServer((req, res) => {
+const alternatives = [source, { ...source, id: 'best', title: 'Example movie 2026 WEB-DL-GROUP' }, { ...source, id: 'broken', title: 'Example movie 2026 alternate' }, { ...source, id: 'wrong', title: 'Unrelated movie' }];
+const advice = { provider: 'gemini', ranking: ['best', 'broken', 'source', 'wrong'].map(id => ({ id, identity: id === 'wrong' ? 'mismatch' : 'match', verdict: 'good', method: 'gemini', reason: 'Fixture' })) };
+const metrics = { adds: [], selects: [], reviews: 0, subtitleSearches: [], subtitleDownloads: [] };
+let simpleFixture = true;
+let subtitleDelay = 0;
+let recommendationDelay = 250;
+let fallbackAdvice = false;
+const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname;
   if (path.startsWith('/api/media/')) {
     const endpoint = path.slice('/api/media/'.length);
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : {};
+    if (endpoint === 'recommend') { metrics.reviews++; await delay(recommendationDelay); }
+    if (endpoint === 'playback') {
+      metrics.adds.push(body.sourceId);
+      if (simpleFixture && body.sourceId === 'broken') { res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Fixture source unavailable' })); return; }
+    }
+    if (endpoint === 'select') metrics.selects.push(body.fileId);
+    if (endpoint === 'subtitles/search') metrics.subtitleSearches.push(body);
+    if (endpoint === 'subtitles/download') { metrics.subtitleDownloads.push(body.choice); await delay(subtitleDelay); }
     const json = endpoint === 'status' ? { tmdb: true, prowlarr: true, torrserver: true }
       : endpoint === 'catalogue' ? { titles, pages: 1 }
       : endpoint.startsWith('details/') ? { ...titles[Number(endpoint.split('/').pop()) - 1], seasons: [], imdbId: 'tt123', tvdbId: null }
-      : endpoint === 'search' ? { searchId: 'search', results: [source], reports: [], more: false, batch: 1, advice: { ranking: [] } }
-      : endpoint === 'recommend' ? { ranking: [] }
+      : endpoint === 'search' ? { searchId: 'search', results: simpleFixture ? alternatives : [source], reports: [], more: false, batch: 1, advice: { provider: 'heuristic', ranking: [] } }
+      : endpoint === 'recommend' ? fallbackAdvice ? { ...advice, provider: 'heuristic', warning: "Gemini's request limit or quota was reached. Using basic matching for this search." } : advice
       : endpoint === 'select' ? { id: 'selected', file, stream: plan.stream }
       : endpoint === 'inspect' ? { duration: 120, options: [plan] }
       : endpoint === 'prepare' ? plan
-      : endpoint.startsWith('playback') ? torrent
+      : endpoint.startsWith('playback') ? { ...torrent, files: simpleFixture ? [{ ...file, id: 3, path: 'English.txt', kind: 'other', size: 99000000 }, { ...file, id: 2, path: 'sample.mp4', sample: true, size: 99000000 }, { ...file, id: 4, path: 'Short.mp4', size: 100 }, file] : [file] }
+      : endpoint === 'subtitles/search' ? { title: 'Example movie', results: [{ id: 'mismatch', name: 'Other.srt', release: 'Other', language: 'FR' }, { id: 'english', name: 'Example movie.zip', release: 'Example movie WEB-DL-GROUP', language: 'EN', hearingImpaired: false, season: null, episode: null }] }
+      : endpoint === 'subtitles/download' ? { files: [{ name: 'French.srt', content: Buffer.from('1\n00:00:01,000 --> 00:00:05,000\nFrench fixture').toString('base64') }, { name: 'English.srt', content: Buffer.from('1\n00:00:01,000 --> 00:00:05,000\nEnglish fixture').toString('base64') }] }
       : endpoint === 'subtitles/provider' ? { configured: false } : {};
     res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(json)); return;
   }
@@ -97,7 +116,7 @@ try {
     Object.defineProperty(HTMLMediaElement.prototype, 'paused', { get() { return state(this).paused; } });
     Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', { get() { return state(this).time; }, set(v) { state(this).time = v; this.dispatchEvent(new Event('timeupdate')); } });
     HTMLMediaElement.prototype.load = function() {};
-    HTMLMediaElement.prototype.play = function() { state(this).paused = false; this.dispatchEvent(new Event('playing')); return Promise.resolve(); };
+    HTMLMediaElement.prototype.play = function() { if (window.blockAutoplay) return Promise.reject(new DOMException('User gesture required', 'NotAllowedError')); state(this).paused = false; this.dispatchEvent(new Event('playing')); return Promise.resolve(); };
     HTMLMediaElement.prototype.pause = function() { state(this).paused = true; this.dispatchEvent(new Event('pause')); };
   ` });
   await resize(1440, 900);
@@ -120,6 +139,79 @@ try {
     }
   }
   await resize(1280, 720);
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Advanced mode"]').getAttribute('aria-checked')`), 'false', 'Simple mode is the default');
+  assert.equal(await evaluate(`!!document.querySelector('#source-query')`), false);
+  assert.equal(metrics.adds.length, 0, 'Browsing does not add a torrent');
+  await evaluate('window.blockAutoplay = true');
+  await activate('.tv-catalogue-grid button');
+  assert.equal(metrics.adds.length, 0, 'Movie click waits for the AI review');
+  await until(`document.body.innerText.includes('Ready to watch. Press Play to start.')`);
+  assert.deepEqual(metrics.adds, ['best'], 'Uses Gemini ranking, not source result order');
+  assert.ok(await evaluate(`document.body.innerText.includes('Selected with Gemini')`), 'A successful review is accurately labeled');
+  assert.deepEqual(metrics.selects, [1], 'Selects the main video over a larger sample or non-video');
+  assert.equal(await evaluate(`!!document.querySelector('[aria-label="Torrent files"]')`), false);
+  assert.equal(metrics.adds.length, 1, 'Blocked autoplay does not mark the source as broken');
+  await evaluate('window.blockAutoplay = false');
+  await activate('.tv-playback-controls button.bg-orange-600');
+  await until('!document.querySelector("video").paused');
+  await activate('[aria-label="English subtitles"]');
+  await until('!!document.querySelector("video track")');
+  assert.equal(metrics.subtitleSearches[0].language, 'EN');
+  assert.equal(metrics.subtitleSearches[0].context.tmdbId, 1, 'Automatic subtitles retain catalogue identity');
+  assert.deepEqual(metrics.subtitleDownloads, ['english']);
+  assert.ok(await evaluate(`fetch(document.querySelector('track').src).then(r => r.text()).then(t => t.includes('English fixture'))`), 'Selects English from a mixed archive');
+  await until(`!!document.querySelector('[aria-label="Show subtitles 0.5 seconds later"]')`);
+  await activate('[aria-label="Show subtitles 0.5 seconds later"]');
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Subtitle offset"]').textContent`), '+0.5 s');
+  assert.equal(await evaluate('document.querySelector("video").paused'), false, 'Subtitle timing preserves playback');
+  await activate('[aria-label="English subtitles"]');
+  await until('!document.querySelector("video track")');
+  await activate('[aria-label="English subtitles"]');
+  await until('!!document.querySelector("video track")');
+  assert.equal(metrics.subtitleDownloads.length, 1, 'Turning subtitles back on uses the downloaded file');
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Subtitle offset"]').textContent`), '+0.5 s', 'Toggle preserves manual timing');
+  const reviewsBeforeNext = metrics.reviews;
+  await evaluate(`window.previousVideo = document.querySelector('video'); [...document.querySelectorAll('button')].find(b => b.textContent.includes('Try another source')).click()`);
+  await until('document.querySelector("video") && !document.querySelector("video").paused');
+  assert.deepEqual(metrics.adds, ['best', 'broken', 'source'], 'Next skips an unavailable torrent automatically');
+  assert.equal(metrics.reviews, reviewsBeforeNext, 'Switching reuses the ranked queue');
+  assert.equal(await evaluate('window.previousVideo.paused && !window.previousVideo.hasAttribute("src")'), true, 'Old player is stopped and detached');
+  await until('!!document.querySelector("video track")');
+  assert.equal(await evaluate(`document.querySelector('[aria-label="English subtitles"]').getAttribute('aria-checked')`), 'true', 'Subtitle preference follows the next source');
+  await evaluate(`document.querySelector('video').dispatchEvent(new Event('error'))`);
+  await until(`document.body.innerText.includes('No more matching versions')`);
+  assert.equal(metrics.adds.includes('wrong'), false, 'An unrelated title never auto-plays after exhaustion');
+  await activate('[data-tv-back]');
+  await evaluate('sessionStorage.clear()');
+  recommendationDelay = 1000;
+  const beforeCancel = metrics.adds.length;
+  await activate('.tv-catalogue-grid button');
+  await delay(100);
+  await activate('[data-tv-back]');
+  await delay(1100);
+  assert.equal(metrics.adds.length, beforeCancel, 'Leaving during AI review never starts a late torrent');
+  recommendationDelay = 0;
+  subtitleDelay = 500;
+  await activate('.tv-catalogue-grid button');
+  await until('document.querySelector("video") && !document.querySelector("video").paused');
+  await activate('[aria-label="English subtitles"]');
+  await until(`document.querySelector('[aria-label="Subtitle controls"]').textContent.includes('Loading subtitles')`);
+  await activate('[aria-label="English subtitles"]');
+  await delay(700);
+  assert.equal(await evaluate('!!document.querySelector("video track")'), false, 'Late subtitle download cannot turn captions back on');
+  await activate('[data-tv-back]');
+  await evaluate('sessionStorage.clear()');
+  fallbackAdvice = true;
+  await activate('.tv-catalogue-grid button');
+  await until('document.querySelector("video") && !document.querySelector("video").paused');
+  assert.ok(await evaluate(`document.body.innerText.includes("Gemini's request limit or quota was reached.")`), 'Simple mode explains the actual fallback reason');
+  assert.equal(await evaluate(`document.body.innerText.includes('AI unavailable')`), false);
+  await activate('[data-tv-back]');
+  await evaluate('sessionStorage.clear()');
+  await activate('[aria-label="Advanced mode"]');
+  simpleFixture = false;
+  await until(`!!document.querySelector('#catalogue-kind')`);
+  assert.equal(await evaluate('localStorage.getItem("homelab:advanced-media")'), 'true', 'Mode preference is saved');
   assert.ok(await evaluate('document.scrollingElement.scrollHeight > innerHeight'), 'TV content scrolls the browser document');
   assert.equal(await evaluate('getComputedStyle(document.querySelector("main")).overflowY'), 'visible', 'No nested page scrollbar');
   await activate('[aria-label="Scroll page down"]');
@@ -190,6 +282,8 @@ try {
   assert.equal(await active(), 'source-query', 'Find sources focuses the source form');
   await activate('#source-query + button');
   await until('!!document.querySelector("article button")');
+  await until(`document.body.innerText.includes("Gemini's request limit or quota was reached.")`);
+  fallbackAdvice = false;
   await evaluate(`window.focusTrail = []; document.addEventListener('focusin', e => window.focusTrail.push(e.target.getAttribute('aria-label') || e.target.textContent))`);
   await activate('article button');
   await until(`!!document.querySelector('[aria-label="Torrent files"] button')`);
@@ -223,7 +317,7 @@ try {
   await call('Page.navigate', { url: origin }); await until('!!document.querySelector(".tv-shell")');
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), 'true', 'Fire TV auto-detection');
   assert.deepEqual(errors, [], 'No browser exceptions');
-  console.log(JSON.stringify({ passed: true, viewports: [1280, 1920, 960, 390], checks: 'desktop isolation, auto-detection, saved override, fallback APIs, document/wheel scrolling, cursor edges, scroll buttons, PageUp/Down, D-pad fallback, fields, dialogs, source/file selection, seeking, fullscreen and Back', screenshots: output }, null, 2));
+  console.log(JSON.stringify({ passed: true, viewports: [1280, 1920, 960, 390], checks: 'simple default and saved advanced mode, automatic Gemini selection, largest main video, autoplay denial recovery, automatic English ZIP selection, subtitle offset and cancellation, next source and failed-source fallback, exhausted sources, AI cancellation, desktop isolation, auto-detection, fallback APIs, scrolling, D-pad, dialogs, manual selection, seeking, fullscreen and Back', screenshots: output }, null, 2));
 } finally {
   if (call && socket?.readyState === WebSocket.OPEN) {
     await Promise.race([call('Browser.close').catch(() => {}), delay(1000)]); socket.close();

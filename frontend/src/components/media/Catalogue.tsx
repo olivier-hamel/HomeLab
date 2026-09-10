@@ -1,35 +1,39 @@
 import { useEffect, useRef, useState } from "react";
-import { Film, Search, X } from "lucide-react";
+import { Film, Play, Search, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { mediaApi, sourceIntent, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
 import { useTvMode } from "../../lib/tv";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
-export default function Catalogue({ find }: { find: (intent: SearchIntent) => void }) {
+export default function Catalogue({ find, simple = false }: { find: (intent: SearchIntent) => void; simple?: boolean }) {
   const [kind, setKind] = useState<Kind>("movie");
   const [text, setText] = useState("");
   const [q, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [chosen, setChosen] = useState<Title | null>(null);
   const [retry, setRetry] = useState(0);
+  const choose = (title: Title) => {
+    if (simple && title.kind === "movie") find(sourceIntent({ ...title, imdbId: null, tvdbId: null, seasons: [] }));
+    else setChosen(title);
+  };
   return <div className="space-y-5">
     <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setQuery(text.trim()); setPage(1); setRetry(r => r + 1); }}>
-      <label className="sr-only" htmlFor="catalogue-kind">Catalogue type</label>
-      <select id="catalogue-kind" className={field} value={kind} onChange={e => { setKind(e.target.value as Kind); setPage(1); setChosen(null); }}><option value="movie">Movies</option><option value="tv">TV shows</option></select>
+      {simple ? <div role="group" aria-label="Catalogue type" className="simple-catalogue-tabs">{(["movie", "tv"] as const).map(value => <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKind(value); setPage(1); setChosen(null); }}>{value === "movie" ? "Movies" : "TV shows"}</button>)}</div> : <><label className="sr-only" htmlFor="catalogue-kind">Catalogue type</label>
+      <select id="catalogue-kind" className={field} value={kind} onChange={e => { setKind(e.target.value as Kind); setPage(1); setChosen(null); }}><option value="movie">Movies</option><option value="tv">TV shows</option></select></>}
       <label className="sr-only" htmlFor="catalogue-query">Search catalogue</label>
       <Input id="catalogue-query" maxLength={250} className="h-11 min-w-40 flex-1 border-neutral-600 bg-neutral-950" placeholder="Find a title…" value={text} onChange={e => setText(e.target.value)} />
       <Button className="h-11 bg-orange-600 text-white hover:bg-orange-700"><Search />Search</Button>
     </form>
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <p className="text-sm text-neutral-400">{q ? `Catalogue matches for “${q}”` : "Popular on TMDB"} · Metadata only.</p>
+      <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? kind === "movie" ? "Popular movies" : "Popular TV shows" : "Popular on TMDB"}{!simple && " · Metadata only."}</p>
     </div>
-    {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={find} />}
-    <CatalogueResults key={`${kind}/${q}/${page}/${retry}`} kind={kind} query={q} page={page} setPage={setPage} choose={setChosen} retry={() => setRetry(r => r + 1)} />
+    {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={intent => { setChosen(null); find(intent); }} simple={simple} />}
+    <CatalogueResults key={`${kind}/${q}/${page}/${retry}`} kind={kind} query={q} page={page} setPage={setPage} choose={choose} retry={() => setRetry(r => r + 1)} simple={simple} />
   </div>;
 }
 
-function CatalogueResults({ kind, query, page, setPage, choose, retry }: { kind: Kind; query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; retry: () => void }) {
+function CatalogueResults({ kind, query, page, setPage, choose, retry, simple }: { kind: Kind; query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; retry: () => void; simple: boolean }) {
   const [result, setResult] = useState<{ titles: Title[]; pages: number } | null>(null);
   const [error, setError] = useState("");
   const [cancelled, setCancelled] = useState(false);
@@ -43,18 +47,18 @@ function CatalogueResults({ kind, query, page, setPage, choose, retry }: { kind:
   if (error || cancelled) return <div role="alert" className="space-y-3 rounded border border-orange-500/40 p-5"><p>{error || "Catalogue request cancelled."}</p><Button variant="outline" onClick={retry}>Retry catalogue</Button></div>;
   if (!result) return <div role="status" className="flex items-center gap-4 p-5">Searching catalogue…<Button variant="outline" onClick={() => { controller.abort(); setCancelled(true); }}>Cancel</Button></div>;
   return <>
-    {!result.titles.length && <p className="py-10 text-neutral-400">No catalogue titles found. Try a different name, or search your indexers directly.</p>}
+    {!result.titles.length && <p className="py-10 text-neutral-400">No titles found. Try a different name.</p>}
     <div className="tv-catalogue-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-      {result.titles.map(title => <button key={title.id} className="group overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-left transition-colors hover:border-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500" onClick={() => choose(title)} aria-label={`Details for ${title.title}`}>
-        <div className="flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}</div>
-        <div className="space-y-2 p-3"><p className="line-clamp-2 text-sm font-semibold text-white group-hover:text-orange-400">{title.title}</p><p className="text-xs text-neutral-400">{title.year || "Year unknown"} · {title.kind === "movie" ? "Movie" : "TV"}</p><p className="line-clamp-2 text-xs leading-relaxed text-neutral-500">{title.overview || "No overview available."}</p><span className="block text-xs text-orange-400">View details</span></div>
+      {result.titles.map(title => <button key={title.id} className={`group overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-left transition-colors hover:border-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500 ${simple ? "simple-title-card" : ""}`} onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" ? "Watch" : "Choose episode of" : "Details for"} ${title.title}`}>
+        <div className="relative flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}{simple && <span className="simple-card-action"><Play className="h-5 w-5 fill-current" />{title.kind === "movie" ? "Watch now" : "Choose episode"}</span>}</div>
+        <div className="space-y-2 p-3"><p className="line-clamp-2 text-sm font-semibold text-white group-hover:text-orange-400">{title.title}</p><p className="text-xs text-neutral-400">{title.year || "Year unknown"} · {title.kind === "movie" ? "Movie" : "TV"}</p>{!simple && <><p className="line-clamp-2 text-xs leading-relaxed text-neutral-500">{title.overview || "No overview available."}</p><span className="block text-xs text-orange-400">View details</span></>}</div>
       </button>)}
     </div>
     <div className="flex items-center justify-center gap-4"><Button variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-xs text-neutral-400">Page {page} / {result.pages || 1}</span><Button variant="outline" disabled={page >= result.pages} onClick={() => setPage(page + 1)}>Next</Button></div>
   </>;
 }
 
-function TitleDetails({ title, close, find }: { title: Title; close: () => void; find: (intent: SearchIntent) => void }) {
+function TitleDetails({ title, close, find, simple }: { title: Title; close: () => void; find: (intent: SearchIntent) => void; simple: boolean }) {
   const tvMode = useTvMode();
   const panel = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<Details | null>(null);
@@ -91,7 +95,7 @@ function TitleDetails({ title, close, find }: { title: Title; close: () => void;
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
     {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data))}>Find sources</Button> : <div className="space-y-4">
       <label className="flex flex-wrap items-center gap-3 text-sm">Season<select className={field} value={season ?? ""} onChange={e => setSeason(Number(e.target.value))}>{data.seasons.map(s => <option key={s.number} value={s.number}>{s.name} ({s.episodes ?? "?"} episodes)</option>)}</select></label>
-      {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} /> : <p>No season information is available.</p>}
+      {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} simple={simple} /> : <p>No season information is available.</p>}
     </div>}
     </div>
     <div className="flex aspect-[2/3] w-40 max-w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 justify-self-center sm:justify-self-end">
@@ -100,7 +104,7 @@ function TitleDetails({ title, close, find }: { title: Title; close: () => void;
     </div>
   </dialog>;
 }
-function Episodes({ title, season, find }: { title: Details; season: number; find: (intent: SearchIntent) => void }) {
+function Episodes({ title, season, find, simple }: { title: Details; season: number; find: (intent: SearchIntent) => void; simple: boolean }) {
   const [episodes, setEpisodes] = useState<{ number: number; name: string; overview: string; airDate: string }[] | null>(null);
   const [episode, setEpisode] = useState("");
   const [error, setError] = useState("");
@@ -110,6 +114,9 @@ function Episodes({ title, season, find }: { title: Details; season: number; fin
     return () => controller.abort();
   }, [title.id, season]);
   const selected = episodes?.find(e => e.number === Number(episode));
+  if (simple) return <div className="space-y-3">
+    {error ? <p role="alert">Couldn't load episodes. Reselect the season to retry.</p> : !episodes ? <p role="status">Loading episodes…</p> : episodes.length ? <div className="simple-episodes">{episodes.map(item => <button key={item.number} onClick={() => find(sourceIntent(title, season, item.number))} aria-label={`Watch episode ${item.number}: ${item.name}`}><span className="text-orange-400"><Play className="h-5 w-5" /></span><span><strong className="block text-sm text-white">{item.number}. {item.name}</strong><span className="mt-1 line-clamp-2 block text-xs text-neutral-400">{item.overview}</span></span></button>)}</div> : <p>No episodes are available for this season.</p>}
+  </div>;
   return <div className="space-y-3">
     {error ? <p role="alert">{error} Reselect the season to retry.</p> : !episodes ? <p role="status">Loading episodes…</p> : <label className="flex flex-wrap items-center gap-3 text-sm">Episode<select className={`${field} max-w-full`} value={episode} onChange={e => setEpisode(e.target.value)}><option value="">Whole season / season pack</option>{episodes.map(e => <option key={e.number} value={e.number}>{e.number}. {e.name}</option>)}</select></label>}
     {selected && <p className="text-sm text-neutral-400">{selected.airDate && `${selected.airDate} · `}{selected.overview}</p>}

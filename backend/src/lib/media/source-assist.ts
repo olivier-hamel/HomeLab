@@ -117,13 +117,18 @@ export class SourceAssist {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: "user", parts: [{ text: input }] }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 12_000, responseMimeType: "application/json", responseJsonSchema: {
-              type: "object", properties: { ranking: { type: "array", minItems: candidates.length, maxItems: candidates.length, items: {
-                type: "object", properties: { id: { type: "string", enum: candidates.map(c => c.id) }, identity: { type: "string", enum: ["match", "uncertain", "mismatch"] }, verdict: { type: "string", enum: ["good", "unsure", "sketchy"] }, reason: { type: "string" } }, required: ["id", "identity", "verdict", "reason"], additionalProperties: false,
+              // Keep the provider schema fixed and small. Exact counts and source IDs
+              // are validated below; enumerating dozens of UUIDs can make Gemini reject it.
+              type: "object", properties: { ranking: { type: "array", items: {
+                type: "object", properties: { id: { type: "string" }, identity: { type: "string", enum: ["match", "uncertain", "mismatch"] }, verdict: { type: "string", enum: ["good", "unsure", "sketchy"] }, reason: { type: "string" } }, required: ["id", "identity", "verdict", "reason"], additionalProperties: false,
               } } }, required: ["ranking"], additionalProperties: false,
             } },
           }),
         });
-        if (!response.ok) { await response.body?.cancel(); throw new MediaError("ai_upstream", "Gemini source assist is unavailable."); }
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new MediaError(response.status === 429 ? "ai_rate_limit" : response.status === 401 || response.status === 403 ? "ai_auth" : response.status === 400 ? "ai_request" : "ai_upstream", "Gemini source assist is unavailable.");
+        }
         const envelope = record(JSON.parse(new TextDecoder().decode(await readLimited(response, 256 * 1024))));
         const candidate = record(list(envelope.candidates)[0]);
         if (candidate.finishReason !== "STOP") throw new MediaError("ai_schema", "Gemini did not finish its recommendations.");
@@ -156,7 +161,16 @@ export class SourceAssist {
       return this.cache.set(cacheKey, advice);
     } catch (error) {
       if (signal.aborted) throw error;
-      return { ...fallback, warning: "Gemini is unavailable right now; showing basic recommendations." };
+      const reasons: Record<string, string> = {
+        timeout: "Gemini's review timed out.",
+        ai_rate_limit: "Gemini's request limit or quota was reached.",
+        ai_auth: "Gemini rejected the API key or its permissions.",
+        ai_request: "Gemini rejected the recommendation request.",
+        ai_schema: "Gemini returned an incomplete or invalid review.",
+        too_large: "Gemini's review exceeded the response size limit.",
+      };
+      const reason = error instanceof MediaError ? reasons[error.code] : undefined;
+      return { ...fallback, warning: `${reason ?? "Gemini couldn't complete this review."} Using basic matching for this search.` };
     }
   }
 }

@@ -78,3 +78,32 @@ export function loadDismissedSources(): Set<string> {
 export function saveDismissedSources(dismissed: Set<string>): void {
   try { sessionStorage.setItem(dismissedKey, JSON.stringify([...dismissed].slice(-200))); } catch { /* In-memory dismissal works when browser storage is unavailable. */ }
 }
+
+export function automaticSources(results: Source[], advice: SourceAdvice, dismissed: Set<string>): Source[] {
+  const matches = new Set(advice.ranking.filter(item => item.identity === "match").map(item => item.id));
+  const seen = new Set<string>();
+  return recommendedSources(results, advice, dismissed, "recommended").filter(source => {
+    const fingerprint = sourceFingerprint(source);
+    if (!matches.has(source.id) || seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  });
+}
+
+export function episodeInFilename(path: string): { season: number; episode: number } | null {
+  const match = /\bS(\d{1,3})E(\d{1,4})\b/i.exec(path.replaceAll("_", ".")) ?? /\b(\d{1,3})x(\d{1,4})\b/i.exec(path);
+  return match ? { season: Number(match[1]), episode: Number(match[2]) } : null;
+}
+
+export function mainVideo(files: TorrentFile[], intent?: SearchIntent): TorrentFile | null {
+  const target = intent?.target ?? intent?.context;
+  const videos = files.filter(file => {
+    if (file.kind !== "video" || file.sample || /(?:^|[/\\ ._-])(?:sample|trailer|featurette|extras?)(?:[/\\ ._-]|$)/i.test(file.path)) return false;
+    if (target?.kind === "tv" && target.episode !== undefined) {
+      const episode = episodeInFilename(file.path);
+      return episode?.episode === target.episode && (target.season === undefined || episode.season === target.season);
+    }
+    return true;
+  });
+  return videos.sort((a, b) => (b.size ?? -1) - (a.size ?? -1))[0] ?? null;
+}

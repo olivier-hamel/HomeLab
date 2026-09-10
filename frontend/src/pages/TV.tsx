@@ -4,12 +4,17 @@ import { Button } from "../components/ui/button";
 import Catalogue from "../components/media/Catalogue";
 import Sources from "../components/media/Sources";
 import Playback from "../components/media/Playback";
+import AutoPlayback from "../components/media/AutoPlayback";
+import Welcome from "../components/media/Welcome";
+import Switch from "../components/ui/switch";
 import { useMediaTask } from "../components/media/useMediaTask";
 import { mediaApi, sourceFingerprint, type SearchIntent, type Source } from "../lib/media";
 import { useTvMode } from "../lib/tv";
 
 export default function TV() {
   const tvMode = useTvMode();
+  const [advanced, setAdvanced] = useState(() => { try { return localStorage.getItem("homelab:advanced-media") === "true"; } catch { return false; } });
+  const [watchIntent, setWatchIntent] = useState<SearchIntent | null>(null);
   const [config, setConfig] = useState<{ tmdb: boolean; prowlarr: boolean; torrserver: boolean } | null>(null);
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"catalogue" | "sources">("catalogue");
@@ -23,16 +28,32 @@ export default function TV() {
     void mediaApi<NonNullable<typeof config>>("status", AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)])).then(c => { if (!controller.signal.aborted) { setConfig(c); setError(""); if (!c.tmdb) setMode("sources"); } }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [retry]);
-  const find = (value: SearchIntent) => { setIntent(value); setMode("sources"); };
+  const find = (value: SearchIntent) => {
+    if (advanced) { setIntent(value); setMode("sources"); }
+    else setWatchIntent(value);
+    (tvMode ? document.scrollingElement : document.getElementById("dashboard-content"))?.scrollTo({ top: 0, behavior: "auto" });
+  };
   const connections = config && <>
       <div className="flex flex-wrap items-center gap-3 text-xs">{(["tmdb", "prowlarr", "torrserver"] as const).map(service => <span key={service} className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2"><span className="text-neutral-300">{service === "tmdb" ? "TMDB" : service === "prowlarr" ? "Prowlarr" : "TorrServer"}</span><span className="ml-2 text-neutral-500">{config[service] ? "Configured" : "Needs setup"}</span></span>)}<Button size="sm" variant="ghost" disabled={task.busy} onClick={() => { void task.run(s => mediaApi<NonNullable<typeof checks>>("check", s), setChecks, 50_000); }}>{task.busy ? "Checking connections…" : "Check media connections"}</Button>{task.busy && <Button variant="ghost" size="sm" onClick={task.cancel}>Cancel</Button>}</div>
       {checks && <div className="space-y-2 rounded border border-neutral-700 p-4 text-xs">{Object.entries(checks).map(([name, check]) => <p key={name}><strong className="capitalize">{name}:</strong> {check.error || `${check.state}${check.version ? ` · ${check.version}` : ""}`}</p>)}</div>}
       {task.error && <p role="alert" className="text-sm text-orange-400">{task.error}</p>}
   </>;
-  return <div className="tv-media-page mx-auto max-w-[1600px] space-y-6 p-4 text-neutral-200 sm:p-6 lg:p-8">
-    {tvMode ? <h1 className="sr-only">TV & Movies</h1> : <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-[0.2em] text-orange-400">HomeLab streaming service</p><h1 className="text-2xl font-bold tracking-wide text-white sm:text-3xl">TV & Movies</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-400"></p></div><div className="flex items-center gap-2 rounded border border-neutral-700 px-3 py-2 text-xs text-neutral-400"><Radio className="h-4 w-4 text-orange-400" />LAN / tailnet access</div></div>}
+  return <div className={`tv-media-page mx-auto max-w-[1600px] space-y-6 p-4 text-neutral-200 sm:p-6 lg:p-8 ${advanced ? "" : "simple-media"}`}>
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div><p className="mb-2 text-xs tracking-[0.2em] text-orange-400">HOMELAB CINEMA</p><h1 className="text-2xl font-semibold text-white sm:text-3xl">TV & Movies</h1></div>
+      <Switch label="Advanced mode" checked={advanced} onChange={enabled => {
+        setAdvanced(enabled); setChosen(null); setWatchIntent(null); setMode("catalogue");
+        try { localStorage.setItem("homelab:advanced-media", String(enabled)); } catch { /* The switch still works without storage. */ }
+      }} />
+    </div>
     {error ? <div role="alert" className="space-y-3 rounded-lg border border-orange-500/40 bg-neutral-900 p-5"><h2 className="font-semibold text-white">Set up TV & Movies</h2><p className="text-sm leading-relaxed">{error}</p><Button variant="outline" onClick={() => { setError(""); setRetry(r => r + 1); }}>Retry setup</Button></div> : !config ? <p role="status">Checking media configuration…</p> : <>
-      {!tvMode && connections}
+      {!advanced ? <>
+        {watchIntent ? <AutoPlayback key={JSON.stringify(watchIntent)} intent={watchIntent} close={() => setWatchIntent(null)} /> : <Welcome />}
+        <div hidden={!!watchIntent}>
+          {config.tmdb && config.prowlarr && config.torrserver ? <Catalogue find={find} simple /> : <div className="space-y-3 rounded-xl border border-neutral-700 bg-neutral-900 p-6"><h2 className="text-lg text-white">Movie night needs a little setup</h2><p className="text-sm text-neutral-400">Turn on Advanced mode to connect the catalogue and playback services.</p></div>}
+        </div>
+      </> : <>
+      {!tvMode && <><div className="flex items-center gap-2 text-xs text-neutral-400"><Radio className="h-4 w-4 text-orange-400" />LAN / tailnet access</div>{connections}</>}
       {chosen && <Playback key={chosen.key} source={chosen.source} search={chosen.search} close={() => setChosen(null)} />}
       <div className="flex gap-2 border-b border-neutral-700 pb-3" role="group" aria-label="Media mode"><Button data-tv-initial-focus={mode === "catalogue" ? "" : undefined} data-tv-back={tvMode && mode === "sources" && !chosen ? "" : undefined} aria-pressed={mode === "catalogue"} variant="ghost" className={mode === "catalogue" ? "bg-orange-500/15 text-orange-400" : "text-neutral-400"} onClick={() => { setMode("catalogue"); setChosen(null); }}><Clapperboard />Catalogue</Button><Button aria-pressed={mode === "sources"} variant="ghost" className={mode === "sources" ? "bg-orange-500/15 text-orange-400" : "text-neutral-400"} onClick={() => { setMode("sources"); setChosen(null); }}><Search />Source search</Button></div>
       {mode === "catalogue" ? config.tmdb ? <Catalogue find={find} /> : <div className="space-y-3 rounded border border-neutral-700 p-6"><h2 className="text-white">Connect the catalogue</h2><p className="text-sm text-neutral-400">Set TMDB_READ_ACCESS_TOKEN in backend/.env to browse titles, posters and descriptions. Direct source search works independently.</p><Button variant="outline" onClick={() => setMode("sources")}>Search sources</Button></div> : <>
@@ -41,6 +62,7 @@ export default function TV() {
         <Sources key={JSON.stringify(intent)} intent={intent} disabled={!config.torrserver} reject={source => { if (chosen && typeof chosen.source !== "string" && sourceFingerprint(chosen.source) === sourceFingerprint(source)) setChosen(null); }} choose={(source, search) => { setChosen({ source, search, key: Date.now() }); (tvMode ? document.scrollingElement : document.getElementById("dashboard-content"))?.scrollTo({ top: 0, behavior: tvMode ? "auto" : "smooth" }); }} />
       </>}
       {tvMode && <details className="space-y-4 rounded border border-neutral-700 p-4"><summary>Media connections</summary>{connections}</details>}
+      </>}
     </>}
   </div>;
 }

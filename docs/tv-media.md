@@ -2,7 +2,46 @@
 
 The optional TV page browses TMDB metadata, searches existing Prowlarr indexers,
 selects TorrServer files, and plays same-origin video. Other dashboard sections
-still show sample data. Browsing a title never starts a torrent.
+still show sample data. Browsing the catalogue never starts a torrent; selecting
+a movie in Simple mode starts automatic source selection and playback.
+
+## Simple and Advanced mode
+
+Simple mode is the default. The **Advanced mode** switch at the top remembers
+the choice in this browser and restores the existing manual source, file,
+subtitle and diagnostic controls. Changing modes stops the current player.
+
+In Simple mode, click a movie poster to watch, or open a TV show and choose an
+episode. The app searches the indexers, waits for Gemini's ranking, and starts
+the best confirmed title match. When Gemini is unavailable it uses the existing
+basic ranking and indicates that fallback. Uncertain and different titles are
+never started automatically. It selects the largest main video, excluding
+samples, trailers and extras; season packs must contain a filename identifying
+the selected episode. Browsers that block autoplay show a Play button.
+
+**Try another source** stops the current stream and tries the next recommendation.
+Metadata, format and playback failures also advance automatically. Failed and
+duplicate releases stay hidden for the browser tab, using the same dismissals
+as Advanced mode. Source handles are refreshed after eight minutes. Automatic
+search checks up to three batches at a time, and recovery pauses after five
+attempts so an unavailable title cannot keep adding torrents indefinitely.
+The retry button continues with the remaining choices. Playback success still
+depends on the actual torrent and connected peers.
+
+Turn on **English subtitles** to load matching bundled English SRT/VTT captions
+or search SubDL automatically. Online matching favors the video's release name,
+release group and format details, excludes known different episodes, and selects
+the matching English file from ZIP packs. Failed downloads try up to three
+releases. SubDL requires the existing `SUBDL_API_KEY`; bundled subtitles do not.
+The **Earlier/Later 0.5 s** and **Reset timing** controls remain available.
+Turning captions off cancels pending work; turning them back on reuses the
+downloaded file and timing. Changing sources keeps English subtitles enabled
+and finds captions for the new video, with a fresh offset.
+
+The Chrome UI fixture covers both modes, automatic selection and recovery,
+blocked autoplay, subtitles, cancellation and remote navigation. The media
+fixture also exercises Simple mode with a real licensed MP4 and bundled captions
+through Caddy and the backend; all external media providers are mocked.
 
 **Verified on September 9, 2026:** lint, typecheck, build and focused tests in
 both apps; actual Caddy 2.11.4 → Next.js 16.3.4 standalone → mocked services →
@@ -319,7 +358,7 @@ The key stays on the backend. Searches and candidate listing metadata are sent
 to Google; torrent links, indexer configuration, credentials and file contents
 are excluded.
 
-Search results appear with basic recommendations immediately, followed by the
+In Advanced mode, search results appear with basic recommendations immediately, followed by the
 Gemini review. Advice appears directly on each source row, without a separate
 assist status box. The best available choice stays first, including when sorting
 by seeders, size or title. Each listing has a **Good**, **Unsure** or **Sketchy**
@@ -352,12 +391,17 @@ This does not remove torrents from TorrServer or report failures to an indexer.
 
 Gemini reviews at most the 60 most promising matching listings in each loaded batch;
 the rest retain basic assessments. Missing keys, timeouts, quota errors and
-invalid model output retain usable basic advice. Reviews and session-owned
+invalid model output retain usable basic advice. Both modes show the reason when
+a review falls back. The Gemini output schema stays fixed in size; exact result
+counts and source IDs are validated on the backend to avoid provider rejection
+of large enumerated schemas. Reviews and session-owned
 search snapshots are bounded to 40 entries for two minutes, with 12 review
 requests per session per minute and 60 globally. Responses enforce supplied
 source IDs, known verdicts and a single short explanation; listing text is
-treated as untrusted data. No live Gemini request was verified without a key;
-the automated browser fixture mocks Gemini as well as the existing providers.
+treated as untrusted data. A live Obsession (2026) review on September 9 returned
+Gemini assessments for 58 matching releases in both Simple and Advanced mode
+after the schema correction. The automated browser fixture mocks Gemini as
+well as the existing providers.
 
 ## 8. Playback and external players
 
@@ -437,7 +481,7 @@ device and are not emitted. No permanent service credentials appear in links.
 
 ### Subtitles
 
-TV episodes and movies share the **Subtitles** controls below the video. Select
+In Advanced mode, TV episodes and movies share the **Subtitles** controls below the video. Select
 an SRT or VTT file included in the torrent, or choose **Load SRT / VTT** to open
 a file from your computer. Select **Off** to hide captions. Choosing or changing
 subtitles does not start or restart the video. For season packs, select the
@@ -490,7 +534,8 @@ SxxExx or NxNN filename supplies the episode where available. You can edit the
 title, type, season and episode or uncheck catalogue matching to broaden a search.
 SubDL returns subtitles for its first matching title; the UI names that title so
 you can refine ambiguous searches. Up to 30 releases are requested, with up to
-100 individual subtitle choices from expanded packs. No result auto-downloads.
+100 individual subtitle choices from expanded packs. Advanced mode requires a
+subtitle selection; Simple mode downloads when English subtitles are enabled.
 
 The backend uses the [documented SubDL search API](https://subdl.com/api-doc)
 and `unpack=1` for individual files where available. Other downloads are unpacked
@@ -512,7 +557,7 @@ subtitles continue working if SubDL is unavailable or unconfigured.
 
 Searches have a 15-second deadline and a bounded five-minute cache. Results expire
 after ten minutes and belong to the browser session and selected video. Downloads
-have a 25-second deadline and require an explicit selection. SubDL subtitle files
+have a 25-second deadline. SubDL subtitle files
 remain available only in the current player, like local files. Changing subtitle
 files preserves video playback; selecting Off while a download is pending keeps
 captions off until you choose the downloaded file.
@@ -521,7 +566,7 @@ captions off until you choose the downloaded file.
 
 **PC/browser, through the deployed Caddy URL (not just Vite):**
 
-1. Verify `/healthz`, `/api/health` and Check media connections. Browse a title
+1. Turn on Advanced mode. Verify `/healthz`, `/api/health` and Check media connections. Browse a title
    and verify no torrent add. Select a TV season/episode and inspect its query.
 2. Search a current publisher-authorized/public-domain release, verify its
    source/license and title/year, and choose it. If none is indexed, use its

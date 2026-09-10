@@ -1,6 +1,31 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sourceIntent, sourceSearchIntent, sortSources, bytes, sourceFingerprint, recommendedSources, loadDismissedSources, saveDismissedSources } from '../src/lib/media.ts';
+import { sourceIntent, sourceSearchIntent, sortSources, bytes, sourceFingerprint, recommendedSources, loadDismissedSources, saveDismissedSources, automaticSources, mainVideo } from '../src/lib/media.ts';
+
+test('automatic playback respects AI order and never starts uncertain, wrong, duplicate or dismissed releases', () => {
+  const results = ['wrong', 'uncertain', 'second', 'first', 'duplicate'].map(id => ({ id, title: id === 'duplicate' ? 'first' : id, size: 100 }));
+  const advice = { ranking: [{ id: 'wrong', identity: 'mismatch' }, { id: 'uncertain', identity: 'uncertain' }, ...['first', 'duplicate', 'second'].map(id => ({ id, identity: 'match' }))] };
+  assert.deepEqual(automaticSources(results, advice, new Set()).map(s => s.id), ['first', 'second']);
+  assert.deepEqual(automaticSources(results, advice, new Set([sourceFingerprint(results[3])])).map(s => s.id), ['second']);
+  assert.deepEqual(automaticSources(results, { ranking: [] }, new Set()), []);
+});
+
+test('automatic file selection takes the largest main video, ignoring samples, extras and non-video files', () => {
+  const file = (id, path, size, kind = 'video', sample = false) => ({ id, path, size, kind, sample });
+  const files = [file(1, 'sample.mp4', 9000, 'video', true), file(2, 'English.srt', 10000, 'subtitle'), file(3, 'Extras/Making of.mkv', 8000), file(4, 'Movie.mkv', 6000), file(5, 'Short.mp4', 1000), file(6, 'Trailer.mp4', 7000)];
+  assert.equal(mainVideo(files).id, 4);
+  assert.equal(files[0].id, 1, 'Does not mutate the supplied list');
+  assert.equal(mainVideo([files[0], files[1], files[2], files[5]]), null);
+  assert.equal(mainVideo([file(8, 'Movie.mp4', null)]).id, 8);
+});
+
+test('season packs choose the requested episode even when another is larger, and refuse an unidentifiable episode', () => {
+  const files = [{ id: 1, path: 'Show.S02E01.mkv', size: 9000, kind: 'video' }, { id: 2, path: 'Show_S02E03.mkv', size: 1000, kind: 'video' }, { id: 3, path: 'Show.1x03.mkv', size: 5000, kind: 'video' }];
+  const intent = { target: { kind: 'tv', season: 2, episode: 3 } };
+  assert.equal(mainVideo(files, intent).id, 2);
+  assert.equal(mainVideo(files, { target: { kind: 'tv', season: 2, episode: 4 } }), null);
+  assert.equal(mainVideo([{ ...files[0], path: 'Episode.mkv' }], intent), null);
+});
 
 test('catalogue details create editable title/year or SxxExx queries without implying a source', () => {
   const title = { id: 4, title: 'Authorized title', year: '2008', kind: 'movie', imdbId: 'tt123', tvdbId: null };

@@ -19,6 +19,44 @@ export function subtitleFormat(name: string): "srt" | "vtt" | null {
   return /\.srt$/i.test(name) ? "srt" : /\.vtt$/i.test(name) ? "vtt" : null;
 }
 
+const subtitleWords = (value: string) => value.toLowerCase().replace(/\.(?:mkv|mp4|avi|srt|vtt)$/i, "").replace(/web[ ._-]?dl/g, "webdl").replace(/blu[ ._-]?ray/g, "bluray").split(/[^a-z0-9]+/).filter(Boolean);
+const subtitleEpisode = (name: string) => /\bS(\d{1,3})E(\d{1,4})\b/i.exec(name.replaceAll("_", ".")) ?? /\b(\d{1,3})x(\d{1,4})\b/i.exec(name);
+// Language labels belong to a folder or the filename suffix, not words in a film title.
+const englishName = /(?:^|[/\\ ._-])(?:en|eng|english)(?:[/\\]|(?:[ ._-](?:sdh|cc|forced))?\.(?:srt|vtt)$)/i;
+const otherLanguage = /(?:^|[/\\ ._-])(?:french|spanish|german|italian|portuguese|russian|arabic|japanese|korean|chinese|dutch|hindi)(?:[/\\]|\.(?:srt|vtt)$)|[._-](?:fr|fre|fra|es|spa|de|ger|deu|it|ita|pt|por|ru|rus|ar|ara|ja|jpn|ko|kor|zh|chi|zho|nl|dut|hin)\.(?:srt|vtt)$/i;
+
+function subtitleMatchScore(name: string, filename: string): number {
+  const target = subtitleWords(filename.replaceAll("\\", "/").split("/").pop() ?? filename);
+  const words = new Set(subtitleWords(name));
+  const technical = new Set(["webdl", "webrip", "bluray", "brrip", "hdtv", "1080p", "720p", "2160p"]);
+  return target.reduce((score, word, index) => score + (words.has(word) ? technical.has(word) ? 8 : index === target.length - 1 ? 12 : 2 : 0), 0);
+}
+
+export function rankEnglishSubtitles(results: OnlineSubtitle[], filename: string, intent?: SearchIntent): OnlineSubtitle[] {
+  const { context } = subtitleSearch(filename, intent);
+  return results.filter(item => {
+    if (!/^(?:en|eng|english)$/i.test(item.language.trim())) return false;
+    const episode = subtitleEpisode(`${item.name} ${item.release}`);
+    const seasonNumber = item.season ?? (episode ? Number(episode[1]) : null);
+    const episodeNumber = item.episode ?? (episode ? Number(episode[2]) : null);
+    return context.kind !== "tv" || ((context.season === undefined || seasonNumber === null || seasonNumber === context.season) && (context.episode === undefined || episodeNumber === null || episodeNumber === context.episode));
+  }).sort((a, b) => (subtitleMatchScore(`${b.release} ${b.name}`, filename) - Number(b.hearingImpaired)) - (subtitleMatchScore(`${a.release} ${a.name}`, filename) - Number(a.hearingImpaired)));
+}
+
+export function rankSubtitleFiles<T extends { name: string }>(files: T[], filename: string, intent?: SearchIntent, requireEnglishName = false): T[] {
+  const { context } = subtitleSearch(filename, intent);
+  return files.filter(file => {
+    if (!subtitleFormat(file.name) || otherLanguage.test(file.name) || (requireEnglishName && !englishName.test(file.name))) return false;
+    const episode = subtitleEpisode(file.name);
+    // Never pick a different episode from an expanded season archive.
+    if (context.kind === "tv" && context.episode !== undefined) {
+      if (episode) return Number(episode[2]) === context.episode && (context.season === undefined || Number(episode[1]) === context.season);
+      return files.length === 1;
+    }
+    return true;
+  }).sort((a, b) => (subtitleMatchScore(b.name, filename) + Number(englishName.test(b.name)) * 5) - (subtitleMatchScore(a.name, filename) + Number(englishName.test(a.name)) * 5));
+}
+
 export function subtitleTiming(cues: Iterable<Pick<TextTrackCue, "startTime" | "endTime">>) {
   // Snapshot before editing: the browser reorders its live cue list as times change.
   // Keep original times so repeated adjustments and Reset never accumulate drift.

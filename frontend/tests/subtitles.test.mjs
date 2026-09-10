@@ -1,8 +1,27 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_SUBTITLE_BYTES, subtitleFormat, subtitleTiming, subtitleVtt, subtitleSearch } from '../src/lib/subtitles.ts';
+import { MAX_SUBTITLE_BYTES, subtitleFormat, subtitleTiming, subtitleVtt, subtitleSearch, rankEnglishSubtitles, rankSubtitleFiles } from '../src/lib/subtitles.ts';
 
 const encode = text => new TextEncoder().encode(text).buffer;
+
+test('automatic English subtitles favor matching release details and exclude other languages and episodes', () => {
+  const subtitle = (id, release, language = 'EN', episode = null) => ({ id, release, name: release + '.srt', language, season: null, episode, hearingImpaired: false });
+  const results = [subtitle('bluray', 'Movie.2026.1080p.BluRay-OTHER'), subtitle('web', 'Movie.2026.1080p.WEB-DL-GROUP'), subtitle('french', 'Movie.2026.1080p.WEB-DL-GROUP', 'FR')];
+  assert.deepEqual(rankEnglishSubtitles(results, 'Movie.2026.1080p.WEB-DL-GROUP.mkv').map(s => s.id), ['web', 'bluray']);
+  const episodes = [subtitle('wrong', 'Show.S01E02'), subtitle('correct', 'Show.S01E03'), subtitle('metadata', 'Show', 'English', 2)];
+  assert.deepEqual(rankEnglishSubtitles(episodes, 'Show.S01E03.mkv').map(s => s.id), ['correct']);
+});
+
+test('automatic archive selection finds English and the right episode without choosing French or unreadable formats', () => {
+  const files = ['French.srt', 'English.srt', 'English.ass'].map(name => ({ name }));
+  assert.deepEqual(rankSubtitleFiles(files, 'Movie.mkv').map(f => f.name), ['English.srt']);
+  const episodes = ['Show.S01E02.en.srt', 'Show.S01E03.fr.srt', 'Show.S01E03.en.srt', 'English.srt'].map(name => ({ name }));
+  assert.deepEqual(rankSubtitleFiles(episodes, 'Show.S01E03.mkv').map(f => f.name), ['Show.S01E03.en.srt']);
+  assert.equal(rankSubtitleFiles([{ name: 'Unknown.srt' }], 'Movie.mkv', undefined, true).length, 0, 'Bundled captions need an English label');
+  assert.equal(rankSubtitleFiles([{ name: 'It.srt' }], 'It.mkv').length, 1, 'A movie title is not a language tag');
+  assert.equal(rankSubtitleFiles([{ name: 'The.French.Connection.1971.srt' }], 'The.French.Connection.1971.mkv').length, 1);
+  assert.equal(rankSubtitleFiles([{ name: 'The.English.Patient.1996.srt' }], 'The.English.Patient.1996.mkv', undefined, true).length, 0);
+});
 
 test('subtitle timing shifts both boundaries, preserves cues before zero and resets without drift', () => {
   const cues = [{ startTime: 0.125, endTime: 0.375, text: 'Opening' }, { startTime: 1.25, endTime: 4.5, text: 'Dialogue' }];
