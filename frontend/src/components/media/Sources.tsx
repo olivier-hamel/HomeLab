@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Search, Sparkles, ThumbsDown } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { bytes, loadDismissedSources, mediaApi, recommendedSources, saveDismissedSources, sourceFingerprint, sourceSearchIntent, type SearchIntent, type SearchResults, type Source, type SourceAdvice } from "../../lib/media";
 import { useMediaTask } from "./useMediaTask";
+import { useTvFocus } from "../useTvNavigation";
 
 export default function Sources({ intent, choose, disabled, reject }: { intent: SearchIntent; choose: (source: Source | string, search?: SearchIntent) => void; disabled: boolean; reject: (source: Source) => void }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useTvFocus(panel);
   const [q, setQuery] = useState(intent.query);
   const [useIds, setUseIds] = useState(!!intent.context);
   const [result, setResult] = useState<SearchResults | null>(null);
@@ -38,7 +41,7 @@ export default function Sources({ intent, choose, disabled, reject }: { intent: 
   const best = sorted.map(source => assessments.get(source.id)).find(item => item?.identity === "match");
   const hiddenCount = (result?.results.length ?? 0) - sorted.length;
   const pages = Math.max(1, Math.ceil(sorted.length / 25));
-  return <div className="space-y-5">
+  return <div ref={panel} className="space-y-5">
     {intent.label && <div className="rounded border border-orange-500/30 bg-orange-500/5 p-4 text-sm"><p>Looking for <strong className="text-white">{intent.label}</strong></p><p className="mt-1 text-neutral-400">Matching this title first, targeting 1080p and 3,000+ reported seeders for streaming.</p></div>}
     <form onSubmit={e => { e.preventDefault(); search(); }} className="space-y-3">
       <label htmlFor="source-query" className="block text-sm text-neutral-300">Search your Prowlarr indexers</label>

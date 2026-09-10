@@ -7,6 +7,10 @@ network configuration and your own credentials. Follow the
 [TV & Movies setup and verification guide](docs/tv-media.md). Live media services
 still need verification on your homelab; implementation tests used mocks.
 
+Fire Stick users get a separate TV browser layout with larger controls and
+remote navigation. Open `/?tv=1` to enable it manually; desktop keeps its
+existing layout. See the [Fire TV browser guide](docs/fire-tv.md).
+
 ## How it fits into a home lab
 
 The reference setup runs Docker Engine in an Ubuntu Server VM on Proxmox VE.

@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { Copy, Download, Maximize, Play, Square, X } from "lucide-react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { Copy, Download, FastForward, Maximize, Pause, Play, Rewind, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { bytes, mediaApi, preparePlayback, type PreparedPlayback, type SearchIntent, type Selection, type Source, type TorrentStatus } from "../../lib/media";
 import { useMediaTask } from "./useMediaTask";
 import Subtitles from "./Subtitles";
 import PlaybackTimeline from "./PlaybackTimeline";
+import { useTvMode } from "../../lib/tv";
+import { useTvFocus } from "../useTvNavigation";
 
 function pause(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -15,6 +17,8 @@ function pause(ms: number, signal: AbortSignal) {
   });
 }
 export default function Playback({ source, search, close }: { source: Source | string; search?: SearchIntent; close: () => void }) {
+  const panel = useRef<HTMLElement>(null);
+  useTvFocus(panel);
   const [status, setStatus] = useState<TorrentStatus | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -43,8 +47,8 @@ export default function Playback({ source, search, close }: { source: Source | s
     return () => controller.abort();
   }, [source, retry]);
   const videos = status?.files.filter(f => f.kind === "video") ?? [];
-  return <section aria-label="Playback" className="space-y-4 rounded-lg border border-orange-500/50 bg-neutral-900 p-4 sm:p-6">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-2 text-xs tracking-widest text-orange-400">YOUR SELECTION</p><h2 className="break-words text-lg font-semibold text-white">{status?.title || (typeof source === "string" ? "Manual magnet" : source.title)}</h2></div><Button aria-label="Close playback" variant="ghost" size="icon" onClick={close}><X /></Button></div>
+  return <section ref={panel} aria-label="Playback" className="space-y-4 rounded-lg border border-orange-500/50 bg-neutral-900 p-4 sm:p-6">
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-2 text-xs tracking-widest text-orange-400">YOUR SELECTION</p><h2 className="break-words text-lg font-semibold text-white">{status?.title || (typeof source === "string" ? "Manual magnet" : source.title)}</h2></div><Button data-tv-back="" aria-label="Close playback" variant="ghost" size="icon" onClick={close}><X /></Button></div>
     {!selection && <p role="status" className="text-sm text-orange-400">{error ? "Failed" : status?.files.length ? "Ready — choose a video file" : "Fetching metadata…"}</p>}
     {error && <div role="alert" className="space-y-3"><p className="text-sm">{error}</p><Button variant="outline" onClick={() => { setError(""); setRetry(r => r + 1); }}>Retry metadata</Button></div>}
     {status && status.files.length > 0 && <>
@@ -62,7 +66,11 @@ export default function Playback({ source, search, close }: { source: Source | s
 }
 
 function Player({ selection, initial, search }: { selection: Selection; initial: TorrentStatus; search?: SearchIntent }) {
+  const tvMode = useTvMode();
+  const screen = useRef<HTMLDivElement>(null);
+  useTvFocus(screen);
   const video = useRef<HTMLVideoElement>(null);
+  const [nativeDuration, setNativeDuration] = useState<number | null>(null);
   const [state, setState] = useState("ready");
   const [error, setError] = useState("");
   const [stats, setStats] = useState(initial);
@@ -131,6 +139,7 @@ function Player({ selection, initial, search }: { selection: Selection; initial:
   const seek = (target: number) => {
     const element = video.current;
     if (!element || !prepared) return;
+    if (prepared.mode === "direct") { element.currentTime = target; setPosition(target); return; }
     const localTime = target - timelineStart;
     // Reuse downloaded data when possible; otherwise request a stream at the target.
     for (let i = 0; i < element.buffered.length; i++) {
@@ -142,14 +151,50 @@ function Player({ selection, initial, search }: { selection: Selection; initial:
     }
     void start(target);
   };
+  const duration = prepared?.duration ?? (prepared?.mode === "direct" ? nativeDuration : null);
+  const skip = (delta: number) => {
+    if (duration && Number.isFinite(duration)) seek(Math.min(Math.max(0, duration - 1), Math.max(0, position + delta)));
+  };
+  const remotePlayback = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || document.querySelector("dialog[open]")) return;
+    if (document.activeElement?.matches("input, select, textarea, [contenteditable='true']")) return;
+    const key = ({ 179: "MediaPlayPause", 227: "MediaRewind", 228: "MediaFastForward" } as Record<number, string>)[event.keyCode] ?? event.key;
+    if (!["MediaPlayPause", "MediaPlay", "MediaPause", "MediaRewind", "MediaFastForward"].includes(key)) return;
+    event.preventDefault();
+    if (key === "MediaRewind") skip(-10);
+    else if (key === "MediaFastForward") skip(10);
+    else if (key === "MediaPause" || (key === "MediaPlayPause" && !video.current?.paused)) video.current?.pause();
+    else if (state !== "checking format") void start();
+  });
+  useEffect(() => {
+    if (!tvMode) return;
+    const handle = (event: KeyboardEvent) => remotePlayback(event);
+    document.addEventListener("keydown", handle);
+    return () => document.removeEventListener("keydown", handle);
+  }, [tvMode]);
+  const fullscreen = () => {
+    if (tvMode && document.fullscreenElement) { void document.exitFullscreen().catch(() => setNotice("Use Back to leave fullscreen.")); return; }
+    const target = tvMode ? screen.current : video.current;
+    void target?.requestFullscreen().catch(() => setNotice("Use the native player fullscreen control on this device."));
+  };
   const shareUrl = share ? new URL(share.path, window.location.origin).href : "";
-  return <div className="space-y-4 border-t border-neutral-700 pt-5">
-    <h3 className="break-words text-sm text-white">{selection.file.path}</h3>
+  const playerControls = <>
     <video ref={video} controls playsInline preload="none" aria-label="Selected video" className="aspect-video w-full rounded bg-black"
+      onDurationChange={() => { const value = video.current?.duration; if (value && Number.isFinite(value)) setNativeDuration(value); }}
       onPlaying={() => { setState("playing"); setError(""); }} onWaiting={() => setState("buffering")} onStalled={() => setState("buffering")} onSeeking={() => setState("buffering")} onCanPlay={() => setState(s => s === "playing" ? s : "ready")} onPause={() => setState(s => s === "stalled" || s === "failed" ? s : "ready")} onEnded={() => setState("ready")} onProgress={updateBuffer} onTimeUpdate={updateBuffer}
       onError={() => { if (!playbackUrl) return; setState("failed"); setError("Playback was interrupted or the browser could not decode the prepared stream. Retry, choose another file, or use an external player."); }} />
-    {prepared && prepared.mode !== "direct" && prepared.duration !== null && Number.isFinite(prepared.duration) && prepared.duration > 0 && <PlaybackTimeline duration={prepared.duration} position={position} onSeek={seek} />}
-    <div className="flex flex-wrap items-center gap-3"><span role="status" className="mr-auto text-sm capitalize text-orange-400">{state}</span><Button disabled={state === "checking format"} onClick={() => { void start(); }} className="bg-orange-600 text-white hover:bg-orange-700"><Play />{state === "failed" || state === "stalled" ? "Retry playback" : "Play"}</Button><Button variant="outline" onClick={() => { preparing.current?.abort(); video.current?.pause(); video.current?.removeAttribute("src"); video.current?.load(); setPlaybackUrl(undefined); setState("ready"); setBuffer(null); setNotice("Playback stopped."); }}><Square />Stop</Button>{document.fullscreenEnabled && <Button variant="outline" aria-label="Fullscreen video" onClick={() => { void video.current?.requestFullscreen().catch(() => setNotice("Use the native player fullscreen control on this device.")); }}><Maximize /></Button>}</div>
+    {prepared && (tvMode || prepared.mode !== "direct") && duration !== null && Number.isFinite(duration) && duration > 0 && <PlaybackTimeline duration={duration} position={position} onSeek={seek} />}
+    <div className="tv-playback-controls flex flex-wrap items-center gap-3"><span role="status" className="mr-auto text-sm capitalize text-orange-400">{state}</span>
+      {tvMode && <Button variant="outline" disabled={!prepared || !duration || state === "checking format"} aria-label="Rewind 10 seconds" onClick={() => skip(-10)}><Rewind />10 s</Button>}
+      <Button data-tv-initial-focus="" disabled={state === "checking format"} onClick={() => { if (tvMode && state === "playing") video.current?.pause(); else void start(); }} className="bg-orange-600 text-white hover:bg-orange-700">{tvMode && state === "playing" ? <Pause /> : <Play />}{state === "failed" || state === "stalled" ? "Retry playback" : tvMode && state === "playing" ? "Pause" : "Play"}</Button>
+      {tvMode && <Button variant="outline" disabled={!prepared || !duration || state === "checking format"} aria-label="Forward 10 seconds" onClick={() => skip(10)}><FastForward />10 s</Button>}
+      <Button variant="outline" onClick={() => { preparing.current?.abort(); video.current?.pause(); video.current?.removeAttribute("src"); video.current?.load(); setPlaybackUrl(undefined); setState("ready"); setBuffer(null); setNotice("Playback stopped."); }}><Square />Stop</Button>
+      {document.fullscreenEnabled && <Button variant="outline" aria-label={tvMode ? "Toggle fullscreen video" : "Fullscreen video"} onClick={fullscreen}><Maximize />{tvMode && "Fullscreen"}</Button>}
+    </div>
+  </>;
+  return <div className="space-y-4 border-t border-neutral-700 pt-5">
+    <h3 className="break-words text-sm text-white">{selection.file.path}</h3>
+    {tvMode ? <div ref={screen} className="tv-player-screen space-y-4">{playerControls}</div> : playerControls}
     {prepared && <p className="text-xs text-neutral-400">{prepared.mode === "direct" ? "Direct play" : prepared.mode === "remux" ? "Remuxing · original video and audio" : `Converting ${prepared.video === "copy" ? "audio" : prepared.audio === "copy" || prepared.audio === "none" ? "video" : "video and audio"}`}</p>}
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}
     <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-neutral-400"><span>Download: {stats.downloadSpeed === null ? "Unknown" : `${bytes(stats.downloadSpeed)}/s`}</span><span>Connected peers: {stats.connectedPeers ?? "Unknown"}</span><span>Received torrent data: {bytes(stats.downloadedBytes)}</span>{buffer !== null && <span>Browser buffer ahead: {buffer.toFixed(1)} s</span>}</div>

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTvMode } from "../../lib/tv";
 
 function timestamp(seconds: number) {
   const whole = Math.max(0, Math.floor(seconds));
@@ -9,6 +10,7 @@ function timestamp(seconds: number) {
 }
 
 export default function PlaybackTimeline({ duration, position, onSeek }: { duration: number; position: number; onSeek: (seconds: number) => void }) {
+  const tvMode = useTvMode();
   const [preview, setPreview] = useState<number | null>(null);
   const pending = useRef<number | null>(null);
   const dragging = useRef(false);
@@ -39,6 +41,7 @@ export default function PlaybackTimeline({ duration, position, onSeek }: { durat
       onPointerUp={() => { dragging.current = false; commit(); }}
       onPointerCancel={() => { dragging.current = false; pending.current = null; setPreview(null); }}
       onKeyDown={event => {
+        if (tvMode && (event.key === "ArrowUp" || event.key === "ArrowDown")) return;
         const delta = { ArrowLeft: -10, ArrowDown: -10, ArrowRight: 10, ArrowUp: 10, PageDown: -60, PageUp: 60 }[event.key];
         if (delta === undefined && event.key !== "Home" && event.key !== "End") return;
         event.preventDefault();
@@ -51,6 +54,6 @@ export default function PlaybackTimeline({ duration, position, onSeek }: { durat
     <div aria-hidden="true" className="flex justify-between text-[10px] tabular-nums text-neutral-500">
       {[0, 0.25, 0.5, 0.75, 1].map(fraction => <span key={fraction}>{timestamp(duration * fraction)}</span>)}
     </div>
-    <p className="pt-2 text-xs text-neutral-400">Click or drag to any time. Unbuffered sections may take a moment to load.</p>
+    <p className="pt-2 text-xs text-neutral-400">{tvMode ? "Left / Right: seek 10 seconds. Up / Down: leave timeline." : "Click or drag to any time."} Unbuffered sections may take a moment to load.</p>
   </div>;
 }

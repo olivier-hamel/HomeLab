@@ -7,6 +7,8 @@ import Tasks from "./pages/Tasks";
 import Backups from "./pages/Backups";
 import Infrastructure from "./pages/Infrastructure";
 import TV from "./pages/TV";
+import { useTvMode } from "./lib/tv";
+import useTvNavigation from "./components/useTvNavigation";
 
 const sections = [
   { id: "overview", icon: Monitor, label: "OVERVIEW", component: Overview },
@@ -18,11 +20,37 @@ const sections = [
 ] as const;
 
 export default function App() {
-  const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>("overview");
+  const tvMode = useTvMode();
+  useTvNavigation(tvMode);
+  const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>(tvMode ? "tv" : "overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const selectedSection = sections.find((section) => section.id === activeSection)!;
   const Page = selectedSection.component;
+
+  if (tvMode) {
+    const desktopUrl = new URL(window.location.href);
+    desktopUrl.searchParams.set("tv", "0");
+    return <div className="tv-shell">
+      <header className="tv-header">
+        <div className="tv-brand"><strong>HOMELAB</strong><span>TV MODE</span></div>
+        <nav aria-label="TV navigation" className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" aria-current={activeSection === "tv" ? "page" : undefined} data-tv-back={activeSection !== "tv" ? "" : undefined} onClick={() => setActiveSection("tv")}><Clapperboard />TV & Movies</Button>
+          <label className="sr-only" htmlFor="tv-dashboard-section">Dashboard section</label>
+          <select id="tv-dashboard-section" value={activeSection === "tv" ? "" : activeSection} onChange={event => { if (event.target.value) setActiveSection(event.target.value as typeof activeSection); }}>
+            <option value="" disabled>Dashboard</option>
+            {sections.filter(section => section.id !== "tv").map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
+          </select>
+          <a className="tv-desktop-link" href={desktopUrl.href}>Desktop view</a>
+        </nav>
+      </header>
+      <main id="dashboard-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-auto focus:outline-none">
+        {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
+        <Page />
+      </main>
+      <footer className="tv-remote-hint">Arrows: move <span> Select: open </span> Back: return <span> In fields, Up / Down: choose; Left / Right: leave a menu</span></footer>
+    </div>;
+  }
 
   return (
     <div className="flex h-svh flex-col overflow-hidden md:flex-row">
