@@ -15,6 +15,7 @@ mkdirSync(output, { recursive: true });
 const profile = resolve(output, `chrome-${Date.now()}`);
 const titles = Array.from({ length: 16 }, (_, i) => ({ id: i + 1, kind: 'movie', title: `Example movie ${i + 1}`, year: '2026', overview: 'A sample catalogue title for remote navigation testing.', poster: null }));
 const shows = titles.map(title => ({ ...title, kind: 'tv', title: `Example show ${title.id}` }));
+const mixedTitles = titles.slice(0, 8).flatMap((title, index) => [title, shows[index]]);
 const episodes = Array.from({ length: 24 }, (_, i) => ({ number: i + 1, name: `Episode ${i + 1}`, overview: 'A sample episode description for scrolling a full season.', airDate: '2026-01-01' }));
 const file = { id: 1, path: 'Example movie.mp4', size: 1000000, kind: 'video', sample: false };
 const torrent = { id: 'fixture', title: 'Example movie', state: 'ready', files: [file], downloadSpeed: 1024, connectedPeers: 5, downloadedBytes: 1000, completedBytes: 1000, preloadBytes: null, preloadTarget: null };
@@ -43,7 +44,7 @@ const server = createServer(async (req, res) => {
     if (endpoint === 'subtitles/search') metrics.subtitleSearches.push(body);
     if (endpoint === 'subtitles/download') { metrics.subtitleDownloads.push(body.choice); await delay(subtitleDelay); }
     const json = endpoint === 'status' ? { tmdb: true, prowlarr: true, torrserver: true }
-      : endpoint === 'catalogue' ? { titles: url.searchParams.get('kind') === 'tv' ? shows : titles, pages: 1 }
+      : endpoint === 'catalogue' ? { titles: url.searchParams.get('kind') === 'all' ? mixedTitles : url.searchParams.get('kind') === 'tv' ? shows : titles, pages: 1 }
       : endpoint.startsWith('details/') ? { ...(endpoint.startsWith('details/tv/') ? shows : titles)[Number(endpoint.split('/').pop()) - 1], seasons: endpoint.startsWith('details/tv/') ? [{ number: 1, name: 'Season 1', episodes: episodes.length }] : [], imdbId: 'tt123', tvdbId: null, rating: 8.1 }
       : endpoint === 'continue-watching' ? { movies: [] }
       : endpoint.startsWith('season/') ? { episodes }
@@ -161,9 +162,7 @@ try {
   assert.equal(await evaluate(`!!document.querySelector('#source-query')`), false);
   assert.equal(metrics.adds.length, 0, 'Browsing does not add a torrent');
   assert.equal(await evaluate('!!document.querySelector("[data-tv-scroll-controls]")'), false, 'TV pages have no Up/Down controls');
-  await activate('.simple-catalogue-tabs button:last-child');
-  await until('!!document.querySelector(\'[aria-label="Choose episode of Example show 1"]\')');
-  await activate('.tv-catalogue-grid button');
+  await activate('[aria-label="Choose episode of Example show 1"]');
   await until('document.querySelectorAll(".simple-episodes button").length === 24');
   const episodeBackground = await evaluate('window.scrollY');
   await focus('dialog button');
@@ -176,10 +175,8 @@ try {
   assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector("dialog").getBoundingClientRect().bottom'), 'Last episode is visible in the dialog');
   assert.equal(await evaluate('window.scrollY'), episodeBackground, 'Episode scrolling leaves the background still');
   await press('Escape');
-  await activate('.simple-catalogue-tabs button:first-child');
-  await until('!!document.querySelector(\'[aria-label="Details for Example movie 1"]\')');
   await evaluate('window.blockAutoplay = true');
-  await activate('.tv-catalogue-grid button');
+  await activate('[aria-label="Details for Example movie 1"]');
   await until('!!document.querySelector("dialog[open]") && document.body.innerText.includes("8.1")');
   assert.equal(await evaluate('!!document.querySelector(".simple-title-card .catalogue-info-button")'), false, 'TV cards have no separate information overlay');
   assert.equal(metrics.adds.length, 0, 'Movie click opens information before playback search');
@@ -259,10 +256,10 @@ try {
   await press('Enter');
   await until(`!![...document.querySelectorAll('button')].find(button => button.textContent.includes('Exit search'))`);
   await activate('[data-tv-back]');
-  await until(`document.querySelector('#catalogue-query').value === '' && document.body.innerText.includes('Popular movies')`);
+  await until(`document.querySelector('#catalogue-query').value === '' && document.body.innerText.includes('Popular movies and TV shows')`);
   await activate('[aria-label="Advanced mode"]');
   simpleFixture = false;
-  await until(`!!document.querySelector('#catalogue-kind')`);
+  await until(`!document.querySelector('#catalogue-kind') && !!document.querySelector('.tv-catalogue-grid')`);
   assert.equal(await evaluate('localStorage.getItem("homelab:advanced-media")'), 'true', 'Mode preference is saved');
   assert.ok(await evaluate('document.scrollingElement.scrollHeight > innerHeight'), 'TV content scrolls the browser document');
   assert.equal(await evaluate('getComputedStyle(document.querySelector("main")).overflowY'), 'visible', 'No nested page scrollbar');
@@ -294,9 +291,9 @@ try {
   assert.ok(await evaluate('window.scrollY > ' + beforeFallback), 'Down scrolls long text when there is no next control');
   await evaluate('document.querySelector("#scroll-regression").remove()');
   await focus('.tv-catalogue-grid button');
-  await press('ArrowRight'); assert.equal(await active(), 'Details for Example movie 2');
-  await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 7');
-  await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 12');
+  await press('ArrowRight'); assert.equal(await active(), 'Details for Example show 1');
+  await press('ArrowDown'); assert.equal(await active(), 'Details for Example show 4');
+  await press('ArrowDown'); assert.equal(await active(), 'Details for Example show 7');
   assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= innerHeight'), 'Offscreen poster scrolls into the viewport');
   await press('Enter'); await until('!!document.querySelector("dialog[open]")');
   for (const key of ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp']) {
@@ -316,13 +313,12 @@ try {
   assert.equal(await evaluate('window.scrollY'), behindDialog, 'Dialog scrolling and cursor edges leave the background still');
   await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 640, y: 360 });
   await press('Escape');
-  assert.equal(await active(), 'Details for Example movie 12', 'Dialog returns focus to the selected poster');
+  assert.equal(await active(), 'Details for Example show 7', 'Dialog returns focus to the selected poster');
   await focus('#catalogue-query');
   await call('Input.insertText', { text: 'Example' });
   await press('ArrowLeft'); assert.equal(await active(), 'catalogue-query', 'Left edits text');
   await press('ArrowDown'); assert.notEqual(await active(), 'catalogue-query', 'Down leaves text entry');
-  await focus('#catalogue-kind'); await press('ArrowRight'); assert.notEqual(await active(), 'catalogue-kind', 'Right leaves native select');
-  await activate('.tv-catalogue-grid button');
+  await activate('[aria-label="Details for Example movie 1"]');
   await until('!!document.querySelector("dialog button.bg-orange-600")');
   await activate('dialog button.bg-orange-600');
   await until('!!document.querySelector("#source-query")');
@@ -358,8 +354,8 @@ try {
   assert.equal(await evaluate('document.querySelector(".tv-header")'), null, 'TV mode has no top bar');
   assert.ok(await evaluate('document.querySelector(".tv-footer")?.innerText.includes("BUILD")'), 'TV build information is in the footer');
   assert.ok(await evaluate('!!document.querySelector(".tv-footer #tv-dashboard-section")'), 'Dashboard navigation is in the footer');
-  assert.ok(await evaluate('!!document.querySelector(".tv-footer [aria-label=\"Advanced mode\"]")'), 'Advanced mode is in the footer');
-  assert.equal(await evaluate('document.querySelectorAll("[aria-label=\"Advanced mode\"]").length'), 1, 'TV page does not duplicate Advanced mode in its header');
+  assert.ok(await evaluate(`!!document.querySelector('.tv-footer [aria-label="Advanced mode"]')`), 'Advanced mode is in the footer');
+  assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Advanced mode"]').length`), 1, 'TV page does not duplicate Advanced mode in its header');
   await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'overview'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await until('document.querySelector("#tv-dashboard-section").value === "overview"');
   await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'tv'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
@@ -390,7 +386,7 @@ try {
   await until('!!document.querySelector(".tv-shell")');
   assert.equal(await evaluate('document.querySelector("#startup-error").hidden'), true, 'Retry recovers after bridge failure');
   // The footer controls a native select during TV render; force that render to throw.
-  const renderFailure = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'Object.defineProperty(HTMLSelectElement.prototype, "value", { get() { throw new Error("Fixture React render failure"); }, set() { throw new Error("Fixture React render failure"); } });' });
+  const renderFailure = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'Object.defineProperty(HTMLOptionElement.prototype, "selected", { get() { throw new Error("Fixture React render failure"); }, set() { throw new Error("Fixture React render failure"); } });' });
   await call('Page.navigate', { url: `${origin}/?tv=1` });
   await until('document.querySelector("#startup-error")?.hidden === false');
   assert.match(await evaluate('document.querySelector("#startup-details").textContent'), /React render error[\s\S]*Fixture React render failure/);
