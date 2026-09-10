@@ -2,6 +2,13 @@
 <resources>
     <string name="app_name">HomeLab TV</string>
     <string name="player_options">Options</string>
+    <string name="player_hide_controls">Hide controls</string>
+    <string name="player_subtitle_timing">Subtitle timing</string>
+    <string name="player_subtitle_earlier_fine">Earlier 0.5 s</string>
+    <string name="player_subtitle_later_fine">Later 0.5 s</string>
+    <string name="player_subtitle_earlier_coarse">Earlier 5 s</string>
+    <string name="player_subtitle_later_coarse">Later 5 s</string>
+    <string name="player_subtitle_reset">Reset timing</string>
     <string name="player_subtitles_off">Subtitles: Off</string>
     <string name="player_subtitles_on">Subtitles: On</string>
     <string name="player_subtitles_loading">Subtitles: Loading…</string>
