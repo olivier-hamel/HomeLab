@@ -48,7 +48,7 @@ export default function AutoPlayback({ intent, close }: { intent: SearchIntent; 
         controller.signal.throwIfAborted();
         let advice = result.advice;
         if (result.results.length) {
-          setMessage("Choosing the best version…");
+          setMessage("Scanning for the best torrent available…");
           try { advice = await mediaApi<SourceAdvice>("recommend", AbortSignal.any([controller.signal, AbortSignal.timeout(65_000)]), { searchId: result.searchId }); }
           catch (error) {
             controller.signal.throwIfAborted();

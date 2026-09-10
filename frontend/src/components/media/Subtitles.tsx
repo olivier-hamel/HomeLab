@@ -1,10 +1,11 @@
 import { useEffect, useEffectEvent, useId, useRef, useState, type RefObject } from "react";
-import { Captions, Minus, Plus, RotateCcw, Search, Upload } from "lucide-react";
+import { Captions, Search, Upload } from "lucide-react";
 import { Button } from "../ui/button";
 import { mediaApi, type SearchIntent, type TorrentFile } from "../../lib/media";
 import { MAX_SUBTITLE_BYTES, rankEnglishSubtitles, rankSubtitleFiles, subtitleFormat, subtitleSearch, subtitleTiming, subtitleVtt, type SubtitleDownload, type SubtitleSearch } from "../../lib/subtitles";
 import OnlineSubtitles from "./OnlineSubtitles";
 import Switch from "../ui/switch";
+import SubtitleTimingControls from "./SubtitleTimingControls";
 
 type Subtitle = { key: string; name: string; content: string };
 
@@ -46,7 +47,7 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     const failed = () => setError("The subtitles could not be read. Try another SRT or VTT file.");
     const ready = () => {
       if (!track.track.cues?.length) { failed(); return; }
-      applyOffset.current = subtitleTiming(track.track.cues);
+      applyOffset.current = subtitleTiming(track.track);
       applyOffset.current(offsetValue.current);
     };
     // Loading another converted time range temporarily resets native track modes.
@@ -175,15 +176,7 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
         });
       }} />
     </div>}
-    {loaded && loaded.key === selected && <div role="group" aria-label="Subtitle timing" className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-neutral-300">Subtitle timing</span>
-        <Button variant="outline" size="sm" aria-label="Show subtitles 0.5 seconds earlier" onClick={() => setOffset(value => value - 0.5)}><Minus />Earlier 0.5 s</Button>
-        <output aria-label="Subtitle offset" aria-live="polite" className="min-w-16 text-center text-sm tabular-nums text-orange-400">{offset > 0 ? "+" : ""}{offset.toFixed(1)} s</output>
-        <Button variant="outline" size="sm" aria-label="Show subtitles 0.5 seconds later" onClick={() => setOffset(value => value + 0.5)}><Plus />Later 0.5 s</Button>
-        <Button variant="ghost" size="sm" disabled={offset === 0} onClick={() => setOffset(0)}><RotateCcw />Reset timing</Button>
-      </div>
-    </div>}
+    {loaded && loaded.key === selected && <SubtitleTimingControls offset={offset} onChange={setOffset} />}
     {!simple && <p className="text-xs leading-relaxed text-neutral-400">{subtitles.length ? "Choose a subtitle file, find one online, or load your own." : "No SRT or VTT files in this torrent. Download subtitle or load your own."} Maximum 2 MiB.</p>}
     {busy && <p role="status" className="text-xs text-orange-400">Loading subtitles… {!simple && <Button variant="ghost" size="sm" onClick={() => choose("")}>Cancel</Button>}</p>}
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}

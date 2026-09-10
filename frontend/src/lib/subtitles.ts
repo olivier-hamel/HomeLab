@@ -57,14 +57,19 @@ export function rankSubtitleFiles<T extends { name: string }>(files: T[], filena
   }).sort((a, b) => (subtitleMatchScore(b.name, filename) + Number(englishName.test(b.name)) * 5) - (subtitleMatchScore(a.name, filename) + Number(englishName.test(a.name)) * 5));
 }
 
-export function subtitleTiming(cues: Iterable<Pick<TextTrackCue, "startTime" | "endTime">>) {
+export function subtitleTiming(track: Pick<TextTrack, "cues" | "removeCue" | "addCue">) {
   // Snapshot before editing: the browser reorders its live cue list as times change.
   // Keep original times so repeated adjustments and Reset never accumulate drift.
-  const original = Array.from(cues, cue => ({ cue, start: cue.startTime, end: cue.endTime }));
+  const original = Array.from(track.cues ?? [], cue => ({ cue, start: cue.startTime, end: cue.endTime }));
   return (offset: number) => {
+    // Firefox can keep rendering the old active cue when its timestamps are
+    // edited in place. Re-register cues to invalidate the active-cue cache,
+    // including while paused, without seeking or restarting the video.
+    for (const { cue } of original) track.removeCue(cue);
     for (const { cue, start, end } of original) {
       cue.startTime = start + offset;
       cue.endTime = end + offset;
+      track.addCue(cue);
     }
   };
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, ArrowDown, ArrowUp, Bell, Boxes, ChevronRight, Clapperboard, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
+import { Archive, Bell, Boxes, ChevronRight, Clapperboard, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import Overview from "./pages/Overview";
 import Guests from "./pages/Guests";
@@ -9,7 +9,7 @@ import Infrastructure from "./pages/Infrastructure";
 import TV from "./pages/TV";
 import { useTvMode } from "./lib/tv";
 import useTvNavigation from "./components/useTvNavigation";
-import { scrollTvPage } from "./components/useTvScrolling";
+import TvScrollControls from "./components/TvScrollControls";
 
 const sections = [
   { id: "overview", icon: Monitor, label: "OVERVIEW", component: Overview },
@@ -49,13 +49,7 @@ export default function App() {
         {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
         <Page />
       </main>
-      <footer className="tv-remote-hint">
-        <p>Arrows: move <span>Select: open</span><span>Cursor at screen edge: scroll</span></p>
-        <div data-tv-scroll-controls="" className="flex shrink-0 gap-3" role="group" aria-label="Page scrolling">
-          <Button variant="outline" aria-label="Scroll page up" onClick={() => scrollTvPage(-1)}><ArrowUp />Up</Button>
-          <Button variant="outline" aria-label="Scroll page down" onClick={() => scrollTvPage(1)}><ArrowDown />Down</Button>
-        </div>
-      </footer>
+      <TvScrollControls />
     </div>;
   }
 

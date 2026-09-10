@@ -13,6 +13,8 @@ const output = resolve(root, 'frontend/node_modules/.cache/fire-tv-review');
 mkdirSync(output, { recursive: true });
 const profile = resolve(output, `chrome-${Date.now()}`);
 const titles = Array.from({ length: 16 }, (_, i) => ({ id: i + 1, kind: 'movie', title: `Example movie ${i + 1}`, year: '2026', overview: 'A sample catalogue title for remote navigation testing.', poster: null }));
+const shows = titles.map(title => ({ ...title, kind: 'tv', title: `Example show ${title.id}` }));
+const episodes = Array.from({ length: 24 }, (_, i) => ({ number: i + 1, name: `Episode ${i + 1}`, overview: 'A sample episode description for scrolling a full season.', airDate: '2026-01-01' }));
 const file = { id: 1, path: 'Example movie.mp4', size: 1000000, kind: 'video', sample: false };
 const torrent = { id: 'fixture', title: 'Example movie', state: 'ready', files: [file], downloadSpeed: 1024, connectedPeers: 5, downloadedBytes: 1000, completedBytes: 1000, preloadBytes: null, preloadTarget: null };
 const plan = { id: 'direct', mode: 'direct', mime: 'video/mp4', container: 'mp4', video: 'copy', audio: 'copy', stream: '/api/media/stream/fixture', duration: 120 };
@@ -25,7 +27,8 @@ let subtitleDelay = 0;
 let recommendationDelay = 250;
 let fallbackAdvice = false;
 const server = createServer(async (req, res) => {
-  const path = new URL(req.url, 'http://localhost').pathname;
+  const url = new URL(req.url, 'http://localhost');
+  const path = url.pathname;
   if (path.startsWith('/api/media/')) {
     const endpoint = path.slice('/api/media/'.length);
     let raw = ''; for await (const chunk of req) raw += chunk;
@@ -39,8 +42,9 @@ const server = createServer(async (req, res) => {
     if (endpoint === 'subtitles/search') metrics.subtitleSearches.push(body);
     if (endpoint === 'subtitles/download') { metrics.subtitleDownloads.push(body.choice); await delay(subtitleDelay); }
     const json = endpoint === 'status' ? { tmdb: true, prowlarr: true, torrserver: true }
-      : endpoint === 'catalogue' ? { titles, pages: 1 }
-      : endpoint.startsWith('details/') ? { ...titles[Number(endpoint.split('/').pop()) - 1], seasons: [], imdbId: 'tt123', tvdbId: null }
+      : endpoint === 'catalogue' ? { titles: url.searchParams.get('kind') === 'tv' ? shows : titles, pages: 1 }
+      : endpoint.startsWith('details/') ? { ...(endpoint.startsWith('details/tv/') ? shows : titles)[Number(endpoint.split('/').pop()) - 1], seasons: endpoint.startsWith('details/tv/') ? [{ number: 1, name: 'Season 1', episodes: episodes.length }] : [], imdbId: 'tt123', tvdbId: null }
+      : endpoint.startsWith('season/') ? { episodes }
       : endpoint === 'search' ? { searchId: 'search', results: simpleFixture ? alternatives : [source], reports: [], more: false, batch: 1, advice: { provider: 'heuristic', ranking: [] } }
       : endpoint === 'recommend' ? fallbackAdvice ? { ...advice, provider: 'heuristic', warning: "Gemini's request limit or quota was reached. Using basic matching for this search." } : advice
       : endpoint === 'select' ? { id: 'selected', file, stream: plan.stream }
@@ -142,6 +146,32 @@ try {
   assert.equal(await evaluate(`document.querySelector('[aria-label="Advanced mode"]').getAttribute('aria-checked')`), 'false', 'Simple mode is the default');
   assert.equal(await evaluate(`!!document.querySelector('#source-query')`), false);
   assert.equal(metrics.adds.length, 0, 'Browsing does not add a torrent');
+  assert.ok(await evaluate('document.querySelector(".tv-page-scroll-controls").getBoundingClientRect().width < innerWidth / 2'), 'Page scroll buttons have no full-width bar');
+  await activate('.simple-catalogue-tabs button:last-child');
+  await until('!!document.querySelector(\'[aria-label="Choose episode of Example show 1"]\')');
+  await activate('.tv-catalogue-grid button');
+  await until('document.querySelectorAll(".simple-episodes button").length === 24');
+  const episodeBackground = await evaluate('window.scrollY');
+  // Click where the controls are rendered to check that the modal does not block them.
+  const clickDialogScroll = async direction => {
+    const point = await evaluate(`(() => { const r = document.querySelector('[aria-label="Scroll dialog ${direction}"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    assert.ok(point.y > 0 && point.y < 720, 'Dialog scroll buttons stay visible');
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point });
+  };
+  await clickDialogScroll('down');
+  await until('document.querySelector("dialog").scrollTop > 0');
+  const episodeScroll = await evaluate('document.querySelector("dialog").scrollTop');
+  await clickDialogScroll('up');
+  assert.ok(await evaluate('document.querySelector("dialog").scrollTop < ' + episodeScroll), 'Up scrolls the episode popup back');
+  await focus('.simple-episodes button');
+  for (let i = 1; i < episodes.length; i++) await press('ArrowDown');
+  assert.equal(await active(), 'Watch episode 24: Episode 24', 'Remote can reach the last episode');
+  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector(".tv-dialog-scroll-controls").getBoundingClientRect().top'), 'Last episode is visible above the dialog buttons');
+  assert.equal(await evaluate('window.scrollY'), episodeBackground, 'Episode scrolling leaves the background still');
+  await press('Escape');
+  await activate('.simple-catalogue-tabs button:first-child');
+  await until('!!document.querySelector(\'[aria-label="Watch Example movie 1"]\')');
   await evaluate('window.blockAutoplay = true');
   await activate('.tv-catalogue-grid button');
   assert.equal(metrics.adds.length, 0, 'Movie click waits for the AI review');
@@ -250,7 +280,7 @@ try {
   await press('ArrowRight'); assert.equal(await active(), 'Details for Example movie 2');
   await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 6');
   await press('ArrowDown'); assert.equal(await active(), 'Details for Example movie 10');
-  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector(".tv-remote-hint").getBoundingClientRect().top'), 'Offscreen poster scrolled above the fixed footer');
+  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector(".tv-page-scroll-controls").getBoundingClientRect().top'), 'Offscreen poster scrolled above the floating buttons');
   await press('Enter'); await until('!!document.querySelector("dialog[open]")');
   for (const key of ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp']) {
     await press(key); assert.ok(await evaluate('!!document.activeElement.closest("dialog")'), 'Focus stays in title details');

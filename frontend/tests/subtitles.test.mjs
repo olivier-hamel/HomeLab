@@ -28,7 +28,8 @@ test('subtitle timing shifts both boundaries, preserves cues before zero and res
   const original = structuredClone(cues);
   // Emulate the browser's live list changing order after cue times are updated.
   const live = { *[Symbol.iterator]() { for (let i = 0; i < cues.length; i++) yield [...cues].sort((a, b) => a.startTime - b.startTime)[i]; } };
-  const timing = subtitleTiming(live);
+  const registered = new Set(cues);
+  const timing = subtitleTiming({ cues: live, removeCue(cue) { assert.ok(registered.delete(cue)); }, addCue(cue) { assert.ok(!registered.has(cue)); registered.add(cue); } });
   timing(2);
   assert.deepEqual(cues.map(cue => [cue.startTime, cue.endTime]), [[2.125, 2.375], [3.25, 6.5]]);
   timing(-0.5);
@@ -36,6 +37,7 @@ test('subtitle timing shifts both boundaries, preserves cues before zero and res
   for (let i = 0; i < 100; i++) { timing(0.5); timing(-0.5); }
   timing(0);
   assert.deepEqual(cues, original);
+  assert.deepEqual([...registered], cues, 'Every cue remains registered after repeated adjustments');
 });
 
 test('online subtitle search retains catalogue IDs but uses the selected episode in a season pack', () => {

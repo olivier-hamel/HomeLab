@@ -18,6 +18,6 @@ export default function Welcome() {
 
   return <div className="simple-welcome">
     <p className="text-3xl font-semibold tracking-tight text-white sm:text-5xl">{copy.line1}<br /><span className="text-neutral-400">{copy.line2}</span></p>
-    <p className="mt-4 text-sm text-neutral-400 sm:text-base">Choose a movie and settle in. Your best available version starts automatically.</p>
+   
   </div>;
 }

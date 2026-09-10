@@ -54,6 +54,5 @@ export default function PlaybackTimeline({ duration, position, onSeek }: { durat
     <div aria-hidden="true" className="flex justify-between text-[10px] tabular-nums text-neutral-500">
       {[0, 0.25, 0.5, 0.75, 1].map(fraction => <span key={fraction}>{timestamp(duration * fraction)}</span>)}
     </div>
-    <p className="pt-2 text-xs text-neutral-400">{tvMode ? "Left / Right: seek 10 seconds. Up / Down: leave timeline." : "Click or drag to any time."} Unbuffered sections may take a moment to load.</p>
   </div>;
 }

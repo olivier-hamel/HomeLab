@@ -57,7 +57,7 @@ export default function Playback({ source, search, close, simple = false, onFail
   }, [source, retry, simple, search]);
   const videos = status?.files.filter(f => f.kind === "video") ?? [];
   if (simple) return <section ref={panel} aria-label="Playback" className="simple-playback">
-    {selection ? <Player key={selection.id} selection={selection} initial={status!} search={search} simple onFailure={onFailure} onNext={onNext} englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} /> : <div className="simple-watch-pending"><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status">{error ? "Trying another version…" : "Getting your video ready…"}</p><Button variant="outline" onClick={onNext}><RefreshCw />Try another source</Button></div>}
+    {selection ? <Player key={selection.id} selection={selection} initial={status!} search={search} simple onFailure={onFailure} onNext={onNext} englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} /> : <div className="simple-watch-pending"><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status">{error ? "Trying another version…" : "Torrent found. Getting your video ready…"}</p><Button variant="outline" onClick={onNext}><RefreshCw />Try another source</Button></div>}
   </section>;
   return <section ref={panel} aria-label="Playback" className="space-y-4 rounded-lg border border-orange-500/50 bg-neutral-900 p-4 sm:p-6">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-2 text-xs tracking-widest text-orange-400">YOUR SELECTION</p><h2 className="break-words text-lg font-semibold text-white">{status?.title || (typeof source === "string" ? "Manual magnet" : source.title)}</h2></div><Button data-tv-back="" aria-label="Close playback" variant="ghost" size="icon" onClick={close}><X /></Button></div>
@@ -222,7 +222,7 @@ function Player({ selection, initial, search, simple = false, onFailure, onNext,
     {error && <p role="status" className="text-sm text-orange-300">{error}</p>}
     <div className="simple-player-options">
       <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} simple englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} />
-      <div className="space-y-2"><Button variant="outline" onClick={onNext}><RefreshCw />Try another source</Button><p className="text-xs text-neutral-400">Video or sound not working? We'll try the next version.</p></div>
+      <div className="space-y-2"><Button variant="outline" onClick={onNext}><RefreshCw />Try another source</Button><p className="text-xs text-neutral-400">Playback not working?</p></div>
     </div>
     {notice && <p role="status" className="text-sm text-neutral-300">{notice}</p>}
   </div>;

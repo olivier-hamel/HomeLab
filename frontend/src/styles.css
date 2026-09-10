@@ -171,8 +171,10 @@ html[data-tv-mode="true"] {
 [data-tv-mode="true"] #dashboard-content { scroll-padding: 1.5rem; }
 [data-tv-mode="true"] .tv-media-page { max-width: 1800px; padding: 1.5rem 4vw 2rem; }
 [data-tv-mode="true"] .tv-media-page > .sr-only + * { margin-top: 0; }
-[data-tv-mode="true"] .tv-remote-hint { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem 4vw 1rem; background: #171717; color: #a3a3a3; font-size: .8rem; }
-[data-tv-mode="true"] .tv-remote-hint span { margin-left: 1rem; }
+[data-tv-mode="true"] .tv-scroll-controls { z-index: 20; display: flex; justify-content: flex-end; gap: .75rem; width: fit-content; margin-left: auto; color: #a3a3a3; pointer-events: none; }
+[data-tv-mode="true"] .tv-scroll-controls button { pointer-events: auto; }
+[data-tv-mode="true"] .tv-page-scroll-controls { position: fixed; bottom: 1rem; right: 4vw; }
+[data-tv-mode="true"] .tv-dialog-scroll-controls { position: sticky; bottom: 0; }
 
 [data-tv-mode="true"] :is(button, select, summary, a[href], input:not([type="checkbox"]):not([type="radio"])) {
   min-height: 3rem;
@@ -201,7 +203,7 @@ html[data-tv-mode="true"] {
 [data-tv-mode="true"] .tv-catalogue-grid svg { width: 3rem; height: 3rem; }
 [data-tv-mode="true"] .tv-catalogue-grid .line-clamp-2.text-xs,
 [data-tv-mode="true"] .tv-catalogue-grid span.text-orange-400 { display: none; }
-[data-tv-mode="true"] dialog { width: 88vw; max-width: 64rem; max-height: 82vh; padding: 1.75rem; scroll-padding: 1rem; }
+[data-tv-mode="true"] dialog { width: 88vw; max-width: 64rem; max-height: 82vh; padding: 1.75rem; scroll-padding: 1rem 1rem 5rem; }
 [data-tv-mode="true"] dialog::backdrop { backdrop-filter: none; }
 [data-tv-mode="true"] .tv-player-screen video { max-height: 60vh; object-fit: contain; }
 [data-tv-mode="true"] .tv-player-screen:fullscreen { display: flex; flex-direction: column; padding: 2vh 3vw; background: #000; overflow: auto; }
@@ -224,7 +226,6 @@ html[data-tv-mode="true"] {
 @media (max-width: 1000px) {
   html[data-tv-mode="true"] { font-size: 16px; }
   [data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  [data-tv-mode="true"] .tv-remote-hint span:last-child { display: none; }
 }
 @media (max-width: 600px) {
   [data-tv-mode="true"] .tv-catalogue-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

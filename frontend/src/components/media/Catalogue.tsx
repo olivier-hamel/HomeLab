@@ -4,6 +4,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { mediaApi, sourceIntent, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
 import { useTvMode } from "../../lib/tv";
+import TvScrollControls from "../TvScrollControls";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 export default function Catalogue({ find, simple = false }: { find: (intent: SearchIntent) => void; simple?: boolean }) {
@@ -102,6 +103,7 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
       {poster && poster !== failedPoster ? <img src={poster} alt={`${title.title} poster`} referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={() => setFailedPoster(poster)} /> : <div className="flex flex-col items-center gap-2 text-neutral-500"><Film className="h-10 w-10" aria-hidden="true" /><span className="text-xs">No poster available</span></div>}
     </div>
     </div>
+    {tvMode && <TvScrollControls dialog />}
   </dialog>;
 }
 function Episodes({ title, season, find, simple }: { title: Details; season: number; find: (intent: SearchIntent) => void; simple: boolean }) {
