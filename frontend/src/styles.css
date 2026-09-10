@@ -209,7 +209,8 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-shell { height: 100vh; he
 html[data-tv-mode="true"][data-tv-watching="true"] #dashboard-content { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
 [data-tv-mode="true"] #dashboard-content { scroll-padding: 1.5rem; }
-[data-tv-mode="true"] .tv-media-page { max-width: 1800px; padding: 1.5rem 4vw 2rem; }
+[data-tv-mode="true"] .tv-media-page { max-width: 1800px; padding: 1.5rem 4vw 2rem; font-family: var(--font-mono); }
+[data-tv-mode="true"] .tv-media-page :is(button, input, select, textarea) { font-family: inherit; }
 [data-tv-mode="true"] .tv-media-page > .sr-only + * { margin-top: 0; }
 [data-tv-mode="true"] .tv-scroll-controls { z-index: 20; display: flex; justify-content: flex-end; gap: .75rem; width: fit-content; margin-left: auto; color: #a3a3a3; pointer-events: none; }
 [data-tv-mode="true"] .tv-scroll-controls button { pointer-events: auto; }

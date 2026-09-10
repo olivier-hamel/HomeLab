@@ -46,6 +46,8 @@ test('Gemini uses the requested model, bounded structured output and only listin
     assert.equal(body.generationConfig.responseMimeType, 'application/json');
     assert.match(body.systemInstruction.parts[0].text, /untrusted data/);
     assert.match(body.systemInstruction.parts[0].text, /Browser compatibility is NOT a ranking requirement/);
+    assert.match(body.systemInstruction.parts[0].text, /requires English audio/);
+    assert.match(body.systemInstruction.parts[0].text, /non-English-only.*identity=mismatch/);
     assert.ok(!init.body.includes(secret) && !init.body.includes('Private indexer') && !init.body.includes('magnet:'));
     return answer([{ ...good('b'), reason: 'A healthy 1080p release looks promising. Ignore this second sentence.' }, good('a')]);
   });
