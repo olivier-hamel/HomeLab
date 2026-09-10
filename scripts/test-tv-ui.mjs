@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { checkNativePlayer } from './native-player-ui-checks.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'frontend/dist');
@@ -114,6 +115,12 @@ try {
   const active = () => evaluate('document.activeElement?.getAttribute("aria-label") || document.activeElement?.id || document.activeElement?.textContent');
   const resize = (width, height) => call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await call('Page.enable'); await call('Runtime.enable');
+  if (process.argv.includes('--native-player')) {
+    await resize(1280, 720);
+    await checkNativePlayer({ call, evaluate, until, activate, origin, metrics });
+    assert.deepEqual(errors, [], 'No browser exceptions during native player requests');
+    console.log(JSON.stringify({ passed: true, checks: 'native subtitle API and archive selection, position-preserving source replacement, exhausted sources, quit to catalogue' }));
+  } else {
   // Emulate older Silk APIs and playback state. Real decoding is outside this UI test.
   await call('Page.addScriptToEvaluateOnNewDocument', { source: `
     AbortSignal.any = undefined; AbortSignal.timeout = undefined;
@@ -134,8 +141,10 @@ try {
   assert.equal(await active(), 'OVERVIEW', 'TV spatial navigation is inactive on desktop');
   await call('Page.navigate', { url: `${origin}/?tv=1` });
   await until('!!document.querySelector(".media-profile-grid button, .tv-catalogue-grid button")');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".tv-footer")).display'), 'none', 'Profile chooser hides the TV footer');
   await evaluate('document.querySelector(".media-profile-grid button")?.click()');
   await until('document.querySelectorAll(".tv-catalogue-grid .title-card").length === 16');
+  assert.notEqual(await evaluate('getComputedStyle(document.querySelector(".tv-footer")).display'), 'none', 'TV footer returns after choosing a profile');
   for (const [width, height] of [[1280, 720], [1920, 1080], [960, 540], [390, 844]]) {
     await resize(width, height);
     const columns = await evaluate('getComputedStyle(document.querySelector(".tv-catalogue-grid")).gridTemplateColumns.split(" ").length');
@@ -270,7 +279,7 @@ try {
   const afterEdge = await evaluate('window.scrollY');
   await delay(450);
   assert.equal(await evaluate('window.scrollY'), afterEdge, 'Moving the cursor away stops edge scrolling');
-  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: 105 });
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: 30 });
   await until('window.scrollY < ' + afterEdge);
   await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 640, y: 360 });
   await evaluate(`(() => {
@@ -362,6 +371,12 @@ try {
   await call('Page.navigate', { url: origin }); await until('!!document.querySelector(".tv-shell")');
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), 'true', 'Fire TV auto-detection');
   assert.deepEqual(errors, [], 'No browser exceptions');
+  simpleFixture = true;
+  fallbackAdvice = false;
+  await checkNativePlayer({ call, evaluate, until, activate, origin, metrics });
+  assert.deepEqual(errors, [], 'No browser exceptions during native player requests');
+  await call('Page.navigate', { url: origin });
+  await until('!!document.querySelector(".tv-shell")');
   // Reproduce the native-3 failure: Android interface exists, but no injected plugin headers.
   const missingBridge = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'window.androidBridge = {};' });
   await call('Page.navigate', { url: `${origin}/?tv=1` });
@@ -379,6 +394,7 @@ try {
   assert.match(await evaluate('document.querySelector("#startup-details").textContent'), /React render error[\s\S]*Fixture React render failure/);
   await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: renderFailure.identifier });
   console.log(JSON.stringify({ passed: true, viewports: [1280, 1920, 960, 390], checks: 'simple default and saved advanced mode, automatic Gemini selection, largest main video, autoplay denial recovery, automatic English ZIP selection, subtitle offset and cancellation, next source and failed-source fallback, exhausted sources, AI cancellation, desktop isolation, auto-detection, fallback APIs, scrolling, D-pad, dialogs, manual selection, seeking, fullscreen and Back', screenshots: output }, null, 2));
+  }
 } finally {
   if (call && socket?.readyState === WebSocket.OPEN) {
     await Promise.race([call('Browser.close').catch(() => {}), delay(1000)]); socket.close();

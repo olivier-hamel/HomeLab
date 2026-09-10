@@ -14,7 +14,7 @@ export type TorrentFile = { id: number; path: string; size: number | null; kind:
 export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
 export type Selection = { id: string; stream: string; file: TorrentFile };
 export type PlaybackOption = { id: string; mode: "direct" | "remux" | "transcode"; mime: string; container: string; video: "copy" | "h264" | "vp9"; audio: "copy" | "aac" | "opus" | "none" };
-export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; options: PlaybackOption[] };
+export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; width?: number; height?: number; frameRate?: number; options: PlaybackOption[] };
 export type PreparedPlayback = PlaybackOption & { stream: string; duration: number | null };
 
 export const mediaProfiles = [
@@ -47,9 +47,13 @@ export function supportedPlayback(options: PlaybackOption[], canPlayType: (mime:
     return target === "browser" || (option.container === "mp4" && option.video === "h264" && ["aac", "none"].includes(option.audio));
   }).map(option => option.id);
 }
-export async function preparePlayback(id: string, signal: AbortSignal, canPlayType: (mime: string) => string, target: PlaybackTarget = "browser"): Promise<PreparedPlayback> {
+export async function preparePlayback(id: string, signal: AbortSignal, canPlayType: (mime: string) => string, target: PlaybackTarget = "browser", nativeSupport?: (inspection: PlaybackInspection) => Promise<string[] | null>): Promise<PreparedPlayback> {
   const inspection = await mediaApi<PlaybackInspection>("inspect", signal, { id });
-  return mediaApi<PreparedPlayback>("prepare", signal, { id, supported: supportedPlayback(inspection.options, canPlayType, target) });
+  const nativeOptions = nativeSupport ? await nativeSupport(inspection) : null;
+  if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
+  // Old APKs have no capability method. Keep their conservative stream until upgraded.
+  const supported = nativeOptions ?? supportedPlayback(inspection.options, canPlayType, target);
+  return mediaApi<PreparedPlayback>("prepare", signal, { id, supported: inspection.options.filter(option => supported.includes(option.id)).map(option => option.id) });
 }
 
 export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unknown): Promise<T> {

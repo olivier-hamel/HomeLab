@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000">
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/native_player"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:keepScreenOn="true" app:surface_type="surface_view" app:resize_mode="fit"
+        app:show_buffering="when_playing" app:show_timeout="4000" app:use_controller="true" />
+    <androidx.media3.ui.SubtitleView
+        android:id="@+id/native_subtitles"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:paddingLeft="32dp" android:paddingRight="32dp" android:paddingBottom="24dp" />
+    <LinearLayout android:id="@+id/native_source_status"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical" android:gravity="center" android:padding="48dp"
+        android:background="#EE080808" android:visibility="gone">
+        <ProgressBar android:id="@+id/native_source_spinner" android:layout_width="48dp" android:layout_height="48dp" />
+        <TextView android:id="@+id/native_source_message"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginTop="20dp" android:textColor="#FFFFFF" android:textSize="20sp" android:gravity="center" />
+        <Button android:id="@+id/native_source_retry"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp"
+            android:text="@string/player_another_source" android:textAllCaps="false" />
+        <Button android:id="@+id/native_source_quit"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/player_quit" android:textAllCaps="false" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/native_player_actions"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_gravity="top|end" android:layout_marginTop="24dp" android:layout_marginEnd="32dp"
+        android:orientation="horizontal">
+    <Button android:id="@+id/native_subtitle_toggle"
+        android:layout_width="wrap_content" android:layout_height="48dp"
+        android:layout_marginEnd="12dp" android:nextFocusRight="@id/native_options"
+        android:paddingLeft="24dp" android:paddingRight="24dp" android:text="@string/player_subtitles_off"
+        android:textAllCaps="false" android:textSize="16sp"
+        android:textColor="@color/player_button_text" android:background="@drawable/player_button" />
+    <Button android:id="@+id/native_options"
+        android:layout_width="wrap_content" android:layout_height="48dp"
+        android:nextFocusLeft="@id/native_subtitle_toggle"
+        android:paddingLeft="24dp" android:paddingRight="24dp" android:text="@string/player_options"
+        android:textAllCaps="false" android:textSize="16sp"
+        android:textColor="@color/player_button_text" android:background="@drawable/player_button" />
+    </LinearLayout>
+</FrameLayout>

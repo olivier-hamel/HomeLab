@@ -4,6 +4,7 @@ import { Button } from "../ui/button";
 import Playback from "./Playback";
 import { useTvFocus } from "../useTvNavigation";
 import { automaticSources, loadDismissedSources, mediaApi, saveDismissedSources, sourceFingerprint, type SearchIntent, type SearchResults, type Source, type SourceAdvice } from "../../lib/media";
+import { hasNativeVideoPlayer, nativePlayerStatus, onNativePlayerRequest } from "../../native";
 
 export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: SearchIntent; close: () => void; resumeAt?: number }) {
   const panel = useRef<HTMLElement>(null);
@@ -21,6 +22,8 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
   const attempts = useRef(0);
   const current = useRef<Source | null>(null);
   const sequence = useRef(0);
+  const [nextPosition, setNextPosition] = useState(resumeAt);
+  const [nativeSession] = useState(() => `${Date.now()}-${Math.random()}`);
 
   const next = async (failed = false, manual = false) => {
     if (active.current) return;
@@ -71,6 +74,22 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
     } finally { if (active.current === controller) active.current = null; }
   };
   const begin = useEffectEvent(() => { void next(); });
+  const nativeRequest = useEffectEvent((action: string) => {
+    if (action === "close") close();
+    if (action === "next") {
+      if (!nextBatch.current && !queue.current.length) nextBatch.current = 1;
+      void next(true, true);
+    }
+  });
+  useEffect(() => {
+    if (!hasNativeVideoPlayer()) return;
+    let disposed = false;
+    const listener = onNativePlayerRequest(request => { if (!disposed) nativeRequest(request.action); });
+    return () => { disposed = true; void listener.then(handle => handle.remove()).catch(() => {}); };
+  }, []);
+  useEffect(() => {
+    if (hasNativeVideoPlayer()) void nativePlayerStatus(error || (chosen ? "Getting the next video ready…" : message), !!error);
+  }, [chosen, message, error]);
   useEffect(() => {
     // The request owns loading state and cancellation for this mounted viewing session.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -84,7 +103,7 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
       {chosen && review && <p role="status" className="max-w-lg text-xs text-neutral-400">{review.provider === "gemini" ? "Selected with Gemini" : review.warning || "Selected with basic matching"}</p>}
     </div>
     <h2 className="text-2xl font-semibold text-white sm:text-3xl">{intent.label || intent.query}</h2>
-    {chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} simple resumeAt={resumeAt} onFailure={() => { void next(true); }} onNext={() => { void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
+    {chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} nativeSession={nativeSession} simple resumeAt={nextPosition} onFailure={() => { void next(true); }} onNext={position => { if (position !== undefined) setNextPosition(position); void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
       {error ? <><p role="alert" className="max-w-md text-center text-neutral-300">{error}</p><Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => { if (!nextBatch.current && !queue.current.length) nextBatch.current = 1; void next(false, true); }}><RotateCcw />Try again</Button></> : <><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status" className="text-neutral-200">{message}</p><p className="text-sm text-neutral-400">This can take a moment. We'll start when it's ready.</p></>}
       <Button variant="ghost" onClick={close}>{error ? "Choose another title" : "Cancel"}</Button>
     </div>}

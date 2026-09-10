@@ -1,6 +1,12 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">HomeLab TV</string>
+    <string name="player_options">Options</string>
+    <string name="player_subtitles_off">Subtitles: Off</string>
+    <string name="player_subtitles_on">Subtitles: On</string>
+    <string name="player_subtitles_loading">Subtitles: Loading…</string>
+    <string name="player_another_source">Try another source</string>
+    <string name="player_quit">Quit to main page</string>
     <string name="title_activity_main">HomeLab TV</string>
     <string name="package_name">ca.olivierhamel.homelab</string>
     <string name="custom_url_scheme">ca.olivierhamel.homelab</string>
