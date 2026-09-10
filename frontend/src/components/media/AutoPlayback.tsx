@@ -32,7 +32,7 @@ export default function AutoPlayback({ intent, close }: { intent: SearchIntent; 
     current.current = null;
     setChosen(null); setError("");
     setMessage(failed ? "Trying another version…" : "Finding the best version for you…");
-    if (attempts.current >= 5) { setError("These versions couldn't play. Try more versions, or come back a little later."); return; }
+    if (attempts.current >= 5) { setError("Torrent unavailable. Retry or choose another source."); return; }
     const controller = new AbortController(); active.current = controller;
     try {
       // Source handles expire after ten minutes. Refresh them before switching late in a film.

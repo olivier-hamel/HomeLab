@@ -28,6 +28,14 @@ attempts so an unavailable title cannot keep adding torrents indefinitely.
 The retry button continues with the remaining choices. Playback success still
 depends on the actual torrent and connected peers.
 
+The catalogue shows debounced TMDB title suggestions after two characters.
+Choosing a movie suggestion goes directly to automatic source selection and
+playback; choosing a TV suggestion opens its season and episode picker. A
+submitted search first uses TMDB normally. When none of its leading results is
+a close title match and `GEMINI_API_KEY` is configured, Gemini proposes one
+corrected title, TMDB validates it, and the catalogue merges those matches ahead
+of the original results. Autocomplete itself never calls Gemini.
+
 Turn on **English subtitles** to load matching bundled English SRT/VTT captions
 or search SubDL automatically. Online matching favors the video's release name,
 release group and format details, excludes known different episodes, and selects
@@ -205,7 +213,7 @@ Keep the generated output private.
 | `TORRSERVER_BASE_URL` | Backend-reachable HTTP(S) URL; example `http://100.64.162.49:8090`. |
 | `TORRSERVER_USERNAME`, `TORRSERVER_PASSWORD` | Both blank, or both set for existing HTTP Basic auth. |
 | `TMDB_READ_ACCESS_TOKEN` | Optional Bearer token. Direct source search works independently. |
-| `GEMINI_API_KEY` | Optional server-side Gemini key for source assist; basic recommendations work without it. |
+| `GEMINI_API_KEY` | Optional server-side Gemini key for catalogue correction and source assist; TMDB search and basic recommendations work without it. |
 | `MEDIA_AI_TIMEOUT_MS` | `20000`; range 1000–60000 ms for a Gemini review. |
 | `MEDIA_METADATA_TIMEOUT_MS` | `10000`; range 1000–60000 ms, for TMDB/TorrServer JSON. |
 | `MEDIA_SEARCH_TIMEOUT_MS` | `20000`; range 1000–60000 ms per indexer, four concurrent. |

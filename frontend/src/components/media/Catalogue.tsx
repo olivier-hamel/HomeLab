@@ -7,6 +7,7 @@ import { useTvMode } from "../../lib/tv";
 import TvScrollControls from "../TvScrollControls";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
+type CatalogueResponse = { titles: Title[]; pages: number; originalQuery?: string; correctedQuery?: string; correctionProvider?: "gemini" };
 export default function Catalogue({ find, simple = false }: { find: (intent: SearchIntent) => void; simple?: boolean }) {
   const [kind, setKind] = useState<Kind>("movie");
   const [text, setText] = useState("");
@@ -14,16 +15,40 @@ export default function Catalogue({ find, simple = false }: { find: (intent: Sea
   const [page, setPage] = useState(1);
   const [chosen, setChosen] = useState<Title | null>(null);
   const [retry, setRetry] = useState(0);
+  const [suggestions, setSuggestions] = useState<Title[]>([]);
+  const [suggestionFocus, setSuggestionFocus] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  useEffect(() => {
+    const value = text.trim();
+    if (!suggestionFocus || value.length < 2) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setSuggesting(true);
+      void mediaApi<{ titles: Title[] }>(`suggestions?${new URLSearchParams({ kind, q: value })}`, AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]))
+        .then(result => { if (!controller.signal.aborted) setSuggestions(result.titles); })
+        .catch(() => { if (!controller.signal.aborted) setSuggestions([]); })
+        .finally(() => { if (!controller.signal.aborted) setSuggesting(false); });
+    }, 300);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [kind, text, suggestionFocus]);
   const choose = (title: Title) => {
     if (simple && title.kind === "movie") find(sourceIntent({ ...title, imdbId: null, tvdbId: null, seasons: [] }));
     else setChosen(title);
   };
   return <div className="space-y-5">
-    <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setQuery(text.trim()); setPage(1); setRetry(r => r + 1); }}>
+    <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setSuggestionFocus(false); setQuery(text.trim()); setPage(1); setRetry(r => r + 1); }}>
       {simple ? <div role="group" aria-label="Catalogue type" className="simple-catalogue-tabs">{(["movie", "tv"] as const).map(value => <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKind(value); setPage(1); setChosen(null); }}>{value === "movie" ? "Movies" : "TV shows"}</button>)}</div> : <><label className="sr-only" htmlFor="catalogue-kind">Catalogue type</label>
       <select id="catalogue-kind" className={field} value={kind} onChange={e => { setKind(e.target.value as Kind); setPage(1); setChosen(null); }}><option value="movie">Movies</option><option value="tv">TV shows</option></select></>}
       <label className="sr-only" htmlFor="catalogue-query">Search catalogue</label>
-      <Input id="catalogue-query" maxLength={250} className="h-11 min-w-40 flex-1 border-neutral-600 bg-neutral-950" placeholder="Find a title…" value={text} onChange={e => setText(e.target.value)} />
+      <div className="relative min-w-40 flex-1" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setSuggestionFocus(false); }}>
+        <Input id="catalogue-query" maxLength={250} className="h-11 w-full border-neutral-600 bg-neutral-950" placeholder="Find a title…" value={text} onChange={e => { setText(e.target.value); setSuggestions([]); setSuggesting(false); setSuggestionFocus(true); }} onFocus={() => setSuggestionFocus(true)} role="combobox" aria-autocomplete="list" aria-expanded={suggestionFocus && text.trim().length >= 2 && (suggesting || suggestions.length > 0)} aria-controls="catalogue-suggestions" autoComplete="off" />
+        {suggestionFocus && text.trim().length >= 2 && (suggesting || suggestions.length > 0) && <div id="catalogue-suggestions" role="listbox" aria-label="Title suggestions" className="absolute inset-x-0 top-[calc(100%+0.35rem)] z-30 overflow-hidden rounded-lg border border-neutral-600 bg-neutral-900 shadow-2xl">
+          {suggesting && !suggestions.length ? <p className="px-3 py-3 text-sm text-neutral-400">Finding titles…</p> : suggestions.map(title => <button key={`${title.kind}/${title.id}`} type="button" role="option" aria-selected="false" className="flex w-full items-center gap-3 border-b border-neutral-800 px-3 py-2 text-left last:border-0 hover:bg-neutral-800 focus:bg-neutral-800 focus:outline-none" onClick={() => { setText(title.title); setSuggestionFocus(false); choose(title); }}>
+            {title.poster ? <img src={title.poster} alt="" className="h-12 w-8 rounded object-cover" referrerPolicy="no-referrer" /> : <span className="flex h-12 w-8 items-center justify-center rounded bg-neutral-800"><Film className="h-4 w-4 text-neutral-500" /></span>}
+            <span className="min-w-0"><strong className="block truncate text-sm text-white">{title.title}</strong><span className="text-xs text-neutral-400">{title.year || "Year unknown"} · {title.kind === "movie" ? "Movie" : "TV"}</span></span>
+          </button>)}
+        </div>}
+      </div>
       <Button className="h-11 bg-orange-600 text-white hover:bg-orange-700"><Search />Search</Button>
     </form>
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -35,19 +60,20 @@ export default function Catalogue({ find, simple = false }: { find: (intent: Sea
 }
 
 function CatalogueResults({ kind, query, page, setPage, choose, retry, simple }: { kind: Kind; query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; retry: () => void; simple: boolean }) {
-  const [result, setResult] = useState<{ titles: Title[]; pages: number } | null>(null);
+  const [result, setResult] = useState<CatalogueResponse | null>(null);
   const [error, setError] = useState("");
   const [cancelled, setCancelled] = useState(false);
   const [controller] = useState(() => new AbortController());
   useEffect(() => {
     const stop = new AbortController();
     const signal = AbortSignal.any([stop.signal, controller.signal, AbortSignal.timeout(20_000)]);
-    void mediaApi<{ titles: Title[]; pages: number }>(`catalogue?${new URLSearchParams({ kind, q: query, page: String(page) })}`, signal).then(r => { if (!signal.aborted) setResult(r); }).catch(e => { if (!stop.signal.aborted && !controller.signal.aborted) setError(e instanceof Error ? e.message : "Catalogue unavailable."); });
+    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind, q: query, page: String(page) })}`, signal).then(r => { if (!signal.aborted) setResult(r); }).catch(e => { if (!stop.signal.aborted && !controller.signal.aborted) setError(e instanceof Error ? e.message : "Catalogue unavailable."); });
     return () => stop.abort();
   }, [kind, query, page, controller]);
   if (error || cancelled) return <div role="alert" className="space-y-3 rounded border border-orange-500/40 p-5"><p>{error || "Catalogue request cancelled."}</p><Button variant="outline" onClick={retry}>Retry catalogue</Button></div>;
   if (!result) return <div role="status" className="flex items-center gap-4 p-5">Searching catalogue…<Button variant="outline" onClick={() => { controller.abort(); setCancelled(true); }}>Cancel</Button></div>;
   return <>
+    {result.correctedQuery && <p role="status" className="rounded border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-neutral-200">Showing likely matches for <strong className="text-white">{result.correctedQuery}</strong>. Results for your original search are included too.</p>}
     {!result.titles.length && <p className="py-10 text-neutral-400">No titles found. Try a different name.</p>}
     <div className="tv-catalogue-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
       {result.titles.map(title => <button key={title.id} className={`group overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-left transition-colors hover:border-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500 ${simple ? "simple-title-card" : ""}`} onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" ? "Watch" : "Choose episode of" : "Details for"} ${title.title}`}>

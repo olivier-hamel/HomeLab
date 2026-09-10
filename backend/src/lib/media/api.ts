@@ -7,6 +7,7 @@ import { Welcome } from "./welcome.ts";
 import { queryTarget, type SourceTarget } from "./source-identity.ts";
 import { boundary, limited, rate, requireSession, startSession } from "./security.ts";
 import { Tmdb } from "./tmdb.ts";
+import { CatalogueSearch } from "./catalogue-search.ts";
 import { TorrServer, type TorrentFile } from "./torrserver.ts";
 import { Subdl, type SubdlFile } from "./subdl.ts";
 import { FFmpeg } from "./ffmpeg.ts";
@@ -26,6 +27,7 @@ function json(value: unknown, status = 200, headers: Record<string, string> = {}
 }
 export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">) {
   const tmdb = new Tmdb(fetcher);
+  const catalogue = new CatalogueSearch(fetcher, tmdb);
   const prowlarr = new Prowlarr(fetcher);
   const torrents = new TorrServer(fetcher);
   const ffmpeg = converter ?? new FFmpeg(torrents);
@@ -119,7 +121,13 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
             const [prowlarrStatus, torrserverStatus] = await Promise.all([check(() => prowlarr.health(request.signal)), check(() => torrents.health(request.signal))]);
             return json({ prowlarr: prowlarrStatus, torrserver: torrserverStatus });
           }
-          if (path[0] === "catalogue") return json(await tmdb.browse(kind(url.searchParams.get("kind")), query(url.searchParams.get("q") ?? "", true), integer(url.searchParams.get("page") ?? "1", 1, 500), request.signal));
+          if (path[0] === "suggestions") {
+            const q = query(url.searchParams.get("q") ?? "", true);
+            if (q.length < 2) return json({ titles: [] });
+            const result = await tmdb.browse(kind(url.searchParams.get("kind")), q, 1, request.signal);
+            return json({ titles: result.titles.slice(0, 6) });
+          }
+          if (path[0] === "catalogue") return json(await catalogue.browse(kind(url.searchParams.get("kind")), query(url.searchParams.get("q") ?? "", true), integer(url.searchParams.get("page") ?? "1", 1, 500), request.signal));
           if (path[0] === "details") return json(await tmdb.details(kind(path[1]), integer(path[2]), request.signal));
           if (path[0] === "season") return json(await tmdb.season(integer(path[1]), integer(path[2], 0, 1000), request.signal));
           if (path[0] === "playback") {

@@ -2,6 +2,7 @@ import { BoundedCache, count, envNumber, integer, list, record, required, string
 import { jsonRequest } from "./http.ts";
 
 export type Title = { id: number; kind: Kind; title: string; year: string; overview: string; poster: string | null };
+export type Catalogue = { provider: "TMDB"; availability: "metadata-only"; page: number; pages: number; titles: Title[] };
 function normalize(value: unknown, kind: Kind): Title {
   const row = record(value);
   const poster = string(row.poster_path);
@@ -21,7 +22,7 @@ export class Tmdb {
     this.cache.set(url.href, data);
     return record(data);
   }
-  async browse(kind: Kind, query: string, page: number, signal: AbortSignal) {
+  async browse(kind: Kind, query: string, page: number, signal: AbortSignal): Promise<Catalogue> {
     const data = await this.get(query ? `search/${kind}` : `${kind}/popular`, { page: String(page), language: "en-US", include_adult: "false", ...(query ? { query } : {}) }, signal);
     return { provider: "TMDB", availability: "metadata-only", page, pages: Math.min(count(data.total_pages) ?? 1, 500), titles: list(data.results).slice(0, 20).map(v => normalize(v, kind)) };
   }

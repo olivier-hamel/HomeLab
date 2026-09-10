@@ -5,6 +5,8 @@ import { query, magnet, BoundedCache, MediaError } from '../src/lib/media/core.t
 import { bounded, readLimited } from '../src/lib/media/http.ts';
 import { indexerQuery, normalizeSource, Prowlarr } from '../src/lib/media/prowlarr.ts';
 import { normalizeTorrent, TorrServer } from '../src/lib/media/torrserver.ts';
+import { CatalogueSearch, closeTitleMatch } from '../src/lib/media/catalogue-search.ts';
+import { Tmdb } from '../src/lib/media/tmdb.ts';
 
 const secret = 'test-only-private-canary-DO-NOT-USE-IN-PRODUCTION';
 Object.assign(process.env, { MEDIA_TRUSTED_NETWORK: 'true', MEDIA_ALLOWED_ORIGINS: 'http://dashboard.test', MEDIA_SESSION_SECRET: secret, TMDB_READ_ACCESS_TOKEN: secret, PROWLARR_BASE_URL: 'http://prowlarr.test:9696', PROWLARR_API_KEY: secret, TORRSERVER_BASE_URL: 'http://torrserver.test:8090', TORRSERVER_USERNAME: 'fixture-user', TORRSERVER_PASSWORD: secret });
@@ -97,7 +99,45 @@ test('metadata browsing has no torrent side effects or availability claim; cache
   assert.equal(result.titles[0].id, 1234567, 'modern TMDB IDs are not capped at one million');
   await call('catalogue?kind=movie&page=1');
   assert.equal(f.requests.length, 1);
+  const suggestions = await (await call('suggestions?kind=movie&q=Auth')).json();
+  assert.equal(suggestions.titles[0].title, 'Authorized film');
+  assert.equal(f.requests.some(request => request.url.hostname === 'generativelanguage.googleapis.com'), false, 'autocomplete stays TMDB-only');
   const cache = new BoundedCache(1, 1000); cache.set('a', 1); cache.set('b', 2); assert.equal(cache.get('a'), undefined);
+});
+test('catalogue matching tolerates spacing and small typos without accepting unrelated containing titles', () => {
+  assert.equal(closeTitleMatch('lalaland', 'La La Land'), true);
+  assert.equal(closeTitleMatch('interstelar', 'Interstellar'), true);
+  assert.equal(closeTitleMatch('matrix', 'The Matrix'), true);
+  assert.equal(closeTitleMatch('lalaland', 'Lollos 6: Lalaland!'), false);
+});
+test('weak TMDB results use a validated Gemini correction and retain original results', async () => {
+  const previous = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = secret;
+  const queries = [];
+  const fetcher = async (input, init = {}) => {
+    const url = new URL(input);
+    if (url.hostname === 'api.themoviedb.org') {
+      const q = url.searchParams.get('query'); queries.push(q);
+      return json({ results: q === 'La La Land'
+        ? [{ id: 313369, title: 'La La Land', release_date: '2016-11-29' }]
+        : [{ id: 999, title: 'Lollos 6: Lalaland!', release_date: '2014-01-01' }], total_pages: 1 });
+    }
+    if (url.hostname === 'generativelanguage.googleapis.com') {
+      assert.equal(new Headers(init.headers).get('x-goog-api-key'), secret);
+      return json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ query: 'La La Land' }) }] } }] });
+    }
+    throw new Error(`Unexpected fixture URL: ${url}`);
+  };
+  try {
+    const search = new CatalogueSearch(fetcher, new Tmdb(fetcher));
+    const result = await search.browse('movie', 'Lalaland', 1, new AbortController().signal);
+    assert.equal(result.correctedQuery, 'La La Land');
+    assert.equal(result.correctionProvider, 'gemini');
+    assert.deepEqual(result.titles.map(title => title.id), [313369, 999]);
+    assert.deepEqual(queries, ['Lalaland', 'La La Land']);
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previous;
+  }
 });
 test('partial indexer errors retain successful results and private credentials never enter responses', async () => {
   const f = fixture(); const call = await client(f.api);
