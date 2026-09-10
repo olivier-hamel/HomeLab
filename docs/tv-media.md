@@ -57,8 +57,9 @@ between Continue Watching and the popular catalogue. The backend sends Gemini
 only the metadata from the profile's 25 latest watch-history rows (never file
 paths, torrent links, or credentials), asks for a mix of movies and TV shows,
 then resolves and validates those suggestions through TMDB. Watched and duplicate
-TMDB titles are removed. Results are cached for six hours and refresh immediately
-when the latest 25 history rows change.
+TMDB titles are removed. Gemini 2.5 Flash-Lite produces 18 candidates with
+thinking disabled for lower latency and cost. Results are cached for six hours
+and refresh immediately when the latest 25 history rows change.
 
 Turn on **English subtitles** to load matching bundled English SRT/VTT captions
 or search SubDL automatically. Online matching favors the video's release name,

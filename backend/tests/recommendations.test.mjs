@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MediaRecommendations } from "../src/lib/media/recommendations.ts";
-import { ASSIST_MODEL } from "../src/lib/media/source-assist.ts";
+import { MediaRecommendations, RECOMMENDATION_COUNT, RECOMMENDATION_MODEL } from "../src/lib/media/recommendations.ts";
 
 const secret = "test-only-recommendation-canary";
 const signal = () => new AbortController().signal;
@@ -16,7 +15,7 @@ const history = Array.from({ length: 30 }, (_, index) => ({
   filePath: `private/path/${index}.mkv`,
   ...(index % 2 ? { season: 1, episode: index + 1 } : {}),
 }));
-const suggestions = Array.from({ length: 12 }, (_, index) => ({ kind: index % 2 ? "tv" : "movie", title: `Suggested ${index}`, year: "2024" }));
+const suggestions = Array.from({ length: RECOMMENDATION_COUNT }, (_, index) => ({ kind: index % 2 ? "tv" : "movie", title: `Suggested ${index}`, year: "2024" }));
 const answer = () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ recommendations: suggestions }) }] } }] });
 
 test("Gemini receives only the latest 25 watch records and recommendations resolve through TMDB", async () => {
@@ -26,10 +25,13 @@ test("Gemini receives only the latest 25 watch records and recommendations resol
   const searches = [];
   const fetcher = async (url, init) => {
     calls++;
-    assert.equal(url, `https://generativelanguage.googleapis.com/v1beta/models/${ASSIST_MODEL}:generateContent`);
+    assert.equal(url, `https://generativelanguage.googleapis.com/v1beta/models/${RECOMMENDATION_MODEL}:generateContent`);
     assert.equal(new Headers(init.headers).get("x-goog-api-key"), secret);
     assert.equal(init.redirect, "manual");
     const body = JSON.parse(init.body);
+    assert.equal(body.generationConfig.thinkingConfig.thinkingBudget, 0);
+    assert.equal(body.generationConfig.responseJsonSchema.properties.recommendations.minItems, RECOMMENDATION_COUNT);
+    assert.equal(body.generationConfig.responseJsonSchema.properties.recommendations.maxItems, RECOMMENDATION_COUNT);
     const input = JSON.parse(body.contents[0].parts[0].text).recentWatchHistory;
     assert.equal(input.length, 25);
     assert.deepEqual(input[0], { kind: "movie", tmdbId: 1000, title: "Watched 0", year: "2020" });
@@ -41,18 +43,18 @@ test("Gemini receives only the latest 25 watch records and recommendations resol
     searches.push([kind, query]);
     const index = Number(query.split(" ")[1]);
     // The first suggestion resolves to a watched title and the last duplicates another.
-    const id = index === 0 ? 1000 : index === 11 ? 2001 : 2000 + index;
-    return { titles: [{ id, kind, title: index === 11 ? "Suggested 1" : query, year: "2024", overview: "Resolved", poster: null }] };
+    const id = index === 0 ? 1000 : index === RECOMMENDATION_COUNT - 1 ? 2001 : 2000 + index;
+    return { titles: [{ id, kind, title: index === RECOMMENDATION_COUNT - 1 ? "Suggested 1" : query, year: "2024", overview: "Resolved", poster: null }] };
   } };
   try {
     const service = new MediaRecommendations(fetcher, tmdb);
     const result = await service.get(history, signal());
     assert.equal(result.provider, "gemini");
     assert.equal(result.basedOn, 25);
-    assert.equal(result.titles.length, 10);
+    assert.equal(result.titles.length, RECOMMENDATION_COUNT - 2);
     assert.equal(result.titles.some(title => title.id === 1000), false);
-    assert.equal(new Set(result.titles.map(title => `${title.kind}/${title.id}`)).size, 10);
-    assert.equal(searches.length, 12);
+    assert.equal(new Set(result.titles.map(title => `${title.kind}/${title.id}`)).size, RECOMMENDATION_COUNT - 2);
+    assert.equal(searches.length, RECOMMENDATION_COUNT);
     await service.get(history, signal());
     assert.equal(calls, 1, "an unchanged history uses the cached recommendation set");
   } finally {

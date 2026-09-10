@@ -225,8 +225,8 @@ function Player({ selection, initial, search, simple = false, resumeAt = 0, onFa
     return () => document.removeEventListener("keydown", handle);
   }, [tvMode]);
   const fullscreen = () => {
-    if ((tvMode || simple) && document.fullscreenElement) { void document.exitFullscreen().catch(() => setNotice("Use Back to leave fullscreen.")); return; }
-    const target = tvMode || simple ? screen.current : video.current;
+    const target = video.current;
+    if (document.fullscreenElement === target) { void document.exitFullscreen().catch(() => setNotice("Use Back to leave fullscreen.")); return; }
     void target?.requestFullscreen().catch(() => setNotice("Use the native player fullscreen control on this device."));
   };
   const shareUrl = share ? new URL(share.path, window.location.origin).href : "";
