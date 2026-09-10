@@ -1,6 +1,7 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { App as NativeApp } from "@capacitor/app";
 import { Preferences } from "@capacitor/preferences";
+import type { PlaybackInspection } from "./lib/media";
 
 const serverKey = "homelab-server-url";
 const shellKey = "homelab-shell-url";
@@ -23,12 +24,37 @@ export function hasNativeVideoPlayer(): boolean {
   }
 }
 
-type NativePlaybackResult = { position: number; duration: number; ended: boolean };
+type NativePlaybackResult = { position: number; duration: number; ended: boolean; action?: "next" | "close" | "ended" | "error"; error?: string; errorCode?: number };
+export type NativePlayerRequest = { action: string; playbackId?: string; requestId?: number; query?: string; language?: string; choice?: string };
+export type NativeSessionOptions = { playbackId: string; timelineOffset: number; searchQuery: string; sessionId: string; allowNext: boolean };
 export type NativeSubtitle = { name: string; language: string; content: string };
-const NativeVideoPlayer = registerPlugin<{ play(options: { url: string; title: string; position: number; subtitle?: NativeSubtitle }): Promise<NativePlaybackResult> }>("NativeVideoPlayer");
+const NativeVideoPlayer = registerPlugin<{
+  play(options: { url: string; title: string; position: number; subtitle?: NativeSubtitle } & Partial<NativeSessionOptions>): Promise<NativePlaybackResult>;
+  supportedOptions(inspection: PlaybackInspection): Promise<{ supported: string[] }>;
+  addListener(event: "playerRequest", listener: (event: NativePlayerRequest) => void): Promise<PluginListenerHandle>;
+  respond(response: Record<string, unknown>): Promise<void>;
+  status(options: { message: string; error: boolean }): Promise<void>;
+}>("NativeVideoPlayer");
 
-export function playNativeVideo(url: string, title: string, position = 0, subtitle?: NativeSubtitle): Promise<NativePlaybackResult> {
-  return NativeVideoPlayer.play({ url, title, position: Math.max(0, position), subtitle });
+export async function nativePlaybackSupport(inspection: PlaybackInspection): Promise<string[] | null> {
+  try {
+    return (await NativeVideoPlayer.supportedOptions(inspection)).supported;
+  } catch (error) {
+    // Hosted frontend updates also reach older APKs that still use VideoView.
+    if (error && typeof error === "object" && "code" in error && error.code === "UNIMPLEMENTED") return null;
+    throw error;
+  }
+}
+
+export function playNativeVideo(url: string, title: string, position = 0, subtitle?: NativeSubtitle, session?: NativeSessionOptions): Promise<NativePlaybackResult> {
+  return NativeVideoPlayer.play({ url, title, position: Math.max(0, position), subtitle, ...session });
+}
+
+export const onNativePlayerRequest = (listener: (event: NativePlayerRequest) => void) => NativeVideoPlayer.addListener("playerRequest", listener);
+export const respondToNativePlayer = (response: Record<string, unknown>) => NativeVideoPlayer.respond(response);
+export function nativePlayerStatus(message: string, error = false) {
+  // The same hosted frontend also runs in APKs without fullscreen session controls.
+  return NativeVideoPlayer.status({ message, error }).catch(() => {});
 }
 
 export function normalizedServerUrl(value: string): string {

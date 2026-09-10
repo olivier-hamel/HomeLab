@@ -1,7 +1,13 @@
+import { useLayoutEffect } from "react";
 import { Check, UserRound } from "lucide-react";
 import { mediaProfiles, type MediaProfileId } from "../../lib/media";
 
 export default function ProfileChooser({ current, choose }: { current: MediaProfileId | null; choose: (profile: MediaProfileId) => void }) {
+  useLayoutEffect(() => {
+    document.documentElement.dataset.tvProfileChooser = "true";
+    return () => { delete document.documentElement.dataset.tvProfileChooser; };
+  }, []);
+
   return <section className="media-profile-gate" aria-labelledby="profile-heading">
     <div className="media-profile-panel">
       <p className="media-profile-kicker">HOMELAB CINEMA</p>

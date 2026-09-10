@@ -19,4 +19,9 @@
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
     </style>
+    <style name="PlayerDialog" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="colorAccent">#FB923C</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:windowBackground">#202020</item>
+    </style>
 </resources>

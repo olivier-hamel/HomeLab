@@ -45,14 +45,41 @@ page can only handle events the browser delivers.
 
 The build targets Chrome 87 syntax and supplies missing `AbortSignal.any` and
 `AbortSignal.timeout` helpers. Browser playback probes the formats reported by
-Silk. The Android APK uses a conservative H.264/AAC MP4 stream because Fire OS
-WebView can claim support for video formats that produce audio with a black
-picture on some Fire Stick models. The APK opens that prepared stream in a
-fullscreen native Android player, avoiding WebView video compositing entirely.
-The selected bundled, downloaded, or uploaded subtitle is converted to WebVTT
-and attached to that native player; automatic subtitles finish loading before
-the player opens.
+Silk. The Android APK uses Media3 ExoPlayer with a dedicated SurfaceView and
+aspect-ratio fitting. Native decoder queries check codec profiles, resolution,
+and frame rate before requesting a stream. Compatible sources play directly;
+otherwise the server copies compatible video and converts only what is needed.
+A runtime decoder failure gets one H.264/AAC compatibility retry. Older APKs
+without native capability queries keep their conservative conversion path.
 Configure media services as described in [TV & Movies](tv-media.md).
+
+### Fullscreen watching session
+
+Version code 5, version name `1.3.0-player-menus`, keeps the initial torrent
+search on the page. Once ready, Watch opens the native fullscreen player.
+Deploy the hosted frontend changes together with the APK: the native menus
+use the page's authenticated media API client.
+
+- Press **Menu**, or **Up** then select **Options**, to open the player menu.
+- Use the **Subtitles: Off / On** button beside Options to toggle English captions.
+  It uses the same automatic matching as desktop: try matching subtitle files
+  included with the torrent first, then fall back to the subtitle API. No search
+  or file selection is needed. While Loading is shown, press again to cancel.
+  Changing sources keeps subtitles enabled and finds a match for the new video.
+  Subtitle loading leaves playback running.
+- **Audio track** selects among supported tracks present in the stream.
+  A converted stream may contain only the audio track selected by the server.
+- **Picture size** defaults to Fit; Zoom is an explicit choice that crops edges.
+- **Try another source** keeps the fullscreen activity open, shows progress
+  while the existing source queue is searched, and resumes at the current time.
+  Exhausted sources show Retry and Quit inside the player. This action is
+  available for the automatic Watch flow.
+- **Quit to main page**, or **Back** when no dialog is open, saves progress and
+  returns to the catalogue. Back within a menu dismisses that menu.
+
+Media3 is pinned to 1.4.1 to retain the existing SDK 34 / Fire OS 5+ build
+baseline. See [Media3 surface guidance](https://developer.android.com/media/media3/ui/surface)
+and [track selection](https://developer.android.com/media/media3/exoplayer/track-selection).
 
 ## Verification
 
@@ -64,6 +91,11 @@ services. It checks TV and desktop layouts, browser/cursor/button scrolling,
 remote navigation, dialog focus,
 source/file selection, player controls, and fallback APIs. It simulates media
 events rather than verifying video decoding.
+
+`node scripts/test-tv-ui.mjs --native-player` runs the fullscreen bridge flow
+independently: subtitle search/download/archive selection, source replacement
+with position preservation, source exhaustion, and quit to the catalogue.
+It uses a simulated Capacitor bridge and does not validate native rendering.
 
 On a physical Fire Stick, verify search using the on-screen keyboard, scrolling
 the catalogue, selecting a source and file, play/pause, seeking, fullscreen,
