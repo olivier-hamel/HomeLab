@@ -25,6 +25,10 @@ function context(value: unknown): SearchContext | undefined {
     ...(c.tmdbId ? { tmdbId: integer(c.tmdbId, 1, 100_000_000) } : {}), ...(c.tvdbId ? { tvdbId: integer(c.tvdbId, 1, 100_000_000) } : {}),
     ...(c.season !== undefined ? { season: integer(c.season, 0, 1000) } : {}), ...(c.episode !== undefined ? { episode: integer(c.episode, 1, 10000) } : {}) };
 }
+function catalogueKind(value: string | null): "movie" | "tv" | "all" {
+  if (value === null || value === "all") return "all";
+  return kind(value);
+}
 function json(value: unknown, status = 200, headers: Record<string, string> = {}) {
   return Response.json(value, { status, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", ...headers } });
 }
@@ -148,10 +152,10 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
           if (path[0] === "suggestions") {
             const q = query(url.searchParams.get("q") ?? "", true);
             if (q.length < 2) return json({ titles: [] });
-            const result = await tmdb.browse(kind(url.searchParams.get("kind")), q, 1, request.signal);
+            const result = await tmdb.browse(catalogueKind(url.searchParams.get("kind")), q, 1, request.signal);
             return json({ titles: result.titles.slice(0, 6) });
           }
-          if (path[0] === "catalogue") return json(await catalogue.browse(kind(url.searchParams.get("kind")), query(url.searchParams.get("q") ?? "", true), integer(url.searchParams.get("page") ?? "1", 1, 500), request.signal));
+          if (path[0] === "catalogue") return json(await catalogue.browse(catalogueKind(url.searchParams.get("kind")), query(url.searchParams.get("q") ?? "", true), integer(url.searchParams.get("page") ?? "1", 1, 500), request.signal));
           if (path[0] === "details") {
             const details = await tmdb.details(kind(path[1]), integer(path[2]), request.signal);
             const rating = details.kind === "movie" ? await omdb.rating(details.imdbId, request.signal).catch(() => null) : null;

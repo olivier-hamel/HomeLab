@@ -2,14 +2,13 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Film, Info, Play, Search, Star, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { mediaApi, sourceIntent, type ContinueWatchingMovie, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
+import { mediaApi, sourceIntent, type ContinueWatchingMovie, type Details, type SearchIntent, type Title } from "../../lib/media";
 import { useTvMode } from "../../lib/tv";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 type CatalogueResponse = { titles: Title[]; pages: number; originalQuery?: string; correctedQuery?: string; correctionProvider?: "gemini" };
 type RecommendationResponse = { provider: "gemini"; basedOn: number; titles: Title[] };
 export default function Catalogue({ find, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent, resumeAt?: number) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
-  const [kind, setKind] = useState<Kind>("movie");
   const [text, setText] = useState("");
   const [q, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -25,13 +24,13 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setSuggesting(true);
-      void mediaApi<{ titles: Title[] }>(`suggestions?${new URLSearchParams({ kind, q: value })}`, AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]))
+      void mediaApi<{ titles: Title[] }>(`suggestions?${new URLSearchParams({ kind: "all", q: value })}`, AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]))
         .then(result => { if (!controller.signal.aborted) setSuggestions(result.titles); })
         .catch(() => { if (!controller.signal.aborted) setSuggestions([]); })
         .finally(() => { if (!controller.signal.aborted) setSuggesting(false); });
     }, 300);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [kind, text, suggestionFocus]);
+  }, [text, suggestionFocus]);
   const choose = (title: Title) => {
     if (simple && title.kind === "movie" && !tvMode) find(sourceIntent({ ...title, imdbId: null, tvdbId: null, rating: null, seasons: [] }));
     else setChosen(title);
@@ -39,8 +38,6 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
   const exitSearch = () => { setText(""); setQuery(""); setPage(1); setChosen(null); setSuggestions([]); setSuggestionFocus(false); };
   return <div className="space-y-5">
     <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setSuggestionFocus(false); setQuery(text.trim()); setPage(1); setRetry(r => r + 1); }}>
-      {simple ? <div role="group" aria-label="Catalogue type" className="simple-catalogue-tabs">{(["movie", "tv"] as const).map(value => <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKind(value); setPage(1); setChosen(null); }}>{value === "movie" ? "Movies" : "TV shows"}</button>)}</div> : <><label className="sr-only" htmlFor="catalogue-kind">Catalogue type</label>
-      <select id="catalogue-kind" className={field} value={kind} onChange={e => { setKind(e.target.value as Kind); setPage(1); setChosen(null); }}><option value="movie">Movies</option><option value="tv">TV shows</option></select></>}
       <label className="sr-only" htmlFor="catalogue-query">Search catalogue</label>
       <div className="relative min-w-40 flex-1" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setSuggestionFocus(false); }}>
         <Input id="catalogue-query" maxLength={250} className="h-11 w-full border-neutral-600 bg-neutral-950" placeholder="Find a title…" value={text} onChange={e => { setText(e.target.value); setSuggestions([]); setSuggesting(false); setSuggestionFocus(true); }} onFocus={() => setSuggestionFocus(true)} role="combobox" aria-autocomplete="list" aria-expanded={suggestionFocus && text.trim().length >= 2 && (suggesting || suggestions.length > 0)} aria-controls="catalogue-suggestions" autoComplete="off" />
@@ -56,11 +53,11 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
     {!q && continueWatching}
     {!q && recommendations && <RecommendedTitles choose={choose} showDetails={setChosen} simple={simple} />}
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? kind === "movie" ? "Popular movies" : "Popular TV shows" : "Popular on TMDB"}{!simple && " · Metadata only."}</p>
+      <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? "Popular movies and TV shows" : "Popular movies and TV shows on TMDB"}{!simple && " · Metadata only."}</p>
       {q && <Button type="button" variant="outline" data-tv-back="" onClick={exitSearch}><X />Exit search</Button>}
     </div>
     {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={(intent, resumeAt) => { setChosen(null); find(intent, resumeAt); }} simple={simple} />}
-    <CatalogueResults key={`${kind}/${q}/${page}/${retry}`} kind={kind} query={q} page={page} setPage={setPage} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
+    <CatalogueResults key={`${q}/${page}/${retry}`} query={q} page={page} setPage={setPage} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
   </div>;
 }
 
@@ -98,7 +95,7 @@ function TitleGrid({ titles, choose, showDetails, simple }: { titles: Title[]; c
   </div>;
 }
 
-function CatalogueResults({ kind, query, page, setPage, choose, showDetails, retry, simple }: { kind: Kind; query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; showDetails: (t: Title) => void; retry: () => void; simple: boolean }) {
+function CatalogueResults({ query, page, setPage, choose, showDetails, retry, simple }: { query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; showDetails: (t: Title) => void; retry: () => void; simple: boolean }) {
   const [result, setResult] = useState<CatalogueResponse | null>(null);
   const [error, setError] = useState("");
   const [cancelled, setCancelled] = useState(false);
@@ -106,9 +103,9 @@ function CatalogueResults({ kind, query, page, setPage, choose, showDetails, ret
   useEffect(() => {
     const stop = new AbortController();
     const signal = AbortSignal.any([stop.signal, controller.signal, AbortSignal.timeout(20_000)]);
-    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind, q: query, page: String(page) })}`, signal).then(r => { if (!signal.aborted) setResult(r); }).catch(e => { if (!stop.signal.aborted && !controller.signal.aborted) setError(e instanceof Error ? e.message : "Catalogue unavailable."); });
+    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind: "all", q: query, page: String(page) })}`, signal).then(r => { if (!signal.aborted) setResult(r); }).catch(e => { if (!stop.signal.aborted && !controller.signal.aborted) setError(e instanceof Error ? e.message : "Catalogue unavailable."); });
     return () => stop.abort();
-  }, [kind, query, page, controller]);
+  }, [query, page, controller]);
   if (error || cancelled) return <div role="alert" className="space-y-3 rounded border border-orange-500/40 p-5"><p>{error || "Catalogue request cancelled."}</p><Button variant="outline" onClick={retry}>Retry catalogue</Button></div>;
   if (!result) return <div role="status" className="flex items-center gap-4 p-5">Searching catalogue…<Button variant="outline" onClick={() => { controller.abort(); setCancelled(true); }}>Cancel</Button></div>;
   return <>

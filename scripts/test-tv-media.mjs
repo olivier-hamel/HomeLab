@@ -75,6 +75,7 @@ const fixture = createServer(async (req, res) => {
       assert.equal(req.headers.authorization, `Bearer ${secret}`);
       const title = { id: 10378, title: 'Big Buck Bunny', name: 'Authorized fixture series', release_date: '2008-04-10', first_air_date: '2008-04-10', overview: 'Creative Commons film by the Blender Foundation. This catalogue response is a test fixture.', poster_path: null, external_ids: { imdb_id: 'tt1254207', tvdb_id: 200 }, seasons: [{ season_number: 1, name: 'Season 1', episode_count: 2 }] };
       if (url.pathname.includes('/season/')) return json({ episodes: [{ episode_number: 1, name: 'Authorized episode one', air_date: '2008-01-01', overview: 'Fixture episode' }, { episode_number: 2, name: 'Authorized episode two', air_date: '2008-01-02', overview: 'Fixture episode' }] });
+      if (url.pathname.includes('trending/all') || url.pathname.includes('search/multi')) return json({ results: [{ ...title, media_type: 'movie' }, { ...title, id: 10379, media_type: 'tv' }], total_pages: 2 });
       return json(url.pathname.includes('popular') || url.pathname.includes('search') ? { results: [title], total_pages: 2 } : title);
     }
     if (url.pathname.startsWith('/api/v1/') || url.pathname === '/1/download') {
@@ -310,10 +311,8 @@ try {
   }
   await click('Stop and close');
   await click('Catalogue');
-  await until(`!!document.querySelector('#catalogue-kind')`);
-  await evaluate(`const select = document.querySelector('#catalogue-kind'); select.value = 'tv'; select.dispatchEvent(new Event('change', {bubbles:true}))`);
-  await until(`!!document.querySelector('button[aria-label="Details for Big Buck Bunny"]')`);
-  await evaluate(`document.querySelector('button[aria-label="Details for Big Buck Bunny"]').click()`);
+  await until(`!![...document.querySelectorAll('.title-card')].find(card => card.innerText.includes('TV'))`);
+  await evaluate(`[...document.querySelectorAll('.title-card')].find(card => card.innerText.includes('TV')).querySelector('button').click()`);
   await until(`!!document.querySelector('dialog[open] select option[value="2"]')`);
   await evaluate(`const selects = document.querySelectorAll('dialog[open] select'); selects[1].value = '2'; selects[1].dispatchEvent(new Event('change', {bubbles:true}))`);
   const addsBeforeEpisode = metrics.adds;
