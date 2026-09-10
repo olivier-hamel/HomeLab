@@ -50,7 +50,7 @@ export default function ContinueWatching({ onResume }: { onResume: (intent: Sear
               <span className="continue-progress" aria-hidden="true"><span style={{ width: `${percent}%` }} /></span>
             </span>
             <strong>{movie.title}</strong>
-            <span>{Math.round(percent)}% · {clock(movie.playbackPositionSeconds)} of {clock(movie.durationSeconds)}</span>
+            <span>{clock(movie.playbackPositionSeconds)} of {clock(movie.durationSeconds)}</span>
           </button>
         </article>;
       })}

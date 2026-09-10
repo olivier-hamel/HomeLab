@@ -71,8 +71,6 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
     private int requestId;
     private TrackSelectionParameters trackParameters;
     private float speed = 1f;
-    private Button subtitleToggle;
-    private Button subtitleTiming;
     private boolean subtitlesEnabled;
     private boolean subtitlesLoading;
 
@@ -91,8 +89,6 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         configureTvControls();
         playerActions = findViewById(R.id.native_player_actions);
         options = findViewById(R.id.native_options);
-        subtitleToggle = findViewById(R.id.native_subtitle_toggle);
-        subtitleTiming = findViewById(R.id.native_subtitle_timing);
         Button hideButton = findViewById(R.id.native_hide_controls);
         anotherSource = findViewById(R.id.native_another_source);
         Button quit = findViewById(R.id.native_quit);
@@ -100,8 +96,6 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         updateSourceButton(getIntent());
         anotherSource.setOnClickListener(view -> nextSource());
         quit.setOnClickListener(view -> closePlayer());
-        subtitleToggle.setOnClickListener(view -> toggleSubtitles());
-        subtitleTiming.setOnClickListener(view -> showSubtitleTiming());
         options.setOnClickListener(view -> showOptions());
         for (int i = 0; i < playerActions.getChildCount(); i++) {
             playerActions.getChildAt(i).setOnFocusChangeListener((view, focused) ->
@@ -126,12 +120,14 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
             if (getIntent().hasExtra("subtitlePath")) loadInitialSubtitle();
             else requestAutomaticSubtitles();
         }
-        updateSubtitleButton();
         if (waitingForSource) showSourceStatus("Waiting for another source…", false);
         else playerView.requestFocus();
     }
 
     private void configureTvControls() {
+        View settings = playerView.findViewById(androidx.media3.ui.R.id.exo_settings);
+        if (settings != null) settings.setVisibility(View.GONE);
+
         // Media3's default focus feedback is designed primarily for touch screens.
         // Give every D-pad target a high-contrast TV focus ring and keep the
         // controller visible while the viewer is moving through its controls.
@@ -182,7 +178,6 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         updateSourceButton(intent);
         if (getIntent().hasExtra("subtitlePath")) { subtitlesEnabled = true; loadInitialSubtitle(); }
         else if (subtitlesEnabled) requestAutomaticSubtitles();
-        updateSubtitleButton();
         initializePlayer();
         subtitles.start();
         playerView.showController();
@@ -203,11 +198,9 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
                 subtitlesLoading = false;
                 if (error == null) disableEmbeddedText();
                 else { subtitlesEnabled = false; showMessage(error); }
-                updateSubtitleButton();
             });
         } catch (Exception error) {
             subtitlesEnabled = false;
-            updateSubtitleButton();
             showMessage("The selected subtitles could not be opened.");
         }
     }
@@ -341,14 +334,11 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
     }
 
     private void updateActionNavigation() {
-        boolean timingAvailable = subtitleTiming.isEnabled();
         boolean sourceAvailable = anotherSource.getVisibility() == View.VISIBLE;
-        subtitleToggle.setNextFocusRightId(timingAvailable ? R.id.native_subtitle_timing :
+        findViewById(R.id.native_hide_controls).setNextFocusRightId(
             sourceAvailable ? R.id.native_another_source : R.id.native_options);
-        subtitleTiming.setNextFocusRightId(sourceAvailable ? R.id.native_another_source : R.id.native_options);
-        anotherSource.setNextFocusLeftId(timingAvailable ? R.id.native_subtitle_timing : R.id.native_subtitle_toggle);
-        options.setNextFocusLeftId(sourceAvailable ? R.id.native_another_source :
-            timingAvailable ? R.id.native_subtitle_timing : R.id.native_subtitle_toggle);
+        anotherSource.setNextFocusLeftId(R.id.native_hide_controls);
+        options.setNextFocusLeftId(sourceAvailable ? R.id.native_another_source : R.id.native_hide_controls);
     }
 
     private AlertDialog.Builder menu(String title) {
@@ -375,20 +365,21 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
 
     private void showOptions() {
         if (waitingForSource) return;
-        show(menu("Player options").setItems(new String[] {"Audio track", "Picture size"}, (d, which) -> {
-            if (which == 0) showTracks(C.TRACK_TYPE_AUDIO);
-            if (which == 1) showPictureSize();
-        }).create());
-    }
-
-    private void updateSubtitleButton() {
-        subtitleToggle.setText(subtitlesLoading ? R.string.player_subtitles_loading :
-            subtitlesEnabled ? R.string.player_subtitles_on : R.string.player_subtitles_off);
-        subtitleToggle.setSelected(subtitlesEnabled);
-        boolean timingAvailable = subtitles.hasSubtitle();
-        subtitleTiming.setEnabled(timingAvailable);
-        subtitleTiming.setAlpha(timingAvailable ? 1f : 0.45f);
-        updateActionNavigation();
+        List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        items.add(getString(subtitlesLoading ? R.string.player_subtitles_loading :
+            subtitlesEnabled ? R.string.player_subtitles_on : R.string.player_subtitles_off));
+        actions.add(this::toggleSubtitles);
+        if (subtitles.hasSubtitle()) {
+            items.add(getString(R.string.player_subtitle_timing));
+            actions.add(this::showSubtitleTiming);
+        }
+        items.add("Audio track");
+        actions.add(() -> showTracks(C.TRACK_TYPE_AUDIO));
+        items.add("Picture size");
+        actions.add(this::showPictureSize);
+        show(menu("Player options").setItems(items.toArray(new String[0]),
+            (d, which) -> actions.get(which).run()).create());
     }
 
     private void showSubtitleTiming() {
@@ -431,13 +422,11 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
             disableEmbeddedText();
             emitSubtitleRequest("subtitleOff");
         }
-        updateSubtitleButton();
     }
 
     private void requestAutomaticSubtitles() {
         subtitlesLoading = true;
         subtitles.cancelLoad();
-        updateSubtitleButton();
         emitSubtitleRequest("subtitleAuto");
     }
 
@@ -488,7 +477,6 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         if (data.has("error")) {
             subtitlesEnabled = false;
             subtitlesLoading = false;
-            updateSubtitleButton();
             showMessage(data.optString("error"));
             return;
         }
@@ -501,7 +489,6 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
                     subtitlesLoading = false;
                     if (error != null) { subtitlesEnabled = false; showMessage(error); }
                     else { disableEmbeddedText(); subtitles.start(); }
-                    updateSubtitleButton();
                 });
         }
     }

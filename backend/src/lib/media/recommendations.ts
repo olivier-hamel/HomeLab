@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import { BoundedCache, envNumber, list, record, string, type Fetcher, type Kind } from "./core.ts";
 import { bounded, readLimited } from "./http.ts";
 import { closeTitleMatch } from "./catalogue-search.ts";
+import { ASSIST_MODEL } from "./source-assist.ts";
 import { Tmdb, type Title } from "./tmdb.ts";
 import type { WatchHistoryRecord } from "./progress-store.ts";
 
 type Suggestion = { kind: Kind; title: string; year: string };
 export type Recommendations = { provider: "gemini"; basedOn: number; titles: Title[] };
-export const RECOMMENDATION_MODEL = "gemini-2.5-flash-lite";
+export const RECOMMENDATION_MODEL = ASSIST_MODEL;
 export const RECOMMENDATION_COUNT = 18;
 
 const instruction = `Recommend movies and TV shows for a personal media catalogue from recent watch history.
@@ -44,8 +45,10 @@ export class MediaRecommendations {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: instruction }] },
           contents: [{ role: "user", parts: [{ text: JSON.stringify({ recentWatchHistory: input }) }] }],
-          generationConfig: { temperature: 0.8, maxOutputTokens: 2400, thinkingConfig: { thinkingBudget: 0 }, responseMimeType: "application/json", responseJsonSchema: {
-            type: "object", properties: { recommendations: { type: "array", minItems: RECOMMENDATION_COUNT, maxItems: RECOMMENDATION_COUNT, items: {
+          generationConfig: { temperature: 0.8, maxOutputTokens: 2400, responseMimeType: "application/json", responseJsonSchema: {
+            // Keep the provider schema simple. Gemini is asked for the target count
+            // in the prompt; usable partial output is validated and capped below.
+            type: "object", properties: { recommendations: { type: "array", items: {
               type: "object", properties: { kind: { type: "string", enum: ["movie", "tv"] }, title: { type: "string" }, year: { type: "string" } }, required: ["kind", "title", "year"], additionalProperties: false,
             } } }, required: ["recommendations"], additionalProperties: false,
           } },
@@ -58,8 +61,9 @@ export class MediaRecommendations {
       const output = list(record(candidate.content).parts).map(record).filter(part => part.thought !== true).map(part => string(part.text, 48 * 1024)).join("");
       return record(JSON.parse(output));
     });
-    const suggestions = list(data.recommendations).map(value => cleanSuggestion(value, apiKey)).filter((value): value is Suggestion => !!value);
-    if (suggestions.length !== RECOMMENDATION_COUNT) throw new Error("Gemini returned invalid recommendations.");
+    const suggestions = list(data.recommendations).slice(0, RECOMMENDATION_COUNT)
+      .map(value => cleanSuggestion(value, apiKey)).filter((value): value is Suggestion => !!value);
+    if (!suggestions.length) throw new Error("Gemini returned no valid recommendations.");
     const watched = new Set(recent.map(item => `${item.kind}/${item.tmdbId}`));
     const resolved = await Promise.all(suggestions.map(async suggestion => {
       try {

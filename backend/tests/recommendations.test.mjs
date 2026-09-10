@@ -29,9 +29,9 @@ test("Gemini receives only the latest 25 watch records and recommendations resol
     assert.equal(new Headers(init.headers).get("x-goog-api-key"), secret);
     assert.equal(init.redirect, "manual");
     const body = JSON.parse(init.body);
-    assert.equal(body.generationConfig.thinkingConfig.thinkingBudget, 0);
-    assert.equal(body.generationConfig.responseJsonSchema.properties.recommendations.minItems, RECOMMENDATION_COUNT);
-    assert.equal(body.generationConfig.responseJsonSchema.properties.recommendations.maxItems, RECOMMENDATION_COUNT);
+    assert.equal(body.generationConfig.thinkingConfig, undefined);
+    assert.equal(body.generationConfig.responseJsonSchema.properties.recommendations.minItems, undefined);
+    assert.equal(body.generationConfig.responseJsonSchema.properties.recommendations.maxItems, undefined);
     const input = JSON.parse(body.contents[0].parts[0].text).recentWatchHistory;
     assert.equal(input.length, 25);
     assert.deepEqual(input[0], { kind: "movie", tmdbId: 1000, title: "Watched 0", year: "2020" });
@@ -70,6 +70,24 @@ test("missing Gemini configuration or empty history avoids upstream calls", asyn
     assert.deepEqual(await service.get(history, signal()), { provider: "gemini", basedOn: 25, titles: [] });
     process.env.GEMINI_API_KEY = secret;
     assert.deepEqual(await service.get([], signal()), { provider: "gemini", basedOn: 0, titles: [] });
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previous;
+  }
+});
+
+test("a partial Gemini response still returns every recommendation that can be resolved", async () => {
+  const previous = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = secret;
+  const partial = [
+    { kind: "movie", title: "Valid film", year: "2024" },
+    { kind: "movie", title: "Missing year" },
+    { kind: "tv", title: "Valid show", year: "2023" },
+  ];
+  const fetcher = async () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ recommendations: partial }) }] } }] });
+  const tmdb = { browse: async (kind, query) => ({ titles: [{ id: query === "Valid film" ? 9001 : 9002, kind, title: query, year: query === "Valid film" ? "2024" : "2023", overview: "Resolved", poster: null }] }) };
+  try {
+    const result = await new MediaRecommendations(fetcher, tmdb).get(history, signal());
+    assert.deepEqual(result.titles.map(title => title.title), ["Valid film", "Valid show"]);
   } finally {
     if (previous === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previous;
   }

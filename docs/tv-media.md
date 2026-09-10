@@ -57,8 +57,8 @@ between Continue Watching and the popular catalogue. The backend sends Gemini
 only the metadata from the profile's 25 latest watch-history rows (never file
 paths, torrent links, or credentials), asks for a mix of movies and TV shows,
 then resolves and validates those suggestions through TMDB. Watched and duplicate
-TMDB titles are removed. Gemini 2.5 Flash-Lite produces 18 candidates with
-thinking disabled for lower latency and cost. Results are cached for six hours
+TMDB titles are removed. Gemini produces up to 18 candidates using the same
+model as the other media AI features. Results are cached for six hours
 and refresh immediately when the latest 25 history rows change.
 
 Turn on **English subtitles** to load matching bundled English SRT/VTT captions
@@ -431,7 +431,7 @@ This does not remove torrents from TorrServer or report failures to an indexer.
 Gemini reviews at most the 60 most promising matching listings in each loaded batch;
 the rest retain basic assessments. Missing keys, timeouts, quota errors and
 invalid model output retain usable basic advice. Both modes show the reason when
-a review falls back. The Gemini output schema stays fixed in size; exact result
+a review falls back. The Gemini output schema stays compact; result
 counts and source IDs are validated on the backend to avoid provider rejection
 of large enumerated schemas. Reviews and session-owned
 search snapshots are bounded to 40 entries for two minutes, with 12 review
