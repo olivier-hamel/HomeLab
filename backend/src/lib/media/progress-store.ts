@@ -95,21 +95,21 @@ async function historyCollection(): Promise<Collection<StoredWatchHistory>> {
   }
 }
 
-function owner() {
-  return { userId: identity("MEDIA_USER_ID", "home"), profileId: identity("MEDIA_PROFILE_ID", "default") };
+function owner(profileId?: string) {
+  return { userId: identity("MEDIA_USER_ID", "home"), profileId: profileId || identity("MEDIA_PROFILE_ID", "default") };
 }
 
 export class ProgressStore {
   static configured() { return !!process.env.MONGODB_URI?.trim(); }
 
-  async list(): Promise<ContinueWatchingRecord[]> {
-    const rows = await (await progressCollection()).find(owner(), { projection: { _id: 0, userId: 0, profileId: 0 } }).sort({ updatedAt: -1 }).limit(30).toArray();
+  async list(profileId?: string): Promise<ContinueWatchingRecord[]> {
+    const rows = await (await progressCollection()).find(owner(profileId), { projection: { _id: 0, userId: 0, profileId: 0 } }).sort({ updatedAt: -1 }).limit(30).toArray();
     return rows.map(row => ({ ...row, updatedAt: row.updatedAt.toISOString() }));
   }
 
-  async save(record: Omit<ContinueWatchingRecord, "updatedAt">) {
+  async save(record: Omit<ContinueWatchingRecord, "updatedAt">, profileId?: string) {
     const records = await progressCollection();
-    const key = { ...owner(), movieId: record.movieId };
+    const key = { ...owner(profileId), movieId: record.movieId };
     // Credits count as complete. Two minutes also covers very short end-credit rolls.
     if (completedPlayback(record.playbackPositionSeconds, record.durationSeconds)) {
       await records.deleteOne(key);
@@ -119,15 +119,15 @@ export class ProgressStore {
     return { saved: true, completed: false };
   }
 
-  async remove(movieId: number) {
-    await (await progressCollection()).deleteOne({ ...owner(), movieId });
+  async remove(movieId: number, profileId?: string) {
+    await (await progressCollection()).deleteOne({ ...owner(profileId), movieId });
     return { removed: true };
   }
 }
 
 export class WatchHistoryStore {
-  async add(record: WatchHistoryRecord) {
-    const key = { ...owner(), playbackId: record.playbackId };
+  async add(record: WatchHistoryRecord, profileId?: string) {
+    const key = { ...owner(profileId), playbackId: record.playbackId };
     const result = await (await historyCollection()).updateOne(key, { $setOnInsert: { ...key, ...record, watchedAt: new Date() } }, { upsert: true });
     return { added: result.upsertedCount === 1 };
   }

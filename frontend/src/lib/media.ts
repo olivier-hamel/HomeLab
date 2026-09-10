@@ -17,6 +17,26 @@ export type PlaybackOption = { id: string; mode: "direct" | "remux" | "transcode
 export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; options: PlaybackOption[] };
 export type PreparedPlayback = PlaybackOption & { stream: string; duration: number | null };
 
+export const mediaProfiles = [
+  { id: "default", name: "Home", color: "orange" },
+  { id: "oli", name: "Oli", color: "sky" },
+  { id: "max", name: "Max", color: "emerald" },
+] as const;
+export type MediaProfileId = (typeof mediaProfiles)[number]["id"];
+const mediaProfileStorageKey = "homelab:media-profile";
+export function loadMediaProfile(): MediaProfileId | null {
+  try {
+    const saved = localStorage.getItem(mediaProfileStorageKey);
+    return mediaProfiles.some(profile => profile.id === saved) ? saved as MediaProfileId : null;
+  } catch { return null; }
+}
+export function saveMediaProfile(profile: MediaProfileId) {
+  try { localStorage.setItem(mediaProfileStorageKey, profile); } catch { /* The in-memory selection still works. */ }
+}
+export function activeMediaProfile(): MediaProfileId {
+  return loadMediaProfile() ?? "default";
+}
+
 export function supportedPlayback(options: PlaybackOption[], canPlayType: (mime: string) => string): string[] {
   return options.filter(option => canPlayType(option.mime) !== "").map(option => option.id);
 }
@@ -26,14 +46,15 @@ export async function preparePlayback(id: string, signal: AbortSignal, canPlayTy
 }
 
 export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unknown): Promise<T> {
-  const response = await fetch(`/api/media/${path}`, { signal, credentials: "same-origin", cache: "no-store", ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Media-Request": "1" }, body: JSON.stringify(body) }) });
+  const profile = activeMediaProfile();
+  const response = await fetch(`/api/media/${path}`, { signal, credentials: "same-origin", cache: "no-store", headers: { "X-Media-Profile": profile, ...(body === undefined ? {} : { "Content-Type": "application/json", "X-Media-Request": "1" }) }, ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }) });
   const data = await response.json().catch(() => { throw new Error("The media API returned an unreadable response. Check the dashboard proxy."); });
   if (!response.ok) throw new Error(data.error || `Media request failed (HTTP ${response.status}).`);
   return data as T;
 }
 export async function savePlaybackProgress(intent: SearchIntent, playbackPositionSeconds: number, durationSeconds: number): Promise<void> {
   if (!intent.movie || !Number.isFinite(playbackPositionSeconds) || !Number.isFinite(durationSeconds) || playbackPositionSeconds < 5 || durationSeconds <= 0) return;
-  const response = await fetch("/api/media/progress", { method: "POST", credentials: "same-origin", cache: "no-store", keepalive: true, headers: { "Content-Type": "application/json", "X-Media-Request": "1" }, body: JSON.stringify({ movie: intent.movie, intent, playbackPositionSeconds, durationSeconds }) });
+  const response = await fetch("/api/media/progress", { method: "POST", credentials: "same-origin", cache: "no-store", keepalive: true, headers: { "Content-Type": "application/json", "X-Media-Request": "1", "X-Media-Profile": activeMediaProfile() }, body: JSON.stringify({ movie: intent.movie, intent, playbackPositionSeconds, durationSeconds }) });
   if (!response.ok) throw new Error("Playback progress could not be saved.");
   window.dispatchEvent(new CustomEvent("homelab:continue-watching-changed"));
 }

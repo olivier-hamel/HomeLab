@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clapperboard, Radio, Search } from "lucide-react";
+import { ChevronDown, Clapperboard, Radio, Search, UserRound } from "lucide-react";
 import { Button } from "../components/ui/button";
 import Catalogue from "../components/media/Catalogue";
 import Sources from "../components/media/Sources";
@@ -9,11 +9,14 @@ import Welcome from "../components/media/Welcome";
 import ContinueWatching from "../components/media/ContinueWatching";
 import Switch from "../components/ui/switch";
 import { useMediaTask } from "../components/media/useMediaTask";
-import { mediaApi, sourceFingerprint, type SearchIntent, type Source } from "../lib/media";
+import { loadMediaProfile, mediaApi, mediaProfiles, saveMediaProfile, sourceFingerprint, type MediaProfileId, type SearchIntent, type Source } from "../lib/media";
 import { useTvMode } from "../lib/tv";
+import ProfileChooser from "../components/media/ProfileChooser";
 
 export default function TV() {
   const tvMode = useTvMode();
+  const [profile, setProfile] = useState<MediaProfileId | null>(() => loadMediaProfile());
+  const [choosingProfile, setChoosingProfile] = useState(() => loadMediaProfile() === null);
   const [advanced, setAdvanced] = useState(() => { try { return localStorage.getItem("homelab:advanced-media") === "true"; } catch { return false; } });
   const [watchIntent, setWatchIntent] = useState<{ intent: SearchIntent; resumeAt: number } | null>(null);
   const [config, setConfig] = useState<{ tmdb: boolean; prowlarr: boolean; torrserver: boolean; continueWatching?: boolean } | null>(null);
@@ -24,6 +27,14 @@ export default function TV() {
   const [retry, setRetry] = useState(0);
   const [checks, setChecks] = useState<Record<string, { state: string; version?: string; error?: string }> | null>(null);
   const task = useMediaTask();
+  const chooseProfile = (next: MediaProfileId) => {
+    saveMediaProfile(next);
+    setProfile(next);
+    setChoosingProfile(false);
+    setChosen(null);
+    setWatchIntent(null);
+    window.dispatchEvent(new CustomEvent("homelab:continue-watching-changed"));
+  };
   useEffect(() => {
     const controller = new AbortController();
     void mediaApi<NonNullable<typeof config>>("status", AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)])).then(c => { if (!controller.signal.aborted) { setConfig(c); setError(""); if (!c.tmdb) setMode("sources"); } }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
@@ -40,13 +51,15 @@ export default function TV() {
       {checks && <div className="space-y-2 rounded border border-neutral-700 p-4 text-xs">{Object.entries(checks).map(([name, check]) => <p key={name}><strong className="capitalize">{name}:</strong> {check.error || `${check.state}${check.version ? ` · ${check.version}` : ""}`}</p>)}</div>}
       {task.error && <p role="alert" className="text-sm text-orange-400">{task.error}</p>}
   </>;
+  if (!profile || choosingProfile) return <ProfileChooser current={profile} choose={chooseProfile} />;
+  const activeProfile = mediaProfiles.find(item => item.id === profile)!;
   return <div className={`tv-media-page mx-auto max-w-[1600px] space-y-6 p-4 text-neutral-200 sm:p-6 lg:p-8 ${advanced ? "" : "simple-media"}`}>
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div><p className="mb-2 text-xs tracking-[0.2em] text-orange-400">TV & Movies</p><h1 className="text-2xl font-semibold text-white sm:text-3xl">HomeLab Cinema</h1></div>
-      <Switch label="Advanced mode" checked={advanced} onChange={enabled => {
+      <div className="media-profile-actions"><Switch label="Advanced mode" checked={advanced} onChange={enabled => {
         setAdvanced(enabled); setChosen(null); setWatchIntent(null); setMode("catalogue");
         try { localStorage.setItem("homelab:advanced-media", String(enabled)); } catch { /* The switch still works without storage. */ }
-      }} />
+      }} /><button type="button" className={`media-account-button media-profile-${activeProfile.color}`} aria-label={`Current account: ${activeProfile.name}. Switch account`} onClick={() => setChoosingProfile(true)}><span className="media-account-avatar"><UserRound aria-hidden="true" /></span><span>{activeProfile.name}</span><ChevronDown aria-hidden="true" /></button></div>
     </div>
     {error ? <div role="alert" className="space-y-3 rounded-lg border border-orange-500/40 bg-neutral-900 p-5"><h2 className="font-semibold text-white">Set up TV & Movies</h2><p className="text-sm leading-relaxed">{error}</p><Button variant="outline" onClick={() => { setError(""); setRetry(r => r + 1); }}>Retry setup</Button></div> : !config ? <p role="status">Checking media configuration…</p> : <>
       {watchIntent ? <AutoPlayback key={JSON.stringify(watchIntent)} intent={watchIntent.intent} resumeAt={watchIntent.resumeAt} close={() => setWatchIntent(null)} /> : <>

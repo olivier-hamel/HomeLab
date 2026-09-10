@@ -26,6 +26,12 @@ function context(value: unknown): SearchContext | undefined {
 function json(value: unknown, status = 200, headers: Record<string, string> = {}) {
   return Response.json(value, { status, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", ...headers } });
 }
+function mediaProfile(request: Request): string | undefined {
+  const profile = request.headers.get("X-Media-Profile");
+  if (!profile || profile === "default") return undefined;
+  if (profile === "oli" || profile === "max") return profile;
+  throw new MediaError("input", "Choose a valid media account.", 400);
+}
 export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">) {
   const tmdb = new Tmdb(fetcher);
   const catalogue = new CatalogueSearch(fetcher, tmdb);
@@ -90,6 +96,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         return await stream(share.hash, share.file, new Request(request, { signal }), share.owner);
       }
       const owner = requireSession(request);
+      const profile = mediaProfile(request);
       rate(`all:${owner}`, 180);
       if (path[0] === "converted" && path.length === 2 && ["GET", "HEAD"].includes(request.method)) {
         const entry = conversions.get(path[1]);
@@ -111,7 +118,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         if (request.method === "GET") {
           if (path[0] === "continue-watching" && path.length === 1) {
             rate(`progress-list:${owner}`, 30);
-            return json({ movies: await progress.list() });
+            return json({ movies: await progress.list(profile) });
           }
           if (path[0] === "welcome" && path.length === 1) return json(await welcome.get(request.signal));
           if (path[0] === "subtitles" && path[1] === "provider" && path.length === 2) return json({ configured: !!process.env.SUBDL_API_KEY });
@@ -175,7 +182,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
               ...(mediaKind === "tv" && searchContext.episode !== undefined ? { episode: searchContext.episode } : {}),
             };
             if (!historyRecord.title) throw new MediaError("input", "Watch history requires a title.", 400);
-            return json(await history.add(historyRecord));
+            return json(await history.add(historyRecord, profile));
           }
           if (path[0] === "progress" && path.length === 1) {
             rate(`progress-save:${owner}`, 60);
@@ -199,11 +206,11 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
               durationSeconds: duration,
             };
             if (!progressRecord.title) throw new MediaError("input", "Playback progress requires a movie title.", 400);
-            return json(await progress.save(progressRecord));
+            return json(await progress.save(progressRecord, profile));
           }
           if (path[0] === "continue-watching" && path[1] === "remove" && path.length === 2) {
             rate(`progress-remove:${owner}`, 30);
-            return json(await progress.remove(integer(body.movieId, 1, 100_000_000)));
+            return json(await progress.remove(integer(body.movieId, 1, 100_000_000), profile));
           }
           if (["inspect", "prepare"].includes(path[0]) && path.length === 1) {
             rate(`prepare:${owner}`, 20);
