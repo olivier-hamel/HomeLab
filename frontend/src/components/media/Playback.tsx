@@ -7,6 +7,7 @@ import Subtitles, { type NativeSubtitleState } from "./Subtitles";
 import PlaybackTimeline from "./PlaybackTimeline";
 import { useTvMode } from "../../lib/tv";
 import { useTvFocus } from "../useTvNavigation";
+import TvDetails from "../TvDetails";
 import { hasNativeVideoPlayer, isNativeApp, nativePlaybackSupport, nativePlayerStatus, onNativePlayerRequest, playNativeVideo, respondToNativePlayer } from "../../native";
 import { offsetSubtitleVtt, subtitleSearch } from "../../lib/subtitles";
 import { nativeSubtitleSession } from "../../lib/native-subtitles";
@@ -345,12 +346,12 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     {statsError && <p className="text-xs text-orange-400">{statsError}</p>}
     <p className="text-xs leading-relaxed text-neutral-400">Playback checks this browser’s format support and preserves compatible video and audio. External players receive the original file.</p>
     <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} onNativeSubtitleChange={setNativeSubtitle} />
-    <details className="rounded border border-neutral-700 p-4"><summary className="cursor-pointer text-sm">External player · VLC / M3U</summary><div className="mt-4 space-y-3">
+    <TvDetails className="rounded border border-neutral-700 p-4"><summary className="cursor-pointer text-sm">External player · VLC / M3U</summary><div className="mt-4 space-y-3">
       <p className="text-xs leading-relaxed text-neutral-400">Create a link valid for 15 minutes, scoped to this file. The player must reach this dashboard on your LAN/tailnet. The link works without browser cookies; anyone who has it and network access can use it until expiry or revocation. A separate login proxy may still block VLC.</p>
       <Button variant="outline" disabled={task.busy || !!share} onClick={() => { void task.run(s => mediaApi<NonNullable<typeof share>>("share", s, { id: selection.id }), setShare, 15_000); }}>Create player link</Button>
       {share && <><label className="block text-xs text-neutral-400">Stream link<input readOnly value={shareUrl} onFocus={e => e.target.select()} className="mt-2 h-10 w-full rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white" /></label><p className="text-xs text-neutral-500">Expires {new Date(share.expiresAt).toLocaleTimeString()}; long playback needs a new link after expiry.</p><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => { if (navigator.clipboard) void navigator.clipboard.writeText(shareUrl).then(() => setNotice("Stream link copied.")).catch(() => setNotice("Select and copy the link field manually.")); else setNotice("Select and copy the link field manually."); }}><Copy />Copy link</Button><Button variant="outline" onClick={() => { const objectUrl = URL.createObjectURL(new Blob([`#EXTM3U\n#EXTINF:-1,HomeLab video\n${shareUrl}\n`], { type: "audio/x-mpegurl" })); const a = document.createElement("a"); a.href = objectUrl; a.download = "homelab-video.m3u"; a.click(); setTimeout(() => URL.revokeObjectURL(objectUrl), 1000); }}><Download />Download M3U</Button><Button variant="outline" disabled={task.busy} onClick={() => { void task.run(s => mediaApi("revoke", s, { token: share.token }), () => { setShare(null); setNotice("Player link revoked."); }); }}>Revoke link</Button></div></>}
       {task.error && <p role="alert" className="text-sm text-orange-400">{task.error}</p>}
-    </div></details>
+    </div></TvDetails>
     {notice && <p role="status" className="text-xs text-neutral-300">{notice}</p>}
   </div>;
 }

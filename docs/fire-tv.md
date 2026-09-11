@@ -15,6 +15,15 @@ You can also use that URL on a desktop to preview the TV layout. Use the
 only in that browser; `?tv=1` always overrides a saved desktop choice.
 The URL works even when browser storage is blocked.
 
+TV mode includes animated poster focus and artwork zoom, staggered catalogue
+entrances, page and loading fades, smooth D-pad scrolling, and opening/closing
+transitions for title dialogs and expandable panels. The existing layout stays
+the same, with warmer accents and darker surfaces. Motion uses short CSS
+transitions and native browser animations, with no additional animation library.
+The device/browser's **Reduce motion** preference disables the decorative motion
+and makes scrolling and dismissal immediate. Watch actions start immediately;
+closing details retains the modal focus trap until its brief exit finishes.
+
 TV mode provides larger text, five poster columns at 720p and seven at 1080p,
 extra space around the screen edges, a strong orange focus outline, and access
 to the other dashboard sections through the header menu.
@@ -91,6 +100,8 @@ services. It checks TV and desktop layouts, browser/cursor/button scrolling,
 remote navigation, dialog focus,
 source/file selection, player controls, and fallback APIs. It simulates media
 events rather than verifying video decoding.
+Motion checks also cover rapid D-pad navigation, interrupted panel toggles,
+dialog exit/focus restoration, and reduced-motion behavior.
 
 `node scripts/test-tv-ui.mjs --native-player` runs the fullscreen bridge flow
 independently: subtitle search/download/archive selection, source replacement

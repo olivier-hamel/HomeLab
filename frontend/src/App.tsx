@@ -34,7 +34,7 @@ export default function App() {
 
   if (tvMode) {
     return <div className="tv-shell">
-      <main id="dashboard-content" tabIndex={-1} className="min-w-0 flex-1 focus:outline-none">
+      <main key={activeSection} id="dashboard-content" tabIndex={-1} className="tv-page-enter min-w-0 flex-1 focus:outline-none">
         {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
         {activeSection === "tv" ? <TV footerActions={tvFooterActions} /> : <Page />}
       </main>
