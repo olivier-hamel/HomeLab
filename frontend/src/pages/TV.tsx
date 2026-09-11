@@ -13,6 +13,7 @@ import { useMediaTask } from "../components/media/useMediaTask";
 import { loadMediaProfile, mediaApi, mediaProfiles, saveMediaProfile, sourceFingerprint, type MediaProfileId, type SearchIntent, type Source } from "../lib/media";
 import { useTvMode } from "../lib/tv";
 import ProfileChooser from "../components/media/ProfileChooser";
+import TvDetails from "../components/TvDetails";
 
 export default function TV({ footerActions }: { footerActions?: HTMLElement | null } = {}) {
   const tvMode = useTvMode();
@@ -88,7 +89,7 @@ export default function TV({ footerActions }: { footerActions?: HTMLElement | nu
         <Sources key={JSON.stringify(intent)} intent={intent} disabled={!config.torrserver} reject={source => { if (chosen && typeof chosen.source !== "string" && sourceFingerprint(chosen.source) === sourceFingerprint(source)) setChosen(null); }} choose={(source, search) => { setChosen({ source, search, key: Date.now() }); (tvMode ? document.scrollingElement : document.getElementById("dashboard-content"))?.scrollTo({ top: 0, behavior: tvMode ? "auto" : "smooth" }); }} />
       </>}
       </>}
-      {tvMode && <details className="space-y-4 rounded border border-neutral-700 p-4"><summary>Media connections</summary>{connections}</details>}
+      {tvMode && <TvDetails className="space-y-4 rounded border border-neutral-700 p-4"><summary>Media connections</summary>{connections}</TvDetails>}
       </>}
     </>}
     </div>

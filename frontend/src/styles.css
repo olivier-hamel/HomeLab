@@ -172,6 +172,9 @@ html, body, #root { min-height: 100%; }
 
 /* TV rules are explicitly scoped: desktop and mobile keep their existing layout. */
 html[data-tv-mode="true"] {
+  --tv-ease: cubic-bezier(.22, 1, .36, 1);
+  --tv-fast: 160ms;
+  --tv-duration: 280ms;
   font-size: 18px;
   scroll-behavior: auto;
   scroll-padding-top: 1.5rem;
@@ -183,7 +186,7 @@ html[data-tv-mode="true"] {
   flex-direction: column;
   min-height: 100vh;
   min-height: 100svh;
-  background: #0a0a0a;
+  background: radial-gradient(ellipse at 50% 0, #211a15 0, #0d0e11 38rem);
 }
 
 [data-tv-mode="true"] .tv-footer {
@@ -267,8 +270,126 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
 [data-tv-mode="true"] .continue-card-main { height: 100%; }
 [data-tv-mode="true"] .continue-card-main > strong { font-size: 1rem; }
 [data-tv-mode="true"] .continue-card-main > span:last-child { font-size: .8rem; }
-[data-tv-mode="true"] *, [data-tv-mode="true"] *::before, [data-tv-mode="true"] *::after { animation: none !important; transition: none !important; }
-[data-tv-mode="true"] .animate-spin { animation: spin 1s linear infinite !important; }
+
+/* Brief, bounded motion keeps the remote responsive on Fire TV hardware.
+   Entrance fades and focus transforms use separate elements/properties so
+   rapidly moving focus never waits for the catalogue's stagger to finish. */
+[data-tv-mode="true"] :is(button, a[href], input, select, textarea, summary) {
+  transition: transform var(--tv-duration) var(--tv-ease),
+    background-color var(--tv-fast) ease, border-color var(--tv-fast) ease,
+    color var(--tv-fast) ease, box-shadow var(--tv-duration) ease,
+    opacity var(--tv-fast) ease;
+}
+[data-tv-mode="true"] :is(button, a[href]):not(:disabled):focus {
+  transform: translateY(-2px);
+}
+[data-tv-mode="true"] :is(button, a[href]):not(:disabled):active {
+  transform: translateY(0) scale(.97);
+  transition-duration: 80ms;
+}
+[data-tv-mode="true"] :is(button, input, select, summary):focus {
+  box-shadow: 0 0 0 7px #171717, 0 5px 24px #fb923c24;
+}
+[data-tv-mode="true"] button:disabled { opacity: .45; }
+[data-tv-mode="true"] button.bg-orange-600 {
+  background-color: #c95d20;
+  box-shadow: inset 0 1px 0 #ffffff24, 0 4px 14px #0003;
+}
+[data-tv-mode="true"] button.bg-orange-600:is(:focus, :hover) { background-color: #e7772e; }
+[data-tv-mode="true"] .tv-footer { border-color: #303034; background: #111216; }
+[data-tv-mode="true"] .media-account-button { border-color: #3d3834; background: #1b1918; }
+[data-tv-mode="true"] .media-switch-track { transition: background-color 200ms ease; }
+[data-tv-mode="true"] .media-switch-track > span { transition: transform var(--tv-duration) var(--tv-ease); }
+
+[data-tv-mode="true"] .tv-page-enter { animation: tv-fade-in 280ms ease-out; }
+[data-tv-mode="true"] :is(.simple-playback, .simple-player-screen) { animation: tv-fade-in 280ms ease-out; }
+[data-tv-mode="true"] :is(.tv-media-page, .tv-surface-enter, .simple-watch, .media-profile-panel) {
+  animation: tv-surface-in 360ms var(--tv-ease);
+}
+[data-tv-mode="true"] :is(.simple-watch-pending, .simple-player-options, [aria-label="Subtitle timing"], [aria-label="Torrent files"]) {
+  animation: tv-surface-in 300ms var(--tv-ease);
+}
+[data-tv-mode="true"] :is(.tv-media-page, dialog) :is([role="status"], [role="alert"]) {
+  animation: tv-fade-in 220ms ease-out;
+}
+[data-tv-mode="true"] #catalogue-suggestions {
+  transform-origin: top center;
+  animation: tv-surface-in 220ms var(--tv-ease);
+  border-color: #5b493b;
+  background: #18191d;
+}
+
+[data-tv-mode="true"] .tv-catalogue-grid .title-card {
+  border-color: #34302d;
+  background: linear-gradient(155deg, #1d1c1b, #141518);
+  transform-origin: center center;
+  transition: transform var(--tv-duration) var(--tv-ease), border-color 180ms ease, box-shadow var(--tv-duration) ease;
+  animation: tv-fade-in 380ms ease-out both;
+  animation-delay: var(--tv-stagger, 0ms);
+}
+[data-tv-mode="true"] .tv-catalogue-grid .title-card:is(:hover, :focus-within) {
+  z-index: 2;
+  transform: translateY(-3px) scale(1.025);
+  border-color: #ffb775;
+  outline-color: #ffb775;
+  box-shadow: 0 10px 24px #0008, 0 0 18px #fb923c1c;
+}
+[data-tv-mode="true"] .tv-catalogue-grid .title-card > button:first-child { transform: none; }
+[data-tv-mode="true"] .tv-catalogue-grid .title-card > button:first-child:active { transform: scale(.98); }
+[data-tv-mode="true"] :is(.tv-catalogue-grid, .continue-poster) img {
+  transition: transform 420ms var(--tv-ease), opacity 240ms ease;
+}
+[data-tv-mode="true"] :is(.title-card, .continue-card):is(:hover, :focus-within) img { transform: scale(1.045); }
+[data-tv-mode="true"] .simple-card-action {
+  opacity: .65;
+  transform: translateY(3px);
+  transition: opacity 220ms ease, transform 300ms var(--tv-ease);
+}
+[data-tv-mode="true"] .title-card:is(:hover, :focus-within) .simple-card-action { opacity: 1; transform: translateY(0); }
+[data-tv-mode="true"] .title-card .font-semibold { transition: color 180ms ease; }
+[data-tv-mode="true"] .continue-card { animation: tv-fade-in 380ms ease-out both; animation-delay: var(--tv-stagger, 0ms); }
+[data-tv-mode="true"] .continue-card-main:is(:hover, :focus) {
+  transform: translateY(-3px) scale(1.015);
+  background-color: #201c19;
+}
+[data-tv-mode="true"] .continue-progress > span { transition: width 400ms var(--tv-ease); }
+[data-tv-mode="true"] .media-profile-card {
+  animation: tv-fade-in 400ms ease-out both;
+  animation-delay: var(--tv-stagger, 0ms);
+}
+[data-tv-mode="true"] .media-profile-card:is(:hover, :focus) { transform: translateY(-6px) scale(1.025); }
+[data-tv-mode="true"] .media-profile-avatar { transition: transform 360ms var(--tv-ease), box-shadow 300ms ease; }
+[data-tv-mode="true"] .media-profile-card:is(:hover, :focus) .media-profile-avatar {
+  transform: scale(1.035);
+  box-shadow: 0 1rem 2.5rem #000a, 0 0 22px #ffffff12;
+}
+[data-tv-mode="true"] .simple-episodes > button { animation: tv-fade-in 280ms ease-out; }
+[data-tv-mode="true"] .simple-episodes > button:is(:hover, :focus) {
+  transform: translateX(3px);
+  border-color: #fb923c;
+  background-color: #231c17;
+}
+[data-tv-mode="true"] .tv-source-card { animation: tv-fade-in 300ms ease-out; transition: border-color 180ms ease, background-color 180ms ease; }
+[data-tv-mode="true"] .tv-source-card:focus-within { border-color: #fb923c; background-color: #211b16; }
+
+[data-tv-mode="true"] dialog[open] {
+  animation: tv-dialog-in 300ms var(--tv-ease) both;
+  border-color: #856044;
+  background: linear-gradient(145deg, #24211e, #16171b 65%);
+  box-shadow: 0 28px 80px #000a, inset 0 1px 0 #ffffff0d;
+}
+[data-tv-mode="true"] dialog[open]::backdrop { background: #050609cc; animation: tv-fade-in 260ms ease-out both; }
+[data-tv-mode="true"] dialog[data-tv-closing="true"] { animation: tv-dialog-out 160ms ease-in both; pointer-events: none; }
+[data-tv-mode="true"] dialog[data-tv-closing="true"]::backdrop { animation: tv-fade-out 160ms ease-in both; }
+[data-tv-mode="true"] details { transition: border-color 180ms ease, background-color 180ms ease; }
+[data-tv-mode="true"] details[open] { border-color: #615044; background-color: #161515; }
+[data-tv-mode="true"] details[open] > :not(summary) { animation: tv-surface-in 240ms var(--tv-ease); }
+
+@keyframes tv-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tv-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes tv-surface-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tv-dialog-in { from { opacity: 0; transform: translateY(14px) scale(.975); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes tv-dialog-out { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(8px) scale(.985); } }
 
 @media (min-width: 1800px) {
   html[data-tv-mode="true"] { font-size: 22px; }
@@ -284,5 +405,7 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
   *, *::before, *::after {
     animation: none !important;
     transition: none !important;
+    scroll-behavior: auto !important;
   }
+  [data-tv-mode="true"] :is(button, a[href], .title-card, .title-card img, .continue-poster img, .simple-card-action, .media-profile-avatar) { transform: none !important; }
 }

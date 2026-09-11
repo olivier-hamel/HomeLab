@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Film, Info, Play, Search, Star, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { mediaApi, sourceIntent, type ContinueWatchingMovie, type Details, type SearchIntent, type Title } from "../../lib/media";
 import { useTvMode } from "../../lib/tv";
+import useTvDialogMotion from "../useTvDialogMotion";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 type CatalogueResponse = { titles: Title[]; pages: number; originalQuery?: string; correctedQuery?: string; correctionProvider?: "gemini" };
@@ -36,7 +37,7 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
     else setChosen(title);
   };
   const exitSearch = () => { setText(""); setQuery(""); setPage(1); setChosen(null); setSuggestions([]); setSuggestionFocus(false); };
-  return <div className="space-y-5">
+  return <div className="tv-surface-enter space-y-5">
     <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setSuggestionFocus(false); setQuery(text.trim()); setPage(1); setRetry(r => r + 1); }}>
       <label className="sr-only" htmlFor="catalogue-query">Search catalogue</label>
       <div className="relative min-w-40 flex-1" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setSuggestionFocus(false); }}>
@@ -85,7 +86,7 @@ function TitleGrid({ titles, choose, showDetails, simple }: { titles: Title[]; c
   const tvMode = useTvMode();
   const tvDetails = simple && tvMode;
   return <div className="tv-catalogue-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-    {titles.map(title => <div key={`${title.kind}/${title.id}`} className={`title-card group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 transition-colors hover:border-orange-500 focus-within:border-orange-500 focus-within:outline focus-within:outline-2 focus-within:outline-orange-500 ${simple ? "simple-title-card" : ""}`}>
+    {titles.map((title, index) => <div key={`${title.kind}/${title.id}`} style={{ "--tv-stagger": `${Math.min(index, 9) * 22}ms` } as CSSProperties} className={`title-card group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 transition-colors hover:border-orange-500 focus-within:border-orange-500 focus-within:outline focus-within:outline-2 focus-within:outline-orange-500 ${simple ? "simple-title-card" : ""}`}>
       <button className="block w-full text-left focus-visible:outline-none" onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" && !tvDetails ? "Watch" : title.kind === "tv" ? "Choose episode of" : "Details for" : "Details for"} ${title.title}`}>
         <div className="relative flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}{simple && <span className="simple-card-action"><Play className="h-5 w-5 fill-current" />{title.kind === "movie" ? tvDetails ? "View details" : "Watch now" : "Choose episode"}</span>}</div>
         <div className="space-y-2 p-3"><p className="line-clamp-2 text-sm font-semibold text-white group-hover:text-orange-400">{title.title}</p><p className="text-xs text-neutral-400">{title.year || "Year unknown"} · {title.kind === "movie" ? "Movie" : "TV"}</p>{!simple && <><p className="line-clamp-2 text-xs leading-relaxed text-neutral-500">{title.overview || "No overview available."}</p><span className="block text-xs text-orange-400">View details</span></>}</div>
@@ -120,6 +121,7 @@ export function TitleDetails({ title, close, find, simple, initialProgress }: { 
   const tvMode = useTvMode();
   const tvDetails = simple && tvMode;
   const panel = useRef<HTMLDialogElement>(null);
+  const { dismiss, closing, finish } = useTvDialogMotion(panel, close);
   const primaryAction = useRef<HTMLButtonElement>(null);
   const primaryFocused = useRef(false);
   const [data, setData] = useState<Details | null>(null);
@@ -173,19 +175,19 @@ export function TitleDetails({ title, close, find, simple, initialProgress }: { 
       setRestarting(false);
     }
   };
-  return <dialog ref={panel} aria-labelledby="catalogue-details-title" onCancel={e => { e.preventDefault(); close(); }} onClick={e => {
+  return <dialog ref={panel} data-tv-closing={closing ? "true" : undefined} onAnimationEnd={finish} onClickCapture={e => { if (closing) { e.preventDefault(); e.stopPropagation(); } }} aria-labelledby="catalogue-details-title" onCancel={e => { e.preventDefault(); dismiss(); }} onClick={e => {
     if (e.target !== e.currentTarget) return;
     const bounds = e.currentTarget.getBoundingClientRect();
-    if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) close();
+    if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) dismiss();
   }} className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl space-y-4 overflow-y-auto overscroll-contain rounded-lg border border-orange-500/40 bg-neutral-900 p-4 text-neutral-200 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm sm:p-6">
-    <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 id="catalogue-details-title" className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2>{data?.kind === "movie" && data.rating !== null && <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-300" aria-label={`IMDb rating ${data.rating} out of 10`}><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" /><strong className="text-white">{data.rating.toFixed(1)}</strong><span className="text-neutral-500">/ 10 IMDb</span></p>}</div>{!tvDetails && <Button size="icon" variant="ghost" className="shrink-0" aria-label="Close details" onClick={close}><X /></Button>}</div>
+    <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 id="catalogue-details-title" className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2>{data?.kind === "movie" && data.rating !== null && <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-300" aria-label={`IMDb rating ${data.rating} out of 10`}><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" /><strong className="text-white">{data.rating.toFixed(1)}</strong><span className="text-neutral-500">/ 10 IMDb</span></p>}</div>{!tvDetails && <Button size="icon" variant="ghost" className="shrink-0" aria-label="Close details" onClick={dismiss}><X /></Button>}</div>
     <div className="grid items-start gap-6 sm:grid-cols-[minmax(0,1fr)_10rem]">
     <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
     {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <div className="flex flex-wrap gap-3">
       <Button ref={primaryAction} data-tv-initial-focus={tvDetails ? "" : undefined} disabled={restarting || (tvDetails && progress === undefined)} className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data), progress?.playbackPositionSeconds ?? 0)}>{tvDetails && progress === undefined ? "Checking progress…" : tvDetails ? progress ? "Continue" : "Watch" : simple ? "Watch now" : "Find sources"}</Button>
       {tvDetails && progress && <Button variant="outline" disabled={restarting} onClick={() => { void restart(data); }}>{restarting ? "Starting…" : "Watch from beginning"}</Button>}
-      {tvDetails && <Button variant="ghost" onClick={close}>Close</Button>}
+      {tvDetails && <Button variant="ghost" onClick={dismiss}>Close</Button>}
       {restartError && <p role="alert" className="w-full text-sm text-orange-400">{restartError}</p>}
     </div> : <div className="space-y-4">
       <label className="flex flex-wrap items-center gap-3 text-sm">Season<select className={field} value={season ?? ""} onChange={e => setSeason(Number(e.target.value))}>{data.seasons.map(s => <option key={s.number} value={s.number}>{s.name} ({s.episodes ?? "?"} episodes)</option>)}</select></label>

@@ -12,13 +12,15 @@ function scrollContainer(from: Element | null): HTMLElement | null {
   return (scope ?? document.scrollingElement) as HTMLElement | null;
 }
 
-export function scrollTvPage(direction: -1 | 1, from: Element | null = null, distance?: number): boolean {
+export function scrollTvPage(direction: -1 | 1, from: Element | null = null, distance?: number, smooth = true): boolean {
   const container = scrollContainer(from);
   if (!container) return false;
   const before = container.scrollTop;
   const height = container === document.scrollingElement ? window.innerHeight : container.clientHeight;
-  container.scrollBy({ top: direction * (distance ?? height * 0.7), behavior: "auto" });
-  return container.scrollTop !== before;
+  const target = Math.max(0, Math.min(container.scrollHeight - height, before + direction * (distance ?? height * 0.7)));
+  if (Math.abs(target - before) < 1) return false;
+  container.scrollTo({ top: target, behavior: smooth && !window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto" });
+  return true;
 }
 
 export default function useTvScrolling(enabled: boolean) {
@@ -52,7 +54,7 @@ export default function useTvScrolling(enabled: boolean) {
       // A brief dwell lets the user click a control near the edge without moving it.
       if (now - started > 350) {
         const distance = Math.min(50, now - previous) * 0.45;
-        if (!scrollTvPage(direction, target, distance)) return;
+        if (!scrollTvPage(direction, target, distance, false)) return;
       }
       previous = now;
       frame = requestAnimationFrame(tick);

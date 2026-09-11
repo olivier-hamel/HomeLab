@@ -7,6 +7,7 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { checkNativePlayer } from './native-player-ui-checks.mjs';
+import { checkTvMotion } from './tv-motion-ui-checks.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'frontend/dist');
@@ -111,9 +112,22 @@ try {
     await call('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code || 0, ...(key === 'Enter' ? { text: '\r' } : {}) });
     await call('Input.dispatchKeyEvent', { type: 'keyUp', key, windowsVirtualKeyCode: code || 0 });
     await delay(70);
+    if (key === 'Escape') await until('!document.querySelector("[data-tv-closing]")');
   };
   const activate = async selector => { await focus(selector); await press('Enter'); };
   const active = () => evaluate('document.activeElement?.getAttribute("aria-label") || document.activeElement?.id || document.activeElement?.textContent');
+  const scrollSettled = selector => evaluate(`(async () => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    let previous = element.scrollTop;
+    let stable = 0;
+    for (let frame = 0; frame < 120; frame++) {
+      await new Promise(requestAnimationFrame);
+      stable = element.scrollTop === previous ? stable + 1 : 0;
+      if (stable >= 6) return;
+      previous = element.scrollTop;
+    }
+    throw new Error('Scroll did not settle');
+  })()`);
   const resize = (width, height) => call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await call('Page.enable'); await call('Runtime.enable');
   if (process.argv.includes('--native-player')) {
@@ -145,6 +159,7 @@ try {
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".tv-footer")).display'), 'none', 'Profile chooser hides the TV footer');
   await evaluate('document.querySelector(".media-profile-grid button")?.click()');
   await until('document.querySelectorAll(".tv-catalogue-grid .title-card").length === 16');
+  await delay(650); // Let the bounded entrance stagger settle before layout screenshots.
   assert.notEqual(await evaluate('getComputedStyle(document.querySelector(".tv-footer")).display'), 'none', 'TV footer returns after choosing a profile');
   for (const [width, height] of [[1280, 720], [1920, 1080], [960, 540], [390, 844]]) {
     await resize(width, height);
@@ -158,6 +173,7 @@ try {
     }
   }
   await resize(1280, 720);
+  await checkTvMotion({ call, evaluate, until, activate, focus, press });
   assert.equal(await evaluate(`document.querySelector('[aria-label="Advanced mode"]').getAttribute('aria-checked')`), 'false', 'Simple mode is the default');
   assert.equal(await evaluate(`!!document.querySelector('#source-query')`), false);
   assert.equal(metrics.adds.length, 0, 'Browsing does not add a torrent');
@@ -172,7 +188,7 @@ try {
   await focus('.simple-episodes button');
   for (let i = 1; i < episodes.length; i++) await press('ArrowDown');
   assert.equal(await active(), 'Watch episode 24: Episode 24', 'Remote can reach the last episode');
-  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= document.querySelector("dialog").getBoundingClientRect().bottom'), 'Last episode is visible in the dialog');
+  await until('document.activeElement.getBoundingClientRect().bottom <= document.querySelector("dialog").getBoundingClientRect().bottom');
   assert.equal(await evaluate('window.scrollY'), episodeBackground, 'Episode scrolling leaves the background still');
   await press('Escape');
   await evaluate('window.blockAutoplay = true');
@@ -269,7 +285,7 @@ try {
   await evaluate('window.scrollTo(0, 0)');
   await focus('[aria-label="Advanced mode"]'); await press('PageDown');
   assert.ok(await evaluate('window.scrollY > 0'), 'PageDown scrolls from a focused page control');
-  await press('PageUp'); assert.equal(await evaluate('window.scrollY'), 0);
+  await press('PageUp'); await until('window.scrollY === 0');
   await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: 710 });
   await until('window.scrollY > 60');
   await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 640, y: 360 });
@@ -294,7 +310,7 @@ try {
   await press('ArrowRight'); assert.equal(await active(), 'Details for Example show 1');
   await press('ArrowDown'); assert.equal(await active(), 'Details for Example show 4');
   await press('ArrowDown'); assert.equal(await active(), 'Details for Example show 7');
-  assert.ok(await evaluate('document.activeElement.getBoundingClientRect().bottom <= innerHeight'), 'Offscreen poster scrolls into the viewport');
+  await until('document.activeElement.getBoundingClientRect().bottom <= innerHeight');
   await press('Enter'); await until('!!document.querySelector("dialog[open]")');
   for (const key of ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp']) {
     await press(key); assert.ok(await evaluate('!!document.activeElement.closest("dialog")'), 'Focus stays in title details');
@@ -303,6 +319,7 @@ try {
   await evaluate(`document.querySelector('dialog').style.maxHeight = '260px'; document.querySelector('dialog .max-w-4xl').style.minHeight = '900px'`);
   await focus('dialog button'); await press('PageDown');
   assert.ok(await evaluate('document.querySelector("dialog").scrollTop > 0'), 'PageDown scrolls long dialog content');
+  await scrollSettled('dialog');
   const dialogScroll = await evaluate('document.querySelector("dialog").scrollTop');
   const dialogBottom = await evaluate('document.querySelector("dialog").getBoundingClientRect().bottom');
   await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: dialogBottom - 10 });
@@ -391,7 +408,7 @@ try {
   await until('document.querySelector("#startup-error")?.hidden === false');
   assert.match(await evaluate('document.querySelector("#startup-details").textContent'), /React render error[\s\S]*Fixture React render failure/);
   await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: renderFailure.identifier });
-  console.log(JSON.stringify({ passed: true, viewports: [1280, 1920, 960, 390], checks: 'simple default and saved advanced mode, automatic Gemini selection, largest main video, autoplay denial recovery, automatic English ZIP selection, subtitle offset and cancellation, next source and failed-source fallback, exhausted sources, AI cancellation, desktop isolation, auto-detection, fallback APIs, scrolling, D-pad, dialogs, manual selection, seeking, fullscreen and Back', screenshots: output }, null, 2));
+  console.log(JSON.stringify({ passed: true, viewports: [1280, 1920, 960, 390], checks: 'TV motion, rapid focus changes, animated disclosures and dialog dismissal, reduced motion, simple default and saved advanced mode, automatic Gemini selection, largest main video, autoplay denial recovery, automatic English ZIP selection, subtitle offset and cancellation, next source and failed-source fallback, exhausted sources, AI cancellation, desktop isolation, auto-detection, fallback APIs, scrolling, D-pad, dialogs, manual selection, seeking, fullscreen and Back', screenshots: output }, null, 2));
   }
 } finally {
   if (call && socket?.readyState === WebSocket.OPEN) {

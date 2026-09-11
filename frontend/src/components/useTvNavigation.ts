@@ -7,14 +7,16 @@ const selector = "button, a[href], input, select, textarea, summary, video[contr
 function controls(root: ParentNode): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(element => {
     if (element.tabIndex < 0 || element.matches(":disabled") || element.closest("[inert], [hidden], [aria-hidden='true']")) return false;
+    const closingDisclosure = element.closest("details[data-tv-closing]");
+    if (closingDisclosure && element !== closingDisclosure.querySelector("summary")) return false;
     const bounds = element.getBoundingClientRect();
     return bounds.width > 0 && bounds.height > 0 && getComputedStyle(element).visibility !== "hidden";
   });
 }
 
-function focus(element: HTMLElement | undefined) {
+function focus(element: HTMLElement | undefined, smooth = false) {
   element?.focus({ preventScroll: true });
-  element?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
+  element?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: smooth && !window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto" });
 }
 
 export function useTvFocus(ref: RefObject<HTMLElement | null>) {
@@ -69,7 +71,10 @@ export default function useTvNavigation(enabled: boolean) {
           event.preventDefault();
           dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
         } else if (details instanceof HTMLDetailsElement) {
-          event.preventDefault(); details.open = false; focus(details.querySelector("summary") ?? undefined);
+          event.preventDefault();
+          if (details.hasAttribute("data-tv-disclosure")) details.dispatchEvent(new Event("tv:close-details"));
+          else details.open = false;
+          focus(details.querySelector("summary") ?? undefined);
         } else {
           const back = document.querySelector<HTMLElement>("[data-tv-back]");
           if (back) { event.preventDefault(); back.click(); }
@@ -95,7 +100,7 @@ export default function useTvNavigation(enabled: boolean) {
         .map(element => ({ element, bounds: element.getBoundingClientRect() }));
       // Fixed scroll buttons must not interrupt navigation through offscreen rows.
       const next = nearestControl(active.getBoundingClientRect(), candidates.filter(({ element }) => !element.closest("[data-tv-scroll-controls]")), key as Direction);
-      if (next) { event.preventDefault(); focus(next.element); }
+      if (next) { event.preventDefault(); focus(next.element, true); }
       else if (!horizontal && scrollTvPage(key === "ArrowUp" ? -1 : 1, active, window.innerHeight * 0.2)) event.preventDefault();
       else {
         const toolbar = nearestControl(active.getBoundingClientRect(), candidates, key as Direction);

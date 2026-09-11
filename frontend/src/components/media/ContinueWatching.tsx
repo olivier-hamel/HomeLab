@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, Film } from "lucide-react";
 import { Button } from "../ui/button";
 import { mediaApi, type ContinueWatchingMovie, type SearchIntent } from "../../lib/media";
@@ -42,9 +42,9 @@ export default function ContinueWatching({ onResume }: { onResume: (intent: Sear
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}
     {selected && <TitleDetails title={{ id: selected.movieId, kind: "movie", title: selected.title, year: selected.year, overview: "", poster: selected.poster }} initialProgress={selected} simple close={() => setSelected(null)} find={(intent, position) => { setSelected(null); onResume(intent, position ?? 0); }} />}
     {!!movies.length && <div ref={row} className="continue-watching-row" aria-label="In-progress movies">
-      {movies.map(movie => {
+      {movies.map((movie, index) => {
         const percent = Math.max(0, Math.min(100, movie.playbackPositionSeconds / movie.durationSeconds * 100));
-        return <article key={movie.movieId} className="continue-card">
+        return <article key={movie.movieId} className="continue-card" style={{ "--tv-stagger": `${Math.min(index, 7) * 30}ms` } as CSSProperties}>
           <button type="button" className="continue-card-main" aria-label={`Details for ${movie.title}`} onClick={() => setSelected(movie)}>
             <span className="continue-poster">{movie.poster ? <img src={movie.poster} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <Film aria-hidden="true" />}
               <span className="continue-progress" aria-hidden="true"><span style={{ width: `${percent}%` }} /></span>
