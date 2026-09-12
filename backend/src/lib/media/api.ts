@@ -15,6 +15,7 @@ import { choosePlayback, inspectPlayback, type MediaProbe, type PlaybackOption }
 import { ProgressStore, WatchHistoryStore, type ContinueWatchingRecord, type WatchHistoryRecord } from "./progress-store.ts";
 import { MediaRecommendations } from "./recommendations.ts";
 import { Omdb } from "./omdb.ts";
+import { MovieDiscovery } from "./movie-discovery.ts";
 
 type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe };
 type Share = { owner: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
@@ -51,6 +52,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
   const history = new WatchHistoryStore();
   const recommendations = new MediaRecommendations(fetcher, tmdb);
   const omdb = new Omdb(fetcher);
+  const discovery = new MovieDiscovery(fetcher, tmdb);
   const sourceSearches = new BoundedCache<{ owner: string; query: string; context?: SearchContext; target: SourceTarget; sources: Source[] }>(40, 2 * 60_000);
   const subtitleChoices = new BoundedCache<{ owner: string; playback: string; file: SubdlFile }>(2000, 10 * 60_000);
   const playbacks = new BoundedCache<Playback>(128, 8 * 60 * 60_000);
@@ -95,7 +97,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         rate("session-start", 60);
         const { cookie } = startSession(request);
         // Configuration states are independent; connectivity is checked explicitly below.
-        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), recommendations: ProgressStore.configured() && !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
+        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), discovery: !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, recommendations: ProgressStore.configured() && !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
       }
       if (path[0] === "external" && ["GET", "HEAD"].includes(request.method)) {
         const share = shares.get(path[1]);
@@ -172,6 +174,16 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         }
         if (mutation) {
           const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 16_384))));
+          if (path[0] === "discovery" && path.length === 1) {
+            rate(`movie-discovery:${owner}`, 12);
+            const discoverySignal = AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]);
+            try {
+              return json(await discovery.next(owner, profile, body, () => ProgressStore.configured() ? history.list(profile, 25) : Promise.resolve([]), discoverySignal));
+            } catch (error) {
+              if (discoverySignal.aborted && !request.signal.aborted) throw new MediaError("discovery_timeout", "Movie suggestions took too long to load. Please try again; you can keep your current choices.", 504);
+              throw error;
+            }
+          }
           if (path[0] === "history" && path.length === 1) {
             rate(`history-add:${owner}`, 30);
             const id = string(body.id, 64);

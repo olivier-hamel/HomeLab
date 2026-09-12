@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { checkNativePlayer } from './native-player-ui-checks.mjs';
 import { checkTvMotion } from './tv-motion-ui-checks.mjs';
+import { checkMovieDiscovery } from './movie-discovery-ui-checks.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'frontend/dist');
@@ -25,6 +26,7 @@ const source = { id: 'source', title: 'Example movie 2026', indexer: 'Fixture', 
 const alternatives = [source, { ...source, id: 'best', title: 'Example movie 2026 WEB-DL-GROUP' }, { ...source, id: 'broken', title: 'Example movie 2026 alternate' }, { ...source, id: 'wrong', title: 'Unrelated movie' }];
 const advice = { provider: 'gemini', ranking: ['best', 'broken', 'source', 'wrong'].map(id => ({ id, identity: id === 'wrong' ? 'mismatch' : 'match', verdict: 'good', method: 'gemini', reason: 'Its 1080p quality and 5,000 reported seeders make it a strong streaming choice.' })) };
 const metrics = { adds: [], selects: [], reviews: 0, subtitleSearches: [], subtitleDownloads: [] };
+const discoveryFixture = { requests: [], fail: false, delay: 0, duplicates: false };
 let simpleFixture = true;
 let subtitleDelay = 0;
 let recommendationDelay = 250;
@@ -36,6 +38,14 @@ const server = createServer(async (req, res) => {
     const endpoint = path.slice('/api/media/'.length);
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : {};
+    if (endpoint === 'discovery') {
+      discoveryFixture.requests.push(body);
+      await delay(discoveryFixture.delay);
+      const offset = body.sessionId ? 20 : 0;
+      res.writeHead(discoveryFixture.fail ? 503 : 200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(discoveryFixture.fail ? { error: 'Suggestions temporarily unavailable. Please try again.' } : { sessionId: `discovery-${offset}`, titles: titles.slice(0, 16).map(title => discoveryFixture.duplicates ? { ...titles[0], title: 'Repeated movie' } : { ...title, id: title.id + offset, title: `Discovery movie ${title.id + offset}` }) }));
+      return;
+    }
     if (endpoint === 'recommend') { metrics.reviews++; await delay(recommendationDelay); }
     if (endpoint === 'playback') {
       metrics.adds.push(body.sourceId);
@@ -44,7 +54,7 @@ const server = createServer(async (req, res) => {
     if (endpoint === 'select') metrics.selects.push(body.fileId);
     if (endpoint === 'subtitles/search') metrics.subtitleSearches.push(body);
     if (endpoint === 'subtitles/download') { metrics.subtitleDownloads.push(body.choice); await delay(subtitleDelay); }
-    const json = endpoint === 'status' ? { tmdb: true, prowlarr: true, torrserver: true }
+    const json = endpoint === 'status' ? { tmdb: true, prowlarr: true, torrserver: true, discovery: true }
       : endpoint === 'catalogue' ? { titles: url.searchParams.get('kind') === 'all' ? mixedTitles : url.searchParams.get('kind') === 'tv' ? shows : titles, pages: 1 }
       : endpoint.startsWith('details/') ? { ...(endpoint.startsWith('details/tv/') ? shows : titles)[Number(endpoint.split('/').pop()) - 1], seasons: endpoint.startsWith('details/tv/') ? [{ number: 1, name: 'Season 1', episodes: episodes.length }] : [], imdbId: 'tt123', tvdbId: null, rating: 8.1 }
       : endpoint === 'continue-watching' ? { movies: [] }
@@ -130,7 +140,11 @@ try {
   })()`);
   const resize = (width, height) => call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await call('Page.enable'); await call('Runtime.enable');
-  if (process.argv.includes('--native-player')) {
+  if (process.argv.includes('--discovery')) {
+    await checkMovieDiscovery({ call, evaluate, until, activate, focus, press, resize, origin, fixture: discoveryFixture, output });
+    assert.deepEqual(errors, [], 'No browser exceptions during discovery');
+    console.log(JSON.stringify({ passed: true, checks: 'movie discovery: four-movie choices, center skip, 16-movie refinement, loading animation, reduced motion, retries, IMDb, D-pad, focus, exit, cancellation, playback and desktop isolation' }));
+  } else if (process.argv.includes('--native-player')) {
     await resize(1280, 720);
     await checkNativePlayer({ call, evaluate, until, activate, origin, metrics });
     assert.deepEqual(errors, [], 'No browser exceptions during native player requests');
