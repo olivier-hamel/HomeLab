@@ -373,6 +373,11 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         if (waitingForSource) return;
         List<String> items = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
+        String qualityInfo = getIntent().getStringExtra("qualityInfo");
+        if (qualityInfo != null && !qualityInfo.isEmpty()) {
+            items.add("Quality info");
+            actions.add(() -> show(menu("Quality info").setMessage(qualityInfo).create()));
+        }
         items.add(getString(subtitlesLoading ? R.string.player_subtitles_loading :
             subtitlesEnabled ? R.string.player_subtitles_on : R.string.player_subtitles_off));
         actions.add(this::toggleSubtitles);

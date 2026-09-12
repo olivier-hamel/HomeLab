@@ -23,7 +23,7 @@ const torrent = { id: 'fixture', title: 'Example movie', state: 'ready', files: 
 const plan = { id: 'direct', mode: 'direct', mime: 'video/mp4', container: 'mp4', video: 'copy', audio: 'copy', stream: '/api/media/stream/fixture', duration: 120 };
 const source = { id: 'source', title: 'Example movie 2026', indexer: 'Fixture', size: 1000000, seeders: 5000, leechers: 0, peers: 5000, quality: ['1080p'], match: 'Title match' };
 const alternatives = [source, { ...source, id: 'best', title: 'Example movie 2026 WEB-DL-GROUP' }, { ...source, id: 'broken', title: 'Example movie 2026 alternate' }, { ...source, id: 'wrong', title: 'Unrelated movie' }];
-const advice = { provider: 'gemini', ranking: ['best', 'broken', 'source', 'wrong'].map(id => ({ id, identity: id === 'wrong' ? 'mismatch' : 'match', verdict: 'good', method: 'gemini', reason: 'Fixture' })) };
+const advice = { provider: 'gemini', ranking: ['best', 'broken', 'source', 'wrong'].map(id => ({ id, identity: id === 'wrong' ? 'mismatch' : 'match', verdict: 'good', method: 'gemini', reason: 'Its 1080p quality and 5,000 reported seeders make it a strong streaming choice.' })) };
 const metrics = { adds: [], selects: [], reviews: 0, subtitleSearches: [], subtitleDownloads: [] };
 let simpleFixture = true;
 let subtitleDelay = 0;
@@ -200,7 +200,8 @@ try {
   await activate('dialog button.bg-orange-600');
   await until(`document.body.innerText.includes('Ready to watch. Press Play to start.')`);
   assert.deepEqual(metrics.adds, ['best'], 'Uses Gemini ranking, not source result order');
-  assert.ok(await evaluate(`document.body.innerText.includes('Selected with Gemini')`), 'A successful review is accurately labeled');
+  const qualityReviewText = await evaluate('document.body.innerText');
+  assert.ok(qualityReviewText.includes('Quality review') && !qualityReviewText.includes('Gemini says:') && qualityReviewText.includes('Its 1080p quality and 5,000 reported seeders make it a strong streaming choice.'), `The selected torrent shows Gemini's short quality review directly:\n${qualityReviewText}`);
   assert.deepEqual(metrics.selects, [1], 'Selects the main video over a larger sample or non-video');
   assert.equal(await evaluate(`!!document.querySelector('[aria-label="Torrent files"]')`), false);
   assert.equal(metrics.adds.length, 1, 'Blocked autoplay does not mark the source as broken');

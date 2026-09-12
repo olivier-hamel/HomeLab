@@ -85,7 +85,7 @@ const fixture = createServer(async (req, res) => {
       if (url.pathname === '/api/v1/indexerstatus') return json([]);
       if (url.pathname === '/api/v1/search') return url.searchParams.get('indexerIds') === '2' ? json({ error: secret }, 503) : json([
         { title: 'Big Buck Bunny 2008 1080p H264 AAC MP4 — licensed fixture', size: 2 * 1024 ** 3, seeders: 4000 },
-        { title: 'Big Buck Bunny 2008 720p H264 AAC MP4 — alternate fixture', size: 1024 ** 3, seeders: 3000 },
+        { title: 'Big Buck Bunny 2008 720p H264 AAC MP4 — alternate fixture', size: 1024 ** 3, seeders: 100 },
         { title: 'Big Buck Bunny 2008 2160p HEVC DTS — heavy fixture', size: 20 * 1024 ** 3, seeders: 9999 },
         { title: 'Maids Big Buck Bunny 2008 1080p — unrelated fixture', size: videoBytes.length, seeders: null },
       ].map(row => ({ ...row, leechers: 3, downloadUrl: `${upstream}/1/download?apikey=${secret}&link=fixture`, imdbId: 1254207 })));
@@ -222,7 +222,7 @@ try {
     assert.deepEqual(errors, []);
     assert.ok(!browserUrls.some(u => u.includes(secret) || u.includes('generativelanguage.googleapis.com')));
     assert.ok(!logs.join('').includes(secret));
-    const report = { services: 'MOCK TMDB/Prowlarr/TorrServer/Gemini', checks: ['canonical movie metadata', 'wrong-title exclusion before Gemini', 'no wrong-title recommendation after dismissing matches', '3000-seeder streaming target', 'late AI dismissal', 'cached reviews', 'manual sorting', 'restore hidden sources', 'dismiss active selection', 'source layouts at 1440/768/390/320', 'no automatic streaming', 'private credentials'], aiReviews: metrics.aiReviews };
+    const report = { services: 'MOCK TMDB/Prowlarr/TorrServer/Gemini', checks: ['canonical movie metadata', 'wrong-title exclusion before Gemini', 'no wrong-title recommendation after dismissing matches', '100-seeder streaming target', 'late AI dismissal', 'cached reviews', 'manual sorting', 'restore hidden sources', 'dismiss active selection', 'source layouts at 1440/768/390/320', 'no automatic streaming', 'private credentials'], aiReviews: metrics.aiReviews };
     writeFileSync(resolve(out, 'source-assist-report.json'), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report, null, 2));
   } else {

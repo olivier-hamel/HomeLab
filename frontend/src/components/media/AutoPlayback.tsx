@@ -25,6 +25,9 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
   const sequence = useRef(0);
   const [nextPosition, setNextPosition] = useState(resumeAt);
   const [nativeSession] = useState(() => `${Date.now()}-${Math.random()}`);
+  const qualityInfo = chosen?.assessment?.method === "gemini"
+    ? `Gemini quality review: ${chosen.assessment.verdict === "good" ? "Good choice" : chosen.assessment.verdict === "sketchy" ? "Caution" : "Uncertain"}\n\n${chosen.source.quality.length ? chosen.source.quality.join(" · ") : "Quality not identified"} · ${chosen.source.seeders === null ? "Unknown seeders" : `${chosen.source.seeders.toLocaleString()} seeders`}\n\n${chosen.assessment.review ?? chosen.assessment.reason}`
+    : undefined;
 
   const next = async (failed = false, manual = false) => {
     if (active.current) return;
@@ -102,13 +105,12 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
   return <section ref={panel} aria-label="Watch title" className="simple-watch space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <Button variant="ghost" data-tv-back="" onClick={close}><ArrowLeft />Back to browse</Button>
-      {chosen && review && chosen.assessment?.method !== "gemini" && <p role="status" className="max-w-lg text-xs text-neutral-400">{review.warning || "Selected with basic matching"}</p>}
+      {chosen && review && review.provider !== "gemini" && <p role="status" className="max-w-lg text-xs text-neutral-400">{review.warning || "Selected with basic matching"}</p>}
     </div>
-    <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2">
+    <div className="space-y-3">
       <h2 className="text-2xl font-semibold text-white sm:text-3xl">{intent.label || intent.query}</h2>
-      {chosen?.assessment?.method === "gemini" && <p role="status" className="max-w-2xl text-sm leading-relaxed text-neutral-300"><span className="font-medium text-orange-300">Gemini · {chosen.assessment.verdict === "good" ? "Good choice" : chosen.assessment.verdict === "sketchy" ? "Caution" : "Uncertain"}</span><span className="text-neutral-500"> — </span>{chosen.assessment.reason}</p>}
     </div>
-    {chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} nativeSession={nativeSession} simple resumeAt={nextPosition} onFailure={() => { void next(true); }} onNext={position => { if (position !== undefined) setNextPosition(position); void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
+    {chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} nativeSession={nativeSession} qualityInfo={qualityInfo} simple resumeAt={nextPosition} onFailure={() => { void next(true); }} onNext={position => { if (position !== undefined) setNextPosition(position); void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
       {error ? <><p role="alert" className="max-w-md text-center text-neutral-300">{error}</p><Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => { if (!nextBatch.current && !queue.current.length) nextBatch.current = 1; void next(false, true); }}><RotateCcw />Try again</Button></> : <><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status" className="text-neutral-200">{message}</p><p className="text-sm text-neutral-400">This can take a moment. We'll start when it's ready.</p></>}
       <Button variant="ghost" onClick={close}>{error ? "Choose another title" : "Cancel"}</Button>
     </div>}
