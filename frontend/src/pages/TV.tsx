@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Clapperboard, Radio, Search, UserRound } from "lucide-react";
+import { ChevronDown, Clapperboard, Radio, Search, Sparkles, UserRound } from "lucide-react";
 import { Button } from "../components/ui/button";
 import Catalogue from "../components/media/Catalogue";
 import Sources from "../components/media/Sources";
@@ -14,6 +14,7 @@ import { loadMediaProfile, mediaApi, mediaProfiles, saveMediaProfile, sourceFing
 import { useTvMode } from "../lib/tv";
 import ProfileChooser from "../components/media/ProfileChooser";
 import TvDetails from "../components/TvDetails";
+import MovieDiscovery from "../components/media/MovieDiscovery";
 
 export default function TV({ footerActions }: { footerActions?: HTMLElement | null } = {}) {
   const tvMode = useTvMode();
@@ -21,7 +22,8 @@ export default function TV({ footerActions }: { footerActions?: HTMLElement | nu
   const [choosingProfile, setChoosingProfile] = useState(() => loadMediaProfile() === null);
   const [advanced, setAdvanced] = useState(() => { try { return localStorage.getItem("homelab:advanced-media") === "true"; } catch { return false; } });
   const [watchIntent, setWatchIntent] = useState<{ intent: SearchIntent; resumeAt: number } | null>(null);
-  const [config, setConfig] = useState<{ tmdb: boolean; prowlarr: boolean; torrserver: boolean; continueWatching?: boolean; recommendations?: boolean } | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [config, setConfig] = useState<{ tmdb: boolean; prowlarr: boolean; torrserver: boolean; continueWatching?: boolean; recommendations?: boolean; discovery?: boolean } | null>(null);
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"catalogue" | "sources">("catalogue");
   const [intent, setIntent] = useState<SearchIntent>({ query: "" });
@@ -61,6 +63,10 @@ export default function TV({ footerActions }: { footerActions?: HTMLElement | nu
       {task.error && <p role="alert" className="text-sm text-orange-400">{task.error}</p>}
   </>;
   if (!profile || choosingProfile) return <ProfileChooser current={profile} choose={chooseProfile} />;
+  if (tvMode && discovering) return <div className="tv-media-page mx-auto text-neutral-200"><MovieDiscovery key={profile} close={() => {
+    setDiscovering(false);
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>("[data-discovery-open]")?.focus());
+  }} watch={value => { setDiscovering(false); find(value); }} /></div>;
   const activeProfile = mediaProfiles.find(item => item.id === profile)!;
   const advancedSwitch = <Switch label="Advanced mode" checked={advanced} onChange={enabled => {
     setAdvanced(enabled); setChosen(null); setWatchIntent(null); setMode("catalogue");
@@ -75,6 +81,7 @@ export default function TV({ footerActions }: { footerActions?: HTMLElement | nu
     </div>}
     {error ? <div role="alert" className="space-y-3 rounded-lg border border-orange-500/40 bg-neutral-900 p-5"><h2 className="font-semibold text-white">Set up TV & Movies</h2><p className="text-sm leading-relaxed">{error}</p><Button variant="outline" onClick={() => { setError(""); setRetry(r => r + 1); }}>Retry setup</Button></div> : !config ? <p role="status">Checking media configuration…</p> : <>
       {watchIntent ? <AutoPlayback key={JSON.stringify(watchIntent)} intent={watchIntent.intent} resumeAt={watchIntent.resumeAt} close={() => setWatchIntent(null)} /> : <>
+      {tvMode && config.tmdb && !chosen && <Button data-discovery-open="" variant="outline" className="border-orange-500/50 bg-orange-500/10 text-orange-300" onClick={() => setDiscovering(true)}><Sparkles aria-hidden="true" />Don't know what to watch?</Button>}
       {!advanced ? <>
         <Welcome />
         <div>

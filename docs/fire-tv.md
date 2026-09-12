@@ -90,6 +90,49 @@ Media3 is pinned to 1.4.1 to retain the existing SDK 34 / Fire OS 5+ build
 baseline. See [Media3 surface guidance](https://developer.android.com/media/media3/ui/surface)
 and [track selection](https://developer.android.com/media/media3/exoplayer/track-selection).
 
+## Movie discovery
+
+In TV mode, choose **Don't know what to watch?** to see four movie suggestions.
+Use Left / Right and Select to choose the movie that interests you more, or move
+down to **Watch now** to start the existing playback flow. **I'm all set** and
+the remote's Back button return to the catalogue. The **Don't know** button in
+the middle skips the current four movies without recording a preference. It is
+focused by default whenever a new group appears, including after loading a new batch.
+
+Gemini proposes 16 movies, verified against TMDB. After four choices or skips, it
+uses those preferences and earlier choices to propose 16 new movies; the page
+keeps these batches hidden. A rotating ring and pulsing dots animate while
+suggestions load, including between batches; Reduce motion disables the animation.
+Skipped groups indicate uncertainty, not dislike. Recent movie watch history seeds the first suggestions
+when available. Discovery also works without watch history or MongoDB.
+It requires the existing `GEMINI_API_KEY` and `TMDB_READ_ACCESS_TOKEN` settings.
+IMDb ratings use `OMDB_API_KEY`; missing ratings display **IMDb unavailable**.
+
+Choices belong to the active account and browser session. They are temporary,
+held in server memory for up to two hours per batch, and reset when leaving the
+page. Recent preferences and shown movies are bounded to 50 comparisons and 500
+movies. Failed refinement can be retried without losing the current choices;
+after a server restart or session expiry, use **Start over**.
+
+Discovery automatically retries temporary Gemini failures and refills short lists,
+keeping verified movies across refinement retries. It checks release-year ambiguity
+within a one-year window, so unrelated same-name films from other years do not
+reject the intended movie. Original and alternative TMDB titles are also checked
+when the search returns a different canonical name. Gemini receives explicit
+rejection feedback and requests for only the missing replacements, with at most
+six generation attempts and three provider failures per request. Batches remain
+16 verified Gemini selections; random catalogue fillers are not used. Gemini is
+instructed to avoid repeats, but verified repeated movies are accepted within and
+across batches so duplicates do not block discovery.
+Quota, configuration, timeout and catalogue errors have distinct messages. Backend logs prefixed
+`[movie-discovery]` report error codes and counts without viewing history or credentials.
+`MEDIA_DISCOVERY_AI_TIMEOUT_MS` defaults to 30000 per Gemini request; the complete
+request remains bounded to two minutes.
+
+After building, run `node scripts/test-tv-ui.mjs --discovery` for the mocked
+browser check of remote navigation, four-movie refinement, skips, loading animation, retries, cancellation,
+playback handoff, TV layouts, and desktop isolation.
+
 ## Verification
 
 From `frontend`, run `npm run lint`, `npm test`, and `npm run build`.
