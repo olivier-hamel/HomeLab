@@ -58,7 +58,9 @@ export default function useTvNavigation(enabled: boolean) {
       // catalogue. Follow the first card in document order until the user moves.
       if (title && title !== startupFocus) {
         startupFocus = title;
-        focus(title);
+        title.focus({ preventScroll: true });
+        // Selecting a card during async startup must not pull the page down to it.
+        document.scrollingElement?.scrollTo({ top: 0, left: 0, behavior: "auto" });
       }
     };
     const keydown = (event: KeyboardEvent) => {

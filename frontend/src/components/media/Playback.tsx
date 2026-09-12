@@ -22,17 +22,16 @@ function pause(ms: number, signal: AbortSignal) {
 }
 type SimplePlayback = { nativeSession?: string; simple?: boolean; resumeAt?: number; onFailure?: () => void; onNext?: (position?: number) => void; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void };
 
+const VIDEO_CACHE_TARGET_BYTES = 25 * 1024 * 1024;
+
 function CacheProgress({ stats }: { stats: TorrentStatus }) {
-  const percent = stats.preloadBytes !== null && stats.preloadTarget !== null && stats.preloadTarget > 0
-    ? Math.min(100, Math.max(0, stats.preloadBytes / stats.preloadTarget * 100))
-    : null;
-  const cached = stats.preloadBytes ?? stats.completedBytes;
-  const rate = stats.downloadSpeed === null ? null : `${bytes(stats.downloadSpeed)}/s`;
-  const label = percent !== null ? `${Math.round(percent)}%` : cached !== null ? `${bytes(cached)} cached${rate ? ` · ${rate}` : ""}` : rate ?? "Waiting for data…";
-  return <div className="mx-auto w-full max-w-sm space-y-1" role="progressbar" aria-label="Video cache loading" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === null ? undefined : Math.round(percent)} aria-valuetext={label}>
-    <div className="flex items-center justify-between gap-3 text-xs text-neutral-400"><span>Loading video cache</span><span className="tabular-nums text-orange-300">{label}</span></div>
-    <div className="relative h-1.5 overflow-hidden rounded-full bg-neutral-700">
-      <span className={`block h-full rounded-full bg-orange-500 transition-[width] duration-300 ${percent === null ? "cache-progress-indeterminate" : ""}`} style={percent === null ? undefined : { width: `${percent}%` }} />
+  const cached = stats.preloadBytes ?? stats.completedBytes ?? 0;
+  const percent = Math.min(100, Math.max(0, cached / VIDEO_CACHE_TARGET_BYTES * 100));
+  const rounded = Math.round(percent);
+  return <div className="mx-auto w-full max-w-sm space-y-1" role="progressbar" aria-label="Video cache loading" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rounded} aria-valuetext={`${rounded}%`}>
+    <div className="flex items-center justify-between gap-3 text-xs text-neutral-400"><span>Loading video cache</span><span className="tabular-nums text-orange-300">{rounded}%</span></div>
+    <div className="h-1.5 overflow-hidden rounded-full bg-neutral-700">
+      <span className="block h-full rounded-full bg-orange-500 transition-[width] duration-300" style={{ width: `${percent}%` }} />
     </div>
   </div>;
 }
