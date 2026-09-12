@@ -99,9 +99,13 @@ the remote's Back button return to the catalogue. The **Don't know** button in
 the middle skips the current four movies without recording a preference. It is
 focused by default whenever a new group appears, including after loading a new batch.
 
-Gemini proposes 16 movies, verified against TMDB. After four choices or skips, it
-uses those preferences and earlier choices to propose 16 new movies; the page
-keeps these batches hidden. A rotating ring and pulsing dots animate while
+Gemini receives exactly two lists: `interested` contains up to 25 recent watched
+movies and every movie picked during this discovery session; `alreadyProposed`
+contains the other suggestions, including skipped movies. Only `interested`
+informs recommendations. `alreadyProposed` is neutral and used only for exclusions.
+Gemini is instructed to return exactly 16 different movies absent from both lists.
+After four choices or skips, one fresh request produces the next complete batch,
+verified against TMDB. The page keeps these batches hidden. A rotating ring and pulsing dots animate while
 suggestions load, including between batches; Reduce motion disables the animation.
 Skipped groups indicate uncertainty, not dislike. Recent movie watch history seeds the first suggestions
 when available. Discovery also works without watch history or MongoDB.
@@ -110,17 +114,17 @@ IMDb ratings use `OMDB_API_KEY`; missing ratings display **IMDb unavailable**.
 
 Choices belong to the active account and browser session. They are temporary,
 held in server memory for up to two hours per batch, and reset when leaving the
-page. Recent preferences and shown movies are bounded to 50 comparisons and 500
-movies. Failed refinement can be retried without losing the current choices;
+page. Both lists retain all unique movies from the session. Picking a previously
+proposed movie moves it into `interested`. Failed refinement can be retried without losing the current choices;
 after a server restart or session expiry, use **Start over**.
 
-Discovery automatically retries temporary Gemini failures and refills short lists,
-keeping verified movies across refinement retries. It checks release-year ambiguity
+Each submission makes one Gemini request. A short, invalid or incompletely matched
+response returns an error; **Try again** requests a fresh set of 16 using the same
+two lists. Responses are never combined, and unshown partial results are discarded.
+Discovery checks release-year ambiguity
 within a one-year window, so unrelated same-name films from other years do not
 reject the intended movie. Original and alternative TMDB titles are also checked
-when the search returns a different canonical name. Gemini receives explicit
-rejection feedback and requests for only the missing replacements, with at most
-six generation attempts and three provider failures per request. Batches remain
+when the search returns a different canonical name. Batches remain
 16 verified Gemini selections; random catalogue fillers are not used. Gemini is
 instructed to avoid repeats, but verified repeated movies are accepted within and
 across batches so duplicates do not block discovery.

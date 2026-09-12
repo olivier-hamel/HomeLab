@@ -8,42 +8,189 @@ const secret = "discovery-test-only-secret-not-for-production";
 process.env.GEMINI_API_KEY = secret;
 const signal = () => new AbortController().signal;
 const history = async () => [{ kind: "movie", tmdbId: 999, title: "Watched film", year: "2001", filePath: "private/path.mkv" }];
-const movie = id => ({ id, kind: "movie", title: `Film ${id}`, year: "2020", overview: "Movie description", poster: null });
+const movie = id => ({ id, kind: "movie", title: "Film " + id, year: "2020", overview: "Movie description", poster: null });
+const batchMovies = (offset = 0, length = 16) => Array.from({ length }, (_, i) => movie(offset + i + 1));
 const answer = movies => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ movies }) }] } }] });
+const browse = async (_kind, query) => ({ titles: [movie(Number(query.split(" ")[1]))] });
+const choose = batch => ({ sessionId: batch.sessionId, choices: batch.titles.filter((_, i) => i % 4 === 0).map(title => title.id) });
+function requestInput(init) {
+  const body = JSON.parse(init.body);
+  assert.equal(new Headers(init.headers).get("x-goog-api-key"), secret);
+  assert.equal(init.body.includes(secret), false);
+  assert.equal(init.body.includes("private/path"), false);
+  assert.equal(body.contents.length, 1, "one fresh request, without model/retry transcripts");
+  assert.equal(body.contents[0].role, "user");
+  assert.equal(body.contents[0].parts.length, 1);
+  const input = JSON.parse(body.contents[0].parts[0].text);
+  assert.deepEqual(Object.keys(input).sort(), ["alreadyProposed", "interested"]);
+  return input;
+}
 function fixture() {
   const inputs = [];
   let failed = false;
+  let batchNumber = 0;
   const service = new MovieDiscovery(async (_url, init) => {
-    assert.equal(new Headers(init.headers).get("x-goog-api-key"), secret);
-    assert.equal(init.body.includes(secret), false);
-    assert.equal(init.body.includes("private/path"), false);
-    const input = JSON.parse(JSON.parse(init.body).contents[0].parts[0].text);
-    inputs.push(input);
+    inputs.push(requestInput(init));
     if (failed) return new Response(secret, { status: 503 });
-    const offset = input.alreadyShown.length;
-    return answer(Array.from({ length: 16 }, (_, i) => movie(offset + i + 1)));
-  }, { browse: async (kind, query) => {
-    assert.equal(kind, "movie");
-    return { titles: [movie(Number(query.split(" ")[1]))] };
-  } });
+    return answer(batchMovies(batchNumber++ * 16));
+  }, { browse });
   return { service, inputs, fail: value => { failed = value; } };
 }
-const choose = batch => ({ sessionId: batch.sessionId, choices: batch.titles.filter((_, i) => i % 4 === 0).map(title => title.id) });
 
-test("sixteen verified movies refine from four group preferences, retain earlier taste, and retry idempotently", async () => {
+test("two lists retain watched interests, picks and all neutral alternatives across rounds", async () => {
   const { service, inputs } = fixture();
   const first = await service.next("owner", "oli", {}, history, signal());
   assert.equal(first.titles.length, 16);
+  assert.deepEqual(inputs[0], { interested: [{ id: 999, title: "Watched film", year: "2001" }], alreadyProposed: [] });
   const second = await service.next("owner", "oli", choose(first), history, signal());
-  assert.equal(inputs[1].preferences.length, 4);
-  assert.deepEqual(inputs[1].preferences[0], { preferred: { id: 1, title: "Film 1", year: "2020" }, alternatives: [2, 3, 4].map(id => ({ id, title: `Film ${id}`, year: "2020" })) });
-  assert.equal(inputs[1].alreadyShown.length, 16);
-  assert.ok(second.titles.every(title => !first.titles.some(old => old.id === title.id)));
+  assert.deepEqual(inputs[1].interested.map(movie => movie.id), [999, 1, 5, 9, 13]);
+  assert.deepEqual(inputs[1].alreadyProposed.map(movie => movie.id), [2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15, 16]);
   assert.deepEqual(await service.next("owner", "oli", choose(first), history, signal()), second);
-  assert.equal(inputs.length, 2, "a repeated submission does not spend another Gemini request");
+  assert.equal(inputs.length, 2, "successful resubmissions do not spend another request");
   await service.next("owner", "oli", choose(second), history, signal());
-  assert.equal(inputs[2].preferences.length, 8);
-  assert.equal(inputs[2].alreadyShown.length, 32);
+  assert.deepEqual(inputs[2].interested.map(movie => movie.id), [999, 1, 5, 9, 13, 17, 21, 25, 29]);
+  assert.equal(inputs[2].alreadyProposed.length, 24);
+});
+
+test("skips add only neutral proposed movies and retain earlier interests", async () => {
+  const { service, inputs } = fixture();
+  const first = await service.next("owner", "oli", {}, history, signal());
+  const second = await service.next("owner", "oli", { sessionId: first.sessionId, choices: [1, null, 9, null] }, history, signal());
+  assert.deepEqual(inputs[1].interested.map(movie => movie.id), [999, 1, 9]);
+  assert.deepEqual(inputs[1].alreadyProposed.map(movie => movie.id), [2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16]);
+  await service.next("owner", "oli", { sessionId: second.sessionId, choices: [null, null, null, null] }, history, signal());
+  assert.deepEqual(inputs[2].interested, inputs[1].interested);
+  assert.equal(inputs[2].alreadyProposed.length, 30);
+});
+
+test("only the latest 25 watched movies seed interests, without TV or private metadata", async () => {
+  const { service, inputs } = fixture();
+  await service.next("owner", undefined, {}, async () => [
+    { kind: "tv", tmdbId: 5000, title: "TV show", year: "2020" },
+    ...Array.from({ length: 30 }, (_, i) => ({ kind: "movie", tmdbId: 1000 + i, title: "Watched " + i, year: "2020", filePath: "private/path.mkv" })),
+  ], signal());
+  assert.deepEqual(inputs[0].interested.map(movie => movie.id), Array.from({ length: 25 }, (_, i) => i + 1000));
+  assert.deepEqual(inputs[0].alreadyProposed, []);
+});
+
+test("history outages leave two empty lists and do not prevent discovery", async () => {
+  const { service, inputs } = fixture();
+  const batch = await service.next("owner", undefined, {}, async () => { throw new Error("Database unavailable"); }, signal());
+  assert.equal(batch.titles.length, 16);
+  assert.deepEqual(inputs[0], { interested: [], alreadyProposed: [] });
+});
+
+test("both lists retain the complete session beyond the former history caps", async () => {
+  const { service, inputs } = fixture();
+  let batch = await service.next("owner", undefined, {}, history, signal());
+  for (let round = 0; round < 33; round++) batch = await service.next("owner", undefined, choose(batch), history, signal());
+  const latest = inputs.at(-1);
+  assert.equal(latest.interested.length, 133);
+  assert.equal(latest.alreadyProposed.length, 396);
+  const ids = [...latest.interested, ...latest.alreadyProposed].map(movie => movie.id);
+  assert.ok(Array.from({ length: 528 }, (_, i) => i + 1).every(id => ids.includes(id)));
+  assert.equal(new Set(ids).size, 529);
+});
+
+test("a repeated suggestion picked later moves from proposed to interested", async () => {
+  const inputs = [];
+  const service = new MovieDiscovery(async (_url, init) => { inputs.push(requestInput(init)); return answer(batchMovies()); }, { browse });
+  const first = await service.next("owner", undefined, {}, history, signal());
+  const second = await service.next("owner", undefined, { sessionId: first.sessionId, choices: [null, null, null, null] }, history, signal());
+  await service.next("owner", undefined, { sessionId: second.sessionId, choices: [1, null, null, null] }, history, signal());
+  assert.deepEqual(inputs[2].interested.map(movie => movie.id), [999, 1]);
+  assert.deepEqual(inputs[2].alreadyProposed.map(movie => movie.id), Array.from({ length: 15 }, (_, i) => i + 2));
+});
+
+test("provider failures make one call, preserve choices and allow a manual retry", async () => {
+  const f = fixture();
+  const first = await f.service.next("owner", undefined, {}, async () => [], signal());
+  f.fail(true);
+  await assert.rejects(f.service.next("owner", undefined, choose(first), history, signal()), error => error.code === "discovery_unavailable" && !error.message.includes(secret));
+  assert.equal(f.inputs.length, 2);
+  f.fail(false);
+  assert.equal((await f.service.next("owner", undefined, choose(first), history, signal())).titles.length, 16);
+  assert.equal(f.inputs.length, 3);
+  assert.deepEqual(f.inputs[1], f.inputs[2]);
+});
+
+test("short responses and catalogue failures are never merged with manual retries", async () => {
+  for (const failure of ["short", "catalogue"]) {
+    const inputs = [];
+    let calls = 0;
+    const service = new MovieDiscovery(async (_url, init) => {
+      inputs.push(requestInput(init));
+      calls++;
+      return answer(batchMovies((calls - 1) * 16, calls === 2 && failure === "short" ? 12 : 16));
+    }, { browse: async (kind, query) => {
+      assert.ok(query, "no random catalogue fillers");
+      return failure === "catalogue" && query === "Film 32" ? { titles: [] } : browse(kind, query);
+    } });
+    const first = await service.next("owner", "oli", {}, history, signal());
+    await assert.rejects(service.next("owner", "oli", choose(first), history, signal()), error => error.code === (failure === "short" ? "discovery_response" : "discovery_shortfall"));
+    assert.equal(calls, 2, "no automatic replacement request");
+    const second = await service.next("owner", "oli", choose(first), history, signal());
+    assert.deepEqual(second.titles.map(movie => movie.id), batchMovies(32).map(movie => movie.id));
+    assert.deepEqual(inputs[2], inputs[1], "unshown partial movies do not enter either list");
+    assert.equal(calls, 3);
+  }
+});
+
+test("duplicates and watched movies still pass as one complete model response", async () => {
+  const inputs = [];
+  const repeated = [movie(999), ...Array(15).fill(movie(1))];
+  const service = new MovieDiscovery(async (_url, init) => { inputs.push(requestInput(init)); return answer(repeated); }, { browse });
+  const first = await service.next("owner", undefined, {}, history, signal());
+  assert.deepEqual(first.titles, repeated);
+  const second = await service.next("owner", undefined, choose(first), history, signal());
+  assert.deepEqual(second.titles, repeated);
+  assert.equal(inputs.length, 2);
+  assert.deepEqual(inputs[1].interested.map(movie => movie.id), [999, 1]);
+  assert.deepEqual(inputs[1].alreadyProposed, []);
+});
+
+test("complete MAX_TOKENS output is usable and thought parts are ignored", async () => {
+  const service = new MovieDiscovery(async () => Response.json({ candidates: [{ finishReason: "MAX_TOKENS", content: { parts: [{ thought: true, text: secret }, { text: JSON.stringify({ movies: batchMovies() }) }] } }] }), { browse });
+  assert.equal((await service.next("owner", undefined, {}, history, signal())).titles.length, 16);
+});
+
+test("wrong counts and invalid movie fields fail without a refill or catalogue request", async () => {
+  for (const movies of [batchMovies(0, 15), batchMovies(0, 17), [...batchMovies(0, 15), { title: secret, year: "2020" }], [...batchMovies(0, 15), { title: "Film", year: "unknown" }]]) {
+    let calls = 0;
+    const service = new MovieDiscovery(async () => { calls++; return answer(movies); }, { browse: async () => assert.fail("Invalid responses must not reach TMDB") });
+    await assert.rejects(service.next("owner", undefined, {}, history, signal()), error => error.code === "discovery_response");
+    assert.equal(calls, 1);
+  }
+});
+
+test("one-year release differences require an unambiguous match", async () => {
+  for (const ambiguous of [false, true]) {
+    const service = new MovieDiscovery(async () => answer(batchMovies()), { browse: async (kind, query) => query === "Film 1"
+      ? { titles: [{ ...movie(1), year: "2021" }, ...(ambiguous ? [{ ...movie(2001), title: "Film 1", year: "2019" }] : [])] }
+      : browse(kind, query) });
+    if (ambiguous) await assert.rejects(service.next("owner", undefined, {}, history, signal()), error => error.code === "discovery_shortfall");
+    else assert.equal((await service.next("owner", undefined, {}, history, signal())).titles[0].year, "2021");
+  }
+});
+
+test("unrelated catalogue hits cannot stand in for the requested movie", async () => {
+  const service = new MovieDiscovery(async () => answer(batchMovies()), {
+    browse: async () => ({ titles: [movie(9998)] }),
+    details: async () => ({ ...movie(9998), originalTitle: "Unrelated", alternativeTitles: [] }),
+  });
+  await assert.rejects(service.next("owner", undefined, {}, history, signal()), error => error.code === "discovery_shortfall");
+});
+
+test("cancellation and provider/catalogue failures keep their error categories", async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const cancelled = new MovieDiscovery(async (_url, init) => { calls++; controller.abort(); init.signal.throwIfAborted(); });
+  await assert.rejects(cancelled.next("owner", undefined, {}, history, controller.signal), error => error.name === "AbortError");
+  assert.equal(calls, 1);
+  const timeout = new MovieDiscovery(async () => { throw new MediaError("timeout", secret, 504); });
+  await assert.rejects(timeout.next("owner", undefined, {}, history, signal()), error => error.code === "discovery_timeout" && error.status === 504);
+  const catalogue = new MovieDiscovery(async () => answer(batchMovies()), { browse: async () => { throw new Error(secret); } });
+  await assert.rejects(catalogue.next("owner", undefined, {}, history, signal()), error => error.code === "discovery_metadata" && !error.message.includes(secret));
 });
 
 test("session ownership, profile separation, and exactly one selection per group are enforced", async () => {
@@ -58,64 +205,6 @@ test("session ownership, profile separation, and exactly one selection per group
   assert.equal(inputs.length, 1);
 });
 
-test("Don't know skips a group without inventing a preference, including an entirely skipped batch", async () => {
-  const { service, inputs } = fixture();
-  const first = await service.next("owner", "oli", {}, history, signal());
-  const second = await service.next("owner", "oli", { sessionId: first.sessionId, choices: [1, null, 9, null] }, history, signal());
-  assert.equal(inputs[1].preferences[0].preferred.id, 1);
-  assert.equal(inputs[1].preferences[1].preferred, null);
-  assert.deepEqual(inputs[1].preferences[1].alternatives.map(movie => movie.id), [5, 6, 7, 8]);
-  const request = { sessionId: second.sessionId, choices: [null, null, null, null] };
-  const third = await service.next("owner", "oli", request, history, signal());
-  assert.equal(third.titles.length, 16);
-  assert.ok(inputs[2].preferences.slice(-4).every(preference => preference.preferred === null && preference.alternatives.length === 4));
-  assert.ok(third.titles.every(movie => ![...first.titles, ...second.titles].some(old => old.id === movie.id)));
-  assert.deepEqual(await service.next("owner", "oli", request, history, signal()), third);
-  assert.equal(inputs.length, 3);
-});
-
-test("failed refinement preserves choices and can be retried without leaking provider errors", async () => {
-  const f = fixture();
-  const first = await f.service.next("owner", undefined, {}, async () => [], signal());
-  assert.deepEqual(f.inputs[0].recentWatchHistory, []);
-  f.fail(true);
-  await assert.rejects(f.service.next("owner", undefined, choose(first), history, signal()), error => error.status === 503 && !error.message.includes(secret));
-  f.fail(false);
-  const result = await f.service.next("owner", undefined, choose(first), history, signal());
-  assert.equal(result.titles.length, 16);
-  assert.equal(f.inputs.length, 5, "a transient outage receives two automatic retries before the user retries");
-  assert.deepEqual(f.inputs[1], f.inputs.at(-1));
-});
-
-test("a failed refill keeps verified movies for the next manual retry", async () => {
-  let calls = 0;
-  const inputs = [];
-  const service = new MovieDiscovery(async (_url, init) => {
-    inputs.push(JSON.parse(JSON.parse(init.body).contents[0].parts[0].text));
-    calls++;
-    if (calls === 1) return answer(Array.from({ length: 16 }, (_, i) => movie(i + 1)));
-    if (calls === 2) return answer(Array.from({ length: 12 }, (_, i) => movie(i + 17)));
-    if (calls <= 5) return new Response(secret, { status: 503 });
-    return answer(Array.from({ length: 4 }, (_, i) => movie(i + 29)));
-  }, { browse: async (_kind, query) => ({ titles: [movie(Number(query.split(" ")[1]))] }) });
-  const first = await service.next("owner", "oli", {}, history, signal());
-  await assert.rejects(service.next("owner", "oli", choose(first), history, signal()), error => error.code === "discovery_unavailable");
-  const second = await service.next("owner", "oli", choose(first), history, signal());
-  assert.deepEqual(second.titles.map(movie => movie.id), Array.from({ length: 16 }, (_, i) => i + 17));
-  assert.deepEqual(inputs.at(-1).alreadyShown.map(movie => movie.id), Array.from({ length: 28 }, (_, i) => i + 1));
-  assert.deepEqual(inputs.at(-1).preferences, inputs[1].preferences);
-  assert.equal(calls, 6);
-});
-
-test("a temporary provider failure retries automatically and a complete MAX_TOKENS payload is usable", async () => {
-  let calls = 0;
-  const service = new MovieDiscovery(async () => {
-    if (++calls === 1) return new Response(secret, { status: 503 });
-    return Response.json({ candidates: [{ finishReason: "MAX_TOKENS", content: { parts: [{ thought: true, text: secret }, { text: JSON.stringify({ movies: Array.from({ length: 16 }, (_, i) => movie(i + 1)) }) }] } }] });
-  }, { browse: async (_kind, query) => ({ titles: [movie(Number(query.split(" ")[1]))] }) });
-  assert.equal((await service.next("owner", undefined, {}, history, signal())).titles.length, 16);
-  assert.equal(calls, 2);
-});
 
 test("quota and configuration failures have distinct safe messages and are not immediately retried", async () => {
   for (const [status, code] of [[429, "discovery_quota"], [400, "discovery_configuration"], [403, "discovery_configuration"], [404, "discovery_configuration"]]) {
@@ -126,36 +215,6 @@ test("quota and configuration failures have distinct safe messages and are not i
   }
 });
 
-test("shortfalls never silently replace Gemini selections with unrelated popular movies", async () => {
-  let calls = 0;
-  let catalogueCalls = 0;
-  const service = new MovieDiscovery(async () => answer(++calls === 1 ? Array.from({ length: 15 }, (_, i) => movie(i + 1)) : []), {
-    browse: async (_kind, query) => {
-      if (query) return { titles: [movie(Number(query.split(" ")[1]))] };
-      catalogueCalls++;
-      return { titles: [movie(999), movie(1), { ...movie(1000), year: "9999" }, movie(1001)] };
-    },
-  });
-  await assert.rejects(service.next("owner", undefined, {}, history, signal()), error => error.code === "discovery_shortfall");
-  assert.equal(calls, 6);
-  assert.equal(catalogueCalls, 0);
-});
-
-test("one-year release differences are accepted only for an unambiguous matching title", async () => {
-  let calls = 0;
-  const service = new MovieDiscovery(async () => answer(++calls === 1 ? Array.from({ length: 16 }, (_, i) => movie(i + 1)) : [movie(17)]), {
-    browse: async (_kind, query) => {
-      const id = Number(query.split(" ")[1]);
-      if (id === 1) return { titles: [{ ...movie(1), year: "2021" }] };
-      if (id === 2) return { titles: [{ ...movie(2), year: "2021" }, { ...movie(2), id: 2002, year: "2019" }] };
-      return { titles: [movie(id)] };
-    },
-  });
-  const result = await service.next("owner", undefined, {}, history, signal());
-  assert.equal(result.titles.find(movie => movie.id === 1).year, "2021");
-  assert.equal(result.titles.some(movie => [2, 2002].includes(movie.id)), false);
-  assert.equal(result.titles.at(-1).id, 17);
-});
 
 test("real catalogue regressions: unrelated same-name releases do not reject the intended film", async () => {
   const cases = [
@@ -176,6 +235,7 @@ test("real catalogue regressions: unrelated same-name releases do not reject the
   assert.deepEqual(result.titles.slice(0, 4).map(title => title.id), cases.map(row => row.id));
 });
 
+
 test("TMDB original and alternative titles resolve canonical names without accepting unrelated search hits", async () => {
   const aliases = [
     { query: "12 Monkeys", id: 63, title: "Twelve Monkeys", year: "1995", originalTitle: "Twelve Monkeys", alternativeTitles: ["12 Monkeys"] },
@@ -183,8 +243,7 @@ test("TMDB original and alternative titles resolve canonical names without accep
     { query: "La vita è bella", id: 637, title: "Life Is Beautiful", year: "1997", originalTitle: "La vita è bella", alternativeTitles: [] },
   ];
   const detailsCalls = [];
-  let calls = 0;
-  const service = new MovieDiscovery(async () => answer(++calls === 1 ? [...Array.from({ length: 12 }, (_, i) => movie(i + 1)), ...aliases.map(row => ({ title: row.query, year: row.year })), { title: "Unknown film", year: "2020" }] : [movie(50)]), {
+  const service = new MovieDiscovery(async () => answer([...batchMovies(0, 13), ...aliases.map(row => ({ title: row.query, year: row.year }))]), {
     browse: async (_kind, query) => {
       const row = aliases.find(item => item.query === query);
       if (row) return { titles: [{ ...movie(row.id), title: row.title, year: row.year }] };
@@ -195,91 +254,9 @@ test("TMDB original and alternative titles resolve canonical names without accep
   const result = await service.next("owner", undefined, {}, history, signal());
   assert.ok(aliases.every(row => result.titles.some(title => title.id === row.id && title.title === row.title)));
   assert.equal(result.titles.some(title => title.id === 9998), false, "a matching year alone never proves identity");
-  assert.equal(result.titles.at(-1).id, 50);
-  assert.deepEqual(detailsCalls.sort((a, b) => a - b), [63, 637, 9998, 516729]);
+  assert.deepEqual(detailsCalls.sort((a, b) => a - b), [63, 637, 516729]);
 });
 
-test("refills request only missing movies and explain unresolvable suggestions to Gemini", async () => {
-  let calls = 0;
-  const service = new MovieDiscovery(async (_url, init) => {
-    const body = JSON.parse(init.body);
-    if (++calls === 1) return answer([...Array.from({ length: 14 }, (_, i) => movie(i + 1)), movie(999), { title: "Unresolvable title", year: "2020" }]);
-    const input = JSON.parse(body.contents[0].parts[0].text);
-    assert.equal(input.requestedCount, 1);
-    assert.deepEqual(input.alreadyShown.map(title => title.id), [...Array.from({ length: 14 }, (_, i) => i + 1), 999]);
-    assert.equal(body.contents[1].role, "model");
-    const correction = body.contents.at(-1).parts.map(part => part.text).join("\n");
-    assert.match(correction, /title_not_found/);
-    assert.match(correction, /Watched film \(2001\)/);
-    return answer([movie(15)]);
-  }, { browse: async (_kind, query) => ({ titles: query === "Unresolvable title" ? [] : [movie(Number(query.split(" ")[1]))] }) });
-  assert.equal((await service.next("owner", undefined, {}, history, signal())).titles.length, 16);
-  assert.equal(calls, 2);
-});
-
-test("leaving discovery cancels the retry delay without making another provider call", async () => {
-  const controller = new AbortController();
-  let calls = 0;
-  const service = new MovieDiscovery(async () => {
-    calls++;
-    setTimeout(() => controller.abort(), 20);
-    return new Response(null, { status: 503 });
-  });
-  await assert.rejects(service.next("owner", undefined, {}, history, controller.signal), error => error.name === "AbortError");
-  assert.equal(calls, 1);
-});
-
-test("provider timeouts and catalogue outages report the actual failure category", async () => {
-  const timeout = new MovieDiscovery(async () => { throw new MediaError("timeout", secret, 504); });
-  await assert.rejects(timeout.next("owner", undefined, {}, history, signal()), error => error.code === "discovery_timeout" && error.status === 504 && !error.message.includes(secret));
-  const catalogue = new MovieDiscovery(async () => answer([movie(1)]), { browse: async () => { throw new Error(secret); } });
-  await assert.rejects(catalogue.next("owner", undefined, {}, history, signal()), error => error.code === "discovery_metadata" && !error.message.includes(secret));
-});
-
-test("duplicates and watched movies pass while invalid and wrong-year titles still require a refill", async () => {
-  let calls = 0;
-  const service = new MovieDiscovery(async () => answer(++calls === 1
-    ? [movie(999), movie(1), movie(1), movie(2), { title: secret, year: "2020" }, { title: "Invalid", year: "unknown" }]
-    : Array.from({ length: 16 }, (_, i) => movie(i + 10))), {
-    browse: async (_kind, query) => { const title = movie(Number(query.split(" ")[1])); return { titles: [{ ...title, year: title.id === 2 ? "1999" : "2020" }] }; },
-  });
-  const result = await service.next("owner", undefined, {}, history, signal());
-  assert.equal(calls, 2);
-  assert.equal(result.titles.length, 16);
-  assert.deepEqual(result.titles.slice(0, 3).map(title => title.id), [999, 1, 1]);
-  assert.ok(result.titles.every(title => title.id !== 2));
-});
-
-test("repeats within and across batches pass without retrying and retain choices and exclusions", async () => {
-  const inputs = [];
-  const service = new MovieDiscovery(async (_url, init) => {
-    inputs.push(JSON.parse(JSON.parse(init.body).contents[0].parts[0].text));
-    return answer(Array.from({ length: 16 }, () => movie(1)));
-  }, { browse: async () => ({ titles: [movie(1)] }) });
-  const first = await service.next("owner", "oli", {}, history, signal());
-  const second = await service.next("owner", "oli", choose(first), history, signal());
-  assert.deepEqual(first.titles.map(title => title.id), Array(16).fill(1));
-  assert.deepEqual(second.titles, first.titles);
-  assert.equal(inputs.length, 2, "repeated movies do not trigger replacement requests");
-  assert.equal(inputs[0].requestedCount, 16);
-  assert.equal(inputs[1].requestedCount, 16);
-  assert.ok(inputs[1].preferences.every(preference => preference.preferred.id === 1));
-  assert.deepEqual(inputs[1].alreadyShown.map(title => title.id), Array(16).fill(1));
-  assert.deepEqual(await service.next("owner", "oli", choose(first), history, signal()), second);
-  assert.equal(inputs.length, 2);
-});
-
-test("a refill may repeat an accepted movie to complete all sixteen slots", async () => {
-  let calls = 0;
-  const service = new MovieDiscovery(async (_url, init) => {
-    const input = JSON.parse(JSON.parse(init.body).contents[0].parts[0].text);
-    assert.equal(input.requestedCount, calls === 0 ? 16 : 1);
-    return answer(++calls === 1 ? Array.from({ length: 15 }, (_, i) => movie(i + 1)) : [movie(1)]);
-  }, { browse: async (_kind, query) => ({ titles: [movie(Number(query.split(" ")[1]))] }) });
-  const result = await service.next("owner", undefined, {}, history, signal());
-  assert.deepEqual(result.titles.map(title => title.id), [...Array.from({ length: 15 }, (_, i) => i + 1), 1]);
-  assert.equal(calls, 2);
-});
 
 test("malformed model output and insufficient metadata fail cleanly; missing configuration makes no calls", async () => {
   for (const response of [() => answer([]), () => Response.json({ candidates: [{ finishReason: "MAX_TOKENS" }] }), () => new Response("invalid JSON")]) {
@@ -291,6 +268,7 @@ test("malformed model output and insufficient metadata fail cleanly; missing con
     await assert.rejects(new MovieDiscovery(async () => assert.fail("No upstream request expected")).next("owner", undefined, {}, history, signal()), error => error.status === 503);
   } finally { process.env.GEMINI_API_KEY = secret; }
 });
+
 
 test("discovery API works without MongoDB and requires an authenticated same-origin POST", async () => {
   Object.assign(process.env, { MEDIA_TRUSTED_NETWORK: "true", MEDIA_ALLOWED_ORIGINS: "http://discovery.test", MEDIA_SESSION_SECRET: secret, TMDB_READ_ACCESS_TOKEN: secret });
@@ -310,6 +288,7 @@ test("discovery API works without MongoDB and requires an authenticated same-ori
   assert.equal(response.status, 200);
   assert.equal((await response.json()).titles.length, 16);
 });
+
 
 test("the overall discovery deadline returns a timeout response instead of an invalid-request error", async () => {
   Object.assign(process.env, { MEDIA_TRUSTED_NETWORK: "true", MEDIA_ALLOWED_ORIGINS: "http://discovery.test", MEDIA_SESSION_SECRET: secret, TMDB_READ_ACCESS_TOKEN: secret });

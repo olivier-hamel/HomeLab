@@ -80,7 +80,7 @@ function DiscoveryCard({ title, choose, watch }: { title: Title; choose: () => v
   return <article className="discovery-card">
     <button type="button" data-discovery-choice="" className="discovery-choice" onClick={choose} aria-label={`I'm more interested in ${title.title}`}>
       <div className="discovery-poster">{title.poster && !imageFailed ? <img src={title.poster} alt={`${title.title} poster`} referrerPolicy="no-referrer" onError={() => setImageFailed(true)} /> : <Film aria-label="Poster unavailable" />}</div>
-      <div className="discovery-copy"><h2 className="line-clamp-2 text-xl font-semibold text-white">{title.title}</h2><p className="discovery-rating my-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-neutral-400"><span>{title.year}</span><span className="inline-flex items-center gap-1 text-amber-300"><Star aria-hidden="true" />{ratingLoading ? "IMDb …" : details?.rating != null ? `IMDb ${details.rating.toFixed(1)}/10` : "IMDb unavailable"}</span></p><span className="discovery-prefer">Pick this movie</span></div>
+      <div className="discovery-copy"><h2 className="line-clamp-2 text-xl font-semibold text-white">{title.title}</h2><p className="discovery-rating my-2 flex items-center justify-center text-sm text-amber-300"><Star aria-hidden="true" />{ratingLoading ? "IMDb …" : details?.rating != null ? `IMDb ${details.rating.toFixed(1)}/10` : "IMDb unavailable"}</p></div>
     </button>
     <Button variant="ghost" className="discovery-watch" aria-label={`Watch ${title.title} now`} onClick={() => watch(sourceIntent(details ?? { ...title, imdbId: null, tvdbId: null, rating: null, seasons: [] }))}><Play aria-hidden="true" />Watch now</Button>
   </article>;
