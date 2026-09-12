@@ -312,8 +312,18 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
     }
 
     private void nextSource() {
-        waitForSource("Looking for another source…", false);
+        // Return to the WebView while it searches so the viewer sees the same
+        // title/loading screen used for the initial source selection. Keeping
+        // this activity open only leaves a black native-player waiting screen.
+        closing = true;
+        dismissDialog();
+        requestId++;
+        releasePlayer();
+        subtitles.stop();
+        subtitles.cancelLoad();
+        subtitlesLoading = false;
         NativeVideoPlayerPlugin.complete(result("next", null, 0));
+        finish();
     }
 
     private void closePlayer() {

@@ -22,7 +22,7 @@ function pause(ms: number, signal: AbortSignal) {
 }
 type SimplePlayback = { nativeSession?: string; qualityInfo?: string; simple?: boolean; resumeAt?: number; onFailure?: () => void; onNext?: (position?: number) => void; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void };
 
-const VIDEO_CACHE_TARGET_BYTES = 2.5 * 1024 * 1024;
+const VIDEO_CACHE_TARGET_BYTES = 5 * 1024 * 1024;
 
 function CacheProgress({ stats }: { stats: TorrentStatus }) {
   const cached = stats.preloadBytes ?? stats.completedBytes ?? 0;
