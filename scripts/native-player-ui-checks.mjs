@@ -53,6 +53,7 @@ export async function checkNativePlayer({ call, evaluate, until, activate, origi
     await activate('dialog button.bg-orange-600');
     await until('!!document.querySelector(".simple-watch-pending")');
     await until('nativeFixture.plays.length === 1');
+    assert.match(await evaluate('nativeFixture.plays[0].qualityInfo'), /Gemini quality review: Good choice[\s\S]*1080p[\s\S]*5,000 seeders[\s\S]*strong streaming choice/);
     assert.equal(await evaluate('document.querySelector("video").hasAttribute("src")'), false, 'No WebView video decoding alongside native playback');
     assert.equal(await evaluate('document.querySelector(".tv-playback-controls").checkVisibility()'), false, 'Page keeps only the initial loading flow');
     await evaluate(`nativeFixture.emit({ action: 'subtitleAuto', playbackId: 'selected', requestId: 1 })`);

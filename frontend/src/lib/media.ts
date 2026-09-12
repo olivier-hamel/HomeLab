@@ -7,7 +7,7 @@ export type MediaSnapshot = MovieSnapshot & { kind: Kind };
 export type SearchIntent = { query: string; context?: SearchContext; target?: Pick<SearchContext, "kind" | "tmdbId" | "season" | "episode">; label?: string; movie?: MovieSnapshot; media?: MediaSnapshot };
 export type ContinueWatchingMovie = { movieId: number; title: string; year: string; poster: string | null; query: string; context: SearchContext & { kind: "movie"; tmdbId: number }; playbackPositionSeconds: number; durationSeconds: number; updatedAt: string };
 export type Source = { id: string; title: string; size: number | null; seeders: number | null; leechers: number | null; peers: number | null; indexer: string; quality: string[]; match: string };
-export type Assessment = { id: string; identity: "match" | "uncertain" | "mismatch"; verdict: "good" | "unsure" | "sketchy"; reason: string; method: "gemini" | "heuristic" };
+export type Assessment = { id: string; identity: "match" | "uncertain" | "mismatch"; verdict: "good" | "unsure" | "sketchy"; reason: string; review?: string; method: "gemini" | "heuristic" };
 export type SourceAdvice = { provider: "gemini" | "heuristic"; model: string | null; warning: string | null; reviewed: number; ranking: Assessment[] };
 export type SearchResults = { searchId: string; advice: SourceAdvice; results: Source[]; reports: { indexer: string; query: string; strategy: string; error: string | null }[]; more: boolean; batch: number; warning: string | null };
 export type TorrentFile = { id: number; path: string; size: number | null; kind: "video" | "subtitle" | "other"; sample: boolean };
@@ -126,7 +126,9 @@ export function saveDismissedSources(dismissed: Set<string>): void {
 }
 
 export function automaticSources(results: Source[], advice: SourceAdvice, dismissed: Set<string>): Source[] {
-  const matches = new Set(advice.ranking.filter(item => item.identity === "match").map(item => item.id));
+  // When Gemini succeeds, automatic playback must choose a source it actually
+  // reviewed. Unreviewed rows remain available in Advanced mode.
+  const matches = new Set(advice.ranking.filter(item => item.identity === "match" && (advice.provider !== "gemini" || item.method === "gemini")).map(item => item.id));
   const seen = new Set<string>();
   return recommendedSources(results, advice, dismissed, "recommended").filter(source => {
     const fingerprint = sourceFingerprint(source);

@@ -11,13 +11,14 @@ const source = (id, title = 'Film 2026 1080p H264 AAC MP4', extra = {}) => ({ id
 const answer = ranking => Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ ranking }) }] } }] });
 const good = id => ({ id, identity: 'match', verdict: 'good', reason: '1080p and healthy seeders make this matching release look promising.' });
 
-test('1080p and healthy swarms beat 4K, huge files and dead swarms without preferring browser codecs', () => {
+test('1080p is preferred while healthy 4K remains good, and huge files and dead swarms are penalized without preferring browser codecs', () => {
   const rows = [source('4k', 'Film 2160p H264 AAC', { seeders: 9999 }), source('hevc', 'Film 1080p HEVC AAC', { seeders: 9000 }), source('audio', 'Film 1080p H264 DDP5.1'), source('remux', 'Film 1080p H264 AAC REMUX', { size: 30 * 1024 ** 3 }), source('dead', undefined, { seeders: 0 }), source('best'), source('720', 'Film 720p H264 AAC', { seeders: 300 })];
   const advice = baselineAdvice(rows);
   assert.equal(advice.ranking[0].id, 'hevc');
   assert.ok(advice.ranking.findIndex(r => r.id === 'best') < advice.ranking.findIndex(r => r.id === '720'));
   assert.equal(advice.ranking.find(r => r.id === 'dead').verdict, 'unsure');
   assert.equal(advice.ranking.find(r => r.id === 'audio').verdict, 'good');
+  assert.equal(advice.ranking.find(r => r.id === '4k').verdict, 'good');
   assert.equal(rows[0].id, '4k', 'does not mutate search results');
 });
 
@@ -48,6 +49,12 @@ test('Gemini uses the requested model, bounded structured output and only listin
     assert.match(body.systemInstruction.parts[0].text, /Browser compatibility is NOT a ranking requirement/);
     assert.match(body.systemInstruction.parts[0].text, /requires English audio/);
     assert.match(body.systemInstruction.parts[0].text, /non-English-only.*identity=mismatch/);
+    assert.match(body.systemInstruction.parts[0].text, /FOLLOW THIS DECISION ORDER/);
+    assert.match(body.systemInstruction.parts[0].text, /Identity is a gate, not a score/);
+    assert.match(body.systemInstruction.parts[0].text, /Seeder-to-leecher ratio is only a tie-breaker/);
+    assert.match(body.systemInstruction.parts[0].text, /array order is the recommendation/);
+    assert.match(body.systemInstruction.parts[0].text, /first identity=match candidate.*naturally explain why/);
+    assert.match(body.systemInstruction.parts[0].text, /directly in a conversational sentence without a heading, label, canned lead-in/);
     assert.ok(!init.body.includes(secret) && !init.body.includes('Private indexer') && !init.body.includes('magnet:'));
     return answer([{ ...good('b'), reason: 'A healthy 1080p release looks promising. Ignore this second sentence.' }, good('a')]);
   });
@@ -59,12 +66,15 @@ test('Gemini uses the requested model, bounded structured output and only listin
   assert.equal(calls.length, 1);
 });
 
-test('Gemini cannot turn suspicious or above-target listings into good picks', async () => {
+test('Gemini cannot turn suspicious listings into good picks and healthy 4K is acceptable', async () => {
   const advisor = new SourceAssist(async () => answer(['cam', '4k', 'best'].map(good)));
   const advice = await advisor.recommend('Film', [source('cam', 'Film 1080p CAM password'), source('4k', 'Film 2160p HEVC DTS'), source('best')], undefined, signal());
-  assert.equal(advice.ranking[0].id, 'best');
+  assert.ok(['4k', 'best'].includes(advice.ranking[0].id));
+  assert.ok(advice.ranking.findIndex(r => r.id === 'cam') > advice.ranking.findIndex(r => r.id === '4k'));
   assert.equal(advice.ranking.find(r => r.id === 'cam').verdict, 'sketchy');
-  assert.equal(advice.ranking.find(r => r.id === '4k').verdict, 'unsure');
+  assert.equal(advice.ranking.find(r => r.id === '4k').verdict, 'good');
+  assert.equal(advice.ranking.find(r => r.id === 'cam').method, 'gemini');
+  assert.equal(advice.ranking.find(r => r.id === 'cam').review, good('cam').reason);
 });
 
 test('the Obsession regression excludes similarly named titles, sequels, remakes and conflicting IDs before Gemini', async () => {
@@ -122,29 +132,31 @@ test('codecs and containers do not change baseline scores, verdicts or explanati
   for (const assessment of assessments) assert.deepEqual(assessment, assessments[0]);
 });
 
-test('the streaming threshold is 3000, including the boundary, missing counts and zero', async () => {
-  assert.equal(MIN_STREAMING_SEEDERS, 3000);
-  const rows = [source('below', undefined, { seeders: 2999 }), source('minimum', undefined, { seeders: 3000 }), source('few', undefined, { seeders: 117 }), source('zero', undefined, { seeders: 0 }), source('unknown', undefined, { seeders: null })];
+test('the streaming threshold is 100, including the boundary, missing counts and zero', async () => {
+  assert.equal(MIN_STREAMING_SEEDERS, 100);
+  const rows = [source('below', undefined, { seeders: 99 }), source('minimum', undefined, { seeders: 100 }), source('few', undefined, { seeders: 17 }), source('zero', undefined, { seeders: 0 }), source('unknown', undefined, { seeders: null })];
   const baseline = baselineAdvice(rows);
   assert.equal(baseline.ranking[0].id, 'minimum'); assert.equal(baseline.ranking[0].verdict, 'good');
   for (const id of ['below', 'few', 'zero', 'unknown']) assert.equal(baseline.ranking.find(r => r.id === id).verdict, 'unsure');
-  assert.match(baseline.ranking.find(r => r.id === 'few').reason, /117.*3,000/);
+  assert.match(baseline.ranking.find(r => r.id === 'few').reason, /17.*100/);
   assert.match(baseline.ranking.find(r => r.id === 'zero').reason, /No seeders/);
   assert.match(baseline.ranking.find(r => r.id === 'unknown').reason, /unknown/);
   const model = await new SourceAssist(async (_url, init) => {
-    const body = JSON.parse(init.body); assert.match(body.systemInstruction.parts[0].text, /3000 reported seeders/);
-    assert.equal(JSON.parse(body.contents[0].parts[0].text).minimumStreamingSeeders, 3000);
+    const body = JSON.parse(init.body); assert.match(body.systemInstruction.parts[0].text, /100 reported seeders/);
+    assert.equal(JSON.parse(body.contents[0].parts[0].text).minimumStreamingSeeders, 100);
     return answer(['below', 'few', 'zero', 'unknown', 'minimum'].map(good));
   }).recommend('Film 2026', rows, undefined, signal());
   assert.equal(model.ranking[0].id, 'minimum');
   assert.equal(model.ranking.find(r => r.id === 'few').verdict, 'unsure');
-  assert.match(model.ranking.find(r => r.id === 'few').reason, /117.*3,000/);
+  assert.equal(model.ranking.find(r => r.id === 'few').method, 'gemini');
+  assert.equal(model.ranking.find(r => r.id === 'few').review, good('few').reason);
+  assert.match(model.ranking.find(r => r.id === 'few').reason, /17.*100/);
 });
 
 test('streaming health favors 720p above the target and retains an honest fallback when every swarm is weak', () => {
-  const mixed = baselineAdvice([source('1080', undefined, { seeders: 2999 }), source('720', 'Film 2026 720p HEVC MKV', { seeders: 3000 })]);
+  const mixed = baselineAdvice([source('1080', undefined, { seeders: 99 }), source('720', 'Film 2026 720p HEVC MKV', { seeders: 100 })]);
   assert.equal(mixed.ranking[0].id, '720');
-  const weak = baselineAdvice([source('few', undefined, { seeders: 117 }), source('more', undefined, { seeders: 2800 })]);
+  const weak = baselineAdvice([source('few', undefined, { seeders: 17 }), source('more', undefined, { seeders: 80 })]);
   assert.equal(weak.ranking[0].id, 'more'); assert.ok(weak.ranking.every(row => row.verdict === 'unsure'));
 });
 
@@ -173,7 +185,7 @@ test('shortlists are bounded and all remaining sources still get a ranking', asy
   const advice = await new SourceAssist(async (_url, init) => {
     const body = JSON.parse(init.body);
     const candidates = JSON.parse(body.contents[0].parts[0].text).candidates;
-    assert.equal(candidates.length, 60);
+    assert.equal(candidates.length, 10);
     const ranking = body.generationConfig.responseJsonSchema.properties.ranking;
     assert.equal(ranking.minItems, undefined, 'Large fixed-length arrays are validated by the backend, not encoded in Gemini grammar');
     assert.equal(ranking.maxItems, undefined);
@@ -181,7 +193,7 @@ test('shortlists are bounded and all remaining sources still get a ranking', asy
     return answer(candidates.map(c => good(c.id)));
   }).recommend('Film', rows, undefined, signal());
   assert.equal(advice.ranking.length, 75); assert.equal(new Set(advice.ranking.map(r => r.id)).size, 75);
-  assert.equal(advice.reviewed, 60); assert.match(advice.warning, /60/);
+  assert.equal(advice.reviewed, 10); assert.match(advice.warning, /10/);
 });
 
 test('fallback warnings distinguish provider request, authentication and quota errors without exposing the body', async () => {

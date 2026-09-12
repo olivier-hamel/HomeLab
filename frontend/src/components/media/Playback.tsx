@@ -20,9 +20,9 @@ function pause(ms: number, signal: AbortSignal) {
     if (signal.aborted) abort();
   });
 }
-type SimplePlayback = { nativeSession?: string; simple?: boolean; resumeAt?: number; onFailure?: () => void; onNext?: (position?: number) => void; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void };
+type SimplePlayback = { nativeSession?: string; qualityInfo?: string; simple?: boolean; resumeAt?: number; onFailure?: () => void; onNext?: (position?: number) => void; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void };
 
-const VIDEO_CACHE_TARGET_BYTES = 25 * 1024 * 1024;
+const VIDEO_CACHE_TARGET_BYTES = 2.5 * 1024 * 1024;
 
 function CacheProgress({ stats }: { stats: TorrentStatus }) {
   const cached = stats.preloadBytes ?? stats.completedBytes ?? 0;
@@ -36,7 +36,16 @@ function CacheProgress({ stats }: { stats: TorrentStatus }) {
   </div>;
 }
 
-export default function Playback({ source, search, close, simple = false, nativeSession, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { source: Source | string; search?: SearchIntent; close: () => void } & SimplePlayback) {
+function QualityReview({ value }: { value: string }) {
+  const [heading, details, ...review] = value.split("\n\n");
+  return <div role="status" aria-label="Quality review" className="max-w-3xl space-y-1 text-center">
+    <p className="text-lg font-semibold text-orange-300">{heading.replace("Gemini quality review:", "Quality review ·")}</p>
+    <p className="text-xs text-neutral-400">{details}</p>
+    <p className="text-xs leading-relaxed text-neutral-300">{review.join(" ")}</p>
+  </div>;
+}
+
+export default function Playback({ source, search, close, simple = false, nativeSession, qualityInfo, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { source: Source | string; search?: SearchIntent; close: () => void } & SimplePlayback) {
   const panel = useRef<HTMLElement>(null);
   useTvFocus(panel);
   const [status, setStatus] = useState<TorrentStatus | null>(null);
@@ -75,7 +84,7 @@ export default function Playback({ source, search, close, simple = false, native
   }, [source, retry, simple, search]);
   const videos = status?.files.filter(f => f.kind === "video") ?? [];
   if (simple) return <section ref={panel} aria-label="Playback" className="simple-playback">
-    {selection ? <Player close={close} nativeSession={nativeSession} key={selection.id} selection={selection} initial={status!} search={search} simple resumeAt={resumeAt} onFailure={onFailure} onNext={onNext} englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} /> : <div className="simple-watch-pending"><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status">{error ? "Trying another version…" : "Torrent found. Getting your video ready…"}</p><Button variant="outline" onClick={() => onNext?.()}><RefreshCw />Not working? Try another source</Button></div>}
+    {selection ? <Player close={close} nativeSession={nativeSession} qualityInfo={qualityInfo} key={selection.id} selection={selection} initial={status!} search={search} simple resumeAt={resumeAt} onFailure={onFailure} onNext={onNext} englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} /> : <div className="simple-watch-pending"><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status">{error ? "Trying another version…" : "Torrent found. Getting your video ready…"}</p>{qualityInfo && <QualityReview value={qualityInfo} />}<Button variant="outline" onClick={() => onNext?.()}><RefreshCw />Not working? Try another source</Button></div>}
   </section>;
   return <section ref={panel} aria-label="Playback" className="space-y-4 rounded-lg border border-orange-500/50 bg-neutral-900 p-4 sm:p-6">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-2 text-xs tracking-widest text-orange-400">YOUR SELECTION</p><h2 className="break-words text-lg font-semibold text-white">{status?.title || (typeof source === "string" ? "Manual magnet" : source.title)}</h2></div><Button data-tv-back="" aria-label="Close playback" variant="ghost" size="icon" onClick={close}><X /></Button></div>
@@ -95,7 +104,7 @@ export default function Playback({ source, search, close, simple = false, native
   </section>;
 }
 
-function Player({ selection, initial, search, close, simple = false, nativeSession, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { selection: Selection; initial: TorrentStatus; search?: SearchIntent; close: () => void } & SimplePlayback) {
+function Player({ selection, initial, search, close, simple = false, nativeSession, qualityInfo, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { selection: Selection; initial: TorrentStatus; search?: SearchIntent; close: () => void } & SimplePlayback) {
   const tvMode = useTvMode();
   const screen = useRef<HTMLDivElement>(null);
   useTvFocus(screen);
@@ -218,7 +227,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
             const subtitle = nativeSubtitle.status === "ready" ? { ...nativeSubtitle.subtitle, content: offsetSubtitleVtt(nativeSubtitle.subtitle.content, nativeSubtitle.subtitle.offset - nativeOffset) } : undefined;
             const result = await playNativeVideo(new URL(nativeUrl, window.location.href).href, selection.file.path, plan.mode === "direct" ? target : 0, subtitle, {
               playbackId: selection.id, timelineOffset: nativeOffset, searchQuery: subtitleSearch(selection.file.path, search).query,
-              sessionId: nativeSession ?? selection.id, allowNext: !!onNext,
+              sessionId: nativeSession ?? selection.id, allowNext: !!onNext, qualityInfo,
             });
             if (controller.signal.aborted) return;
             latestPosition.current = nativeOffset + (result.ended && result.duration > 0 ? result.duration : result.position);
@@ -347,6 +356,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
   if (simple) return <div ref={screen} className="simple-player-screen space-y-4">
     {playerControls}
     {error && <p role="status" className="text-sm text-orange-300">{error}</p>}
+    {qualityInfo && <QualityReview value={qualityInfo} />}
     <div className="simple-player-options">
       <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} simple englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} onNativeSubtitleChange={setNativeSubtitle} />
       <div className="space-y-2"><Button variant="outline" onClick={() => onNext?.()}><RefreshCw />Try another source</Button><p className="text-xs text-neutral-400">Playback not working?</p></div>

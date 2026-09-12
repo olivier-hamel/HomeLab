@@ -43,7 +43,7 @@ export default function Sources({ intent, choose, disabled, reject }: { intent: 
   const hiddenCount = (result?.results.length ?? 0) - sorted.length;
   const pages = Math.max(1, Math.ceil(sorted.length / 25));
   return <div ref={panel} className="tv-surface-enter space-y-5">
-    {intent.label && <div className="rounded border border-orange-500/30 bg-orange-500/5 p-4 text-sm"><p>Looking for <strong className="text-white">{intent.label}</strong></p><p className="mt-1 text-neutral-400">Matching this title first, targeting 1080p and 3,000+ reported seeders for streaming.</p></div>}
+    {intent.label && <div className="rounded border border-orange-500/30 bg-orange-500/5 p-4 text-sm"><p>Looking for <strong className="text-white">{intent.label}</strong></p><p className="mt-1 text-neutral-400">Matching this title first, targeting 1080p and 100+ reported seeders for streaming.</p></div>}
     <form onSubmit={e => { e.preventDefault(); search(); }} className="space-y-3">
       <label htmlFor="source-query" className="block text-sm text-neutral-300">Search your Prowlarr indexers</label>
       <div className="flex flex-wrap gap-3"><Input id="source-query" required maxLength={250} value={q} onChange={e => { setQuery(e.target.value); setUseIds(false); }} placeholder="Title, year, S01E01, or any search text…" className="h-11 min-w-40 flex-1 border-neutral-600 bg-neutral-950" /><Button disabled={task.busy || !q.trim()} className="h-11 bg-orange-600 text-white hover:bg-orange-700"><Search />Search sources</Button>{task.busy && <Button type="button" variant="outline" onClick={task.cancel}>Cancel search</Button>}</div>

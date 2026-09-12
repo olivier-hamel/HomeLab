@@ -129,6 +129,7 @@ public class NativeVideoPlayerPlugin extends Plugin {
         intent.putExtra("searchQuery", call.getString("searchQuery", ""));
         intent.putExtra("sessionId", call.getString("sessionId", ""));
         intent.putExtra("allowNext", call.getBoolean("allowNext", false));
+        intent.putExtra("qualityInfo", call.getString("qualityInfo", ""));
         String cookie = CookieManager.getInstance().getCookie(url);
         if (cookie != null) intent.putExtra("cookie", cookie);
         JSObject subtitle = call.getObject("subtitle");
