@@ -98,11 +98,14 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         quit.setOnClickListener(view -> closePlayer());
         options.setOnClickListener(view -> showOptions());
         for (int i = 0; i < playerActions.getChildCount(); i++) {
-            playerActions.getChildAt(i).setOnFocusChangeListener((view, focused) ->
-                playerView.setControllerShowTimeoutMs(focused ? 0 : CONTROLLER_TIMEOUT_MS));
+            playerActions.getChildAt(i).setOnFocusChangeListener((view, focused) -> {
+                playerView.setControllerShowTimeoutMs(CONTROLLER_TIMEOUT_MS);
+                if (focused) playerView.showController();
+            });
         }
         playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {
             playerActions.setVisibility(waitingForSource ? View.GONE : visibility);
+            if (!waitingForSource && visibility != View.VISIBLE) playerRoot.requestFocus();
         });
         findViewById(R.id.native_source_retry).setOnClickListener(view -> nextSource());
         findViewById(R.id.native_source_quit).setOnClickListener(view -> closePlayer());
@@ -129,8 +132,9 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         if (settings != null) settings.setVisibility(View.GONE);
 
         // Media3's default focus feedback is designed primarily for touch screens.
-        // Give every D-pad target a high-contrast TV focus ring and keep the
-        // controller visible while the viewer is moving through its controls.
+        // Give every D-pad target a high-contrast TV focus ring. Moving focus
+        // refreshes the controller timeout; leaving focus on an idle control
+        // must not keep the overlay visible indefinitely.
         styleFocusableControls(playerView);
 
         View progress = playerView.findViewById(androidx.media3.ui.R.id.exo_progress);
@@ -148,8 +152,10 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
                 float focusedScale = control instanceof DefaultTimeBar ? 1f : 1.12f;
                 control.animate().scaleX(focused ? focusedScale : 1f).scaleY(focused ? focusedScale : 1f).setDuration(120).start();
                 control.setElevation(focused ? 12f : 0f);
-                playerView.setControllerShowTimeoutMs(focused ? 0 : CONTROLLER_TIMEOUT_MS);
-                if (focused) playerView.showController();
+                if (focused) {
+                    playerView.setControllerShowTimeoutMs(CONTROLLER_TIMEOUT_MS);
+                    playerView.showController();
+                }
             });
         }
         if (view instanceof ViewGroup) {

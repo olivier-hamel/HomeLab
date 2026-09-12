@@ -327,25 +327,35 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
   animation: tv-fade-in 380ms ease-out both;
   animation-delay: var(--tv-stagger, 0ms);
 }
-[data-tv-mode="true"] .tv-catalogue-grid .title-card:is(:hover, :focus-within) {
+[data-tv-mode="true"] .tv-catalogue-grid .title-card:focus-within {
   z-index: 2;
   transform: translateY(-3px) scale(1.025);
   border-color: #ffb775;
   outline-color: #ffb775;
   box-shadow: 0 10px 24px #0008, 0 0 18px #fb923c1c;
 }
+[data-tv-mode="true"] .tv-catalogue-grid .title-card:hover:not(:focus-within) {
+  transform: none;
+  border-color: #34302d;
+  outline: none;
+  box-shadow: none;
+}
+[data-tv-mode="true"] .tv-catalogue-grid .title-card > button:first-child:hover { outline: none; }
 [data-tv-mode="true"] .tv-catalogue-grid .title-card > button:first-child { transform: none; }
 [data-tv-mode="true"] .tv-catalogue-grid .title-card > button:first-child:active { transform: scale(.98); }
 [data-tv-mode="true"] :is(.tv-catalogue-grid, .continue-poster) img {
   transition: transform 420ms var(--tv-ease), opacity 240ms ease;
 }
-[data-tv-mode="true"] :is(.title-card, .continue-card):is(:hover, :focus-within) img { transform: scale(1.045); }
+[data-tv-mode="true"] :is(.title-card, .continue-card):focus-within img { transform: scale(1.045); }
+[data-tv-mode="true"] .tv-catalogue-grid .title-card:hover:not(:focus-within) img { transform: none; }
 [data-tv-mode="true"] .simple-card-action {
   opacity: .65;
   transform: translateY(3px);
   transition: opacity 220ms ease, transform 300ms var(--tv-ease);
 }
-[data-tv-mode="true"] .title-card:is(:hover, :focus-within) .simple-card-action { opacity: 1; transform: translateY(0); }
+[data-tv-mode="true"] .title-card:focus-within .simple-card-action { opacity: 1; transform: translateY(0); }
+[data-tv-mode="true"] .title-card:hover:not(:focus-within) .simple-card-action { opacity: .65; transform: translateY(3px); }
+[data-tv-mode="true"] .title-card:hover:not(:focus-within) .font-semibold { color: #fff; }
 [data-tv-mode="true"] .title-card .font-semibold { transition: color 180ms ease; }
 [data-tv-mode="true"] .continue-card { animation: tv-fade-in 380ms ease-out both; animation-delay: var(--tv-stagger, 0ms); }
 [data-tv-mode="true"] .continue-card-main:is(:hover, :focus) {
