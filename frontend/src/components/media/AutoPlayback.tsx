@@ -3,13 +3,13 @@ import { ArrowLeft, LoaderCircle, RotateCcw } from "lucide-react";
 import { Button } from "../ui/button";
 import Playback from "./Playback";
 import { useTvFocus } from "../useTvNavigation";
-import { automaticSources, loadDismissedSources, mediaApi, saveDismissedSources, sourceFingerprint, type SearchIntent, type SearchResults, type Source, type SourceAdvice } from "../../lib/media";
+import { automaticSources, loadDismissedSources, mediaApi, saveDismissedSources, sourceFingerprint, type Assessment, type SearchIntent, type SearchResults, type Source, type SourceAdvice } from "../../lib/media";
 import { hasNativeVideoPlayer, nativePlayerStatus, onNativePlayerRequest } from "../../native";
 
 export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: SearchIntent; close: () => void; resumeAt?: number }) {
   const panel = useRef<HTMLElement>(null);
   useTvFocus(panel);
-  const [chosen, setChosen] = useState<{ source: Source; key: number } | null>(null);
+  const [chosen, setChosen] = useState<{ source: Source; assessment?: Assessment; key: number } | null>(null);
   const [message, setMessage] = useState("Finding the best version for you…");
   const [error, setError] = useState("");
   const [english, setEnglish] = useState(false);
@@ -17,6 +17,7 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
   const active = useRef<AbortController | null>(null);
   const dismissed = useRef(loadDismissedSources());
   const queue = useRef<Source[]>([]);
+  const assessments = useRef(new Map<string, Assessment>());
   const nextBatch = useRef(1);
   const fetchedAt = useRef(0);
   const attempts = useRef(0);
@@ -60,6 +61,7 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
         }
         controller.signal.throwIfAborted();
         setReview({ provider: advice.provider, warning: advice.warning });
+        for (const assessment of advice.ranking) assessments.current.set(assessment.id, assessment);
         queue.current = automaticSources(result.results, advice, dismissed.current);
         fetchedAt.current = Date.now();
         nextBatch.current = result.more && result.batch < 20 ? result.batch + 1 : 0;
@@ -68,7 +70,7 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
       controller.signal.throwIfAborted();
       current.current = candidate;
       attempts.current++;
-      setChosen({ source: candidate, key: ++sequence.current });
+      setChosen({ source: candidate, assessment: assessments.current.get(candidate.id), key: ++sequence.current });
     } catch {
       if (!controller.signal.aborted) setError(nextBatch.current ? "We couldn't find a playable version. Try again in a moment." : "No more matching versions are available right now. Try again later or choose another title.");
     } finally { if (active.current === controller) active.current = null; }
@@ -100,9 +102,12 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
   return <section ref={panel} aria-label="Watch title" className="simple-watch space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <Button variant="ghost" data-tv-back="" onClick={close}><ArrowLeft />Back to browse</Button>
-      {chosen && review && <p role="status" className="max-w-lg text-xs text-neutral-400">{review.provider === "gemini" ? "Selected with Gemini" : review.warning || "Selected with basic matching"}</p>}
+      {chosen && review && chosen.assessment?.method !== "gemini" && <p role="status" className="max-w-lg text-xs text-neutral-400">{review.warning || "Selected with basic matching"}</p>}
     </div>
-    <h2 className="text-2xl font-semibold text-white sm:text-3xl">{intent.label || intent.query}</h2>
+    <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2">
+      <h2 className="text-2xl font-semibold text-white sm:text-3xl">{intent.label || intent.query}</h2>
+      {chosen?.assessment?.method === "gemini" && <p role="status" className="max-w-2xl text-sm leading-relaxed text-neutral-300"><span className="font-medium text-orange-300">Gemini · {chosen.assessment.verdict === "good" ? "Good choice" : chosen.assessment.verdict === "sketchy" ? "Caution" : "Uncertain"}</span><span className="text-neutral-500"> — </span>{chosen.assessment.reason}</p>}
+    </div>
     {chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} nativeSession={nativeSession} simple resumeAt={nextPosition} onFailure={() => { void next(true); }} onNext={position => { if (position !== undefined) setNextPosition(position); void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
       {error ? <><p role="alert" className="max-w-md text-center text-neutral-300">{error}</p><Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => { if (!nextBatch.current && !queue.current.length) nextBatch.current = 1; void next(false, true); }}><RotateCcw />Try again</Button></> : <><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status" className="text-neutral-200">{message}</p><p className="text-sm text-neutral-400">This can take a moment. We'll start when it's ready.</p></>}
       <Button variant="ghost" onClick={close}>{error ? "Choose another title" : "Cancel"}</Button>

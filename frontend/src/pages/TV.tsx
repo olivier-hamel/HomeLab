@@ -36,6 +36,7 @@ export default function TV({ footerActions }: { footerActions?: HTMLElement | nu
     setChosen(null);
     setWatchIntent(null);
     window.dispatchEvent(new CustomEvent("homelab:continue-watching-changed"));
+    window.dispatchEvent(new CustomEvent("homelab:tv-startup-focus"));
   };
   useEffect(() => {
     const controller = new AbortController();
