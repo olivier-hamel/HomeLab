@@ -14,6 +14,18 @@ export async function checkTvMotion({ call, evaluate, until, activate, focus, pr
   assert.ok(await evaluate('new DOMMatrix(getComputedStyle(document.querySelector(".title-card")).transform).a > 1'), 'Focused poster lifts and scales');
   assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Focused cards do not introduce horizontal overflow');
 
+  // Fire TV's WebView can leave a synthetic pointer parked on one card while
+  // D-pad focus moves elsewhere. Hover must not look like a second selection.
+  const parkedPointer = await evaluate(`(() => {
+    const bounds = document.querySelector('.title-card').getBoundingClientRect();
+    return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+  })()`);
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...parkedPointer });
+  await focus('.title-card:nth-child(2) > button');
+  await delay(350);
+  assert.equal(await evaluate('new DOMMatrix(getComputedStyle(document.querySelector(".title-card")).transform).a'), 1, 'Parked hover does not highlight the first card');
+  assert.ok(await evaluate('new DOMMatrix(getComputedStyle(document.querySelector(".title-card:nth-child(2)")).transform).a > 1'), 'Only the D-pad focused card is highlighted');
+
   await activate(opener);
   await until('!!document.querySelector("dialog button.bg-orange-600:not(:disabled)")');
   await delay(350);

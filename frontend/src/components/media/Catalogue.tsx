@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Film, Info, Play, Search, Star, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -12,7 +12,6 @@ type RecommendationResponse = { provider: "gemini"; basedOn: number; titles: Tit
 export default function Catalogue({ find, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent, resumeAt?: number) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
   const [text, setText] = useState("");
   const [q, setQuery] = useState("");
-  const [page, setPage] = useState(1);
   const [chosen, setChosen] = useState<Title | null>(null);
   const [retry, setRetry] = useState(0);
   const [suggestions, setSuggestions] = useState<Title[]>([]);
@@ -36,9 +35,9 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
     if (simple && title.kind === "movie" && !tvMode) find(sourceIntent({ ...title, imdbId: null, tvdbId: null, rating: null, seasons: [] }));
     else setChosen(title);
   };
-  const exitSearch = () => { setText(""); setQuery(""); setPage(1); setChosen(null); setSuggestions([]); setSuggestionFocus(false); };
+  const exitSearch = () => { setText(""); setQuery(""); setChosen(null); setSuggestions([]); setSuggestionFocus(false); };
   return <div className="tv-surface-enter space-y-5">
-    <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setSuggestionFocus(false); setQuery(text.trim()); setPage(1); setRetry(r => r + 1); }}>
+    <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setSuggestionFocus(false); setQuery(text.trim()); setRetry(r => r + 1); }}>
       <label className="sr-only" htmlFor="catalogue-query">Search catalogue</label>
       <div className="relative min-w-40 flex-1" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setSuggestionFocus(false); }}>
         <Input id="catalogue-query" maxLength={250} className="h-11 w-full border-neutral-600 bg-neutral-950" placeholder="Find a title…" value={text} onChange={e => { setText(e.target.value); setSuggestions([]); setSuggesting(false); setSuggestionFocus(true); }} onFocus={() => setSuggestionFocus(true)} role="combobox" aria-autocomplete="list" aria-expanded={suggestionFocus && text.trim().length >= 2 && (suggesting || suggestions.length > 0)} aria-controls="catalogue-suggestions" autoComplete="off" />
@@ -58,7 +57,7 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
       {q && <Button type="button" variant="outline" data-tv-back="" onClick={exitSearch}><X />Exit search</Button>}
     </div>
     {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={(intent, resumeAt) => { setChosen(null); find(intent, resumeAt); }} simple={simple} />}
-    <CatalogueResults key={`${q}/${page}/${retry}`} query={q} page={page} setPage={setPage} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
+    <CatalogueResults key={`${q}/${retry}`} query={q} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
   </div>;
 }
 
@@ -96,24 +95,77 @@ function TitleGrid({ titles, choose, showDetails, simple }: { titles: Title[]; c
   </div>;
 }
 
-function CatalogueResults({ query, page, setPage, choose, showDetails, retry, simple }: { query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; showDetails: (t: Title) => void; retry: () => void; simple: boolean }) {
+function CatalogueResults({ query, choose, showDetails, retry, simple }: { query: string; choose: (t: Title) => void; showDetails: (t: Title) => void; retry: () => void; simple: boolean }) {
   const [result, setResult] = useState<CatalogueResponse | null>(null);
   const [error, setError] = useState("");
   const [cancelled, setCancelled] = useState(false);
-  const [controller] = useState(() => new AbortController());
+  const [page, setPage] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState("");
+  const initialRequest = useRef<AbortController | null>(null);
+  const moreRequest = useRef<AbortController | null>(null);
+  const loadingMoreRef = useRef(false);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const tvMode = useTvMode();
+
   useEffect(() => {
-    const stop = new AbortController();
-    const signal = AbortSignal.any([stop.signal, controller.signal, AbortSignal.timeout(20_000)]);
-    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind: "all", q: query, page: String(page) })}`, signal).then(r => { if (!signal.aborted) setResult(r); }).catch(e => { if (!stop.signal.aborted && !controller.signal.aborted) setError(e instanceof Error ? e.message : "Catalogue unavailable."); });
-    return () => stop.abort();
-  }, [query, page, controller]);
+    const controller = new AbortController();
+    initialRequest.current = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
+    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind: "all", q: query, page: "1" })}`, signal)
+      .then(value => { if (!signal.aborted) { setResult(value); setPage(1); } })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Catalogue unavailable."); });
+    return () => controller.abort();
+  }, [query]);
+
+  const loadMore = useCallback(() => {
+    if (!result || page >= result.pages || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setLoadMoreError("");
+    const controller = new AbortController();
+    moreRequest.current = controller;
+    const nextPage = page + 1;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
+    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind: "all", q: query, page: String(nextPage) })}`, signal)
+      .then(value => {
+        if (signal.aborted) return;
+        setResult(current => current ? {
+          ...value,
+          titles: [...current.titles, ...value.titles.filter(title => !current.titles.some(existing => existing.kind === title.kind && existing.id === title.id))],
+        } : value);
+        setPage(nextPage);
+      })
+      .catch(cause => { if (!controller.signal.aborted) setLoadMoreError(cause instanceof Error ? cause.message : "More titles could not be loaded."); })
+      .finally(() => {
+        if (moreRequest.current === controller) moreRequest.current = null;
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [page, query, result]);
+
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target || !result || page >= result.pages || loadMoreError) return;
+    const root = tvMode ? null : document.getElementById("dashboard-content");
+    const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) loadMore(); }, { root, rootMargin: "600px 0px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [loadMore, loadMoreError, page, result, tvMode]);
+
+  useEffect(() => () => moreRequest.current?.abort(), []);
+
   if (error || cancelled) return <div role="alert" className="space-y-3 rounded border border-orange-500/40 p-5"><p>{error || "Catalogue request cancelled."}</p><Button variant="outline" onClick={retry}>Retry catalogue</Button></div>;
-  if (!result) return <div role="status" className="flex items-center gap-4 p-5">Searching catalogue…<Button variant="outline" onClick={() => { controller.abort(); setCancelled(true); }}>Cancel</Button></div>;
+  if (!result) return <div role="status" className="flex items-center gap-4 p-5">Searching catalogue…<Button variant="outline" onClick={() => { initialRequest.current?.abort(); setCancelled(true); }}>Cancel</Button></div>;
   return <>
     {result.correctedQuery && <p role="status" className="rounded border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-neutral-200">Showing likely matches for <strong className="text-white">{result.correctedQuery}</strong>. Results for your original search are included too.</p>}
     {!result.titles.length && <p className="py-10 text-neutral-400">No titles found. Try a different name.</p>}
     <TitleGrid titles={result.titles} choose={choose} showDetails={showDetails} simple={simple} />
-    <div className="flex items-center justify-center gap-4"><Button variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-xs text-neutral-400">Page {page} / {result.pages || 1}</span><Button variant="outline" disabled={page >= result.pages} onClick={() => setPage(page + 1)}>Next</Button></div>
+    <div ref={sentinel} className="flex min-h-16 flex-col items-center justify-center gap-3 py-2">
+      {loadMoreError ? <div role="alert" className="flex flex-wrap items-center justify-center gap-3 text-sm text-orange-400"><span>{loadMoreError}</span><Button variant="outline" onClick={loadMore}>Retry loading more</Button></div>
+        : page < result.pages ? <><p role="status" className="text-sm text-neutral-400">{loadingMore ? "Loading more titles…" : "Keep scrolling for more titles"}</p><Button type="button" variant="outline" disabled={loadingMore} onClick={loadMore}>{loadingMore ? "Loading…" : "Load more"}</Button></>
+        : result.titles.length > 0 && <p className="text-xs text-neutral-500">You’ve reached the end.</p>}
+    </div>
   </>;
 }
 
