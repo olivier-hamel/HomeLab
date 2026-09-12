@@ -42,6 +42,8 @@ export default function useTvNavigation(enabled: boolean) {
     if (!enabled) return;
     const root = () => document.fullscreenElement ?? document.querySelector("dialog[open]") ?? document;
     let focusedScope: HTMLElement | null = null;
+    let startupFocus: HTMLElement | null = null;
+    let startupNavigationStarted = false;
     const focusin = (event: FocusEvent) => {
       focusedScope = event.target instanceof HTMLElement ? event.target.closest("[data-tv-focus-scope]") : null;
     };
@@ -49,11 +51,22 @@ export default function useTvNavigation(enabled: boolean) {
       const available = controls(scope);
       focus(available.find(element => element.hasAttribute("data-tv-initial-focus")) ?? available[0]);
     };
+    const focusStartupTitle = () => {
+      if (startupNavigationStarted) return;
+      const title = controls(root()).find(element => element.hasAttribute("data-tv-startup-focus"));
+      // More important rows (for example Continue Watching) can finish after the
+      // catalogue. Follow the first card in document order until the user moves.
+      if (title && title !== startupFocus) {
+        startupFocus = title;
+        focus(title);
+      }
+    };
     const keydown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
       const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       const text = active?.matches("textarea, input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit'])") || active?.isContentEditable;
       const key = event.key && event.key !== "Unidentified" ? event.key : ({ 33: "PageUp", 34: "PageDown", 37: "ArrowLeft", 38: "ArrowUp", 39: "ArrowRight", 40: "ArrowDown" } as Record<number, string>)[event.keyCode];
+      if (["PageUp", "PageDown", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", "Select", "Escape", "BrowserBack", "GoBack", "Backspace"].includes(key) || event.keyCode === 4 || event.keyCode === 23) startupNavigationStarted = true;
       if (key === "PageUp" || key === "PageDown") {
         if (!text && !active?.matches("select, input, video") && scrollTvPage(key === "PageUp" ? -1 : 1, active)) event.preventDefault();
         return;
@@ -107,12 +120,20 @@ export default function useTvNavigation(enabled: boolean) {
         if (toolbar) { event.preventDefault(); focus(toolbar.element); }
       }
     };
+    const pointerdown = () => { startupNavigationStarted = true; };
+    const restartStartupFocus = () => {
+      startupNavigationStarted = false;
+      startupFocus = null;
+      requestAnimationFrame(focusStartupTitle);
+    };
     document.addEventListener("keydown", keydown);
+    document.addEventListener("pointerdown", pointerdown);
     document.addEventListener("focusin", focusin);
-    const frame = requestAnimationFrame(() => initial());
+    const frame = requestAnimationFrame(() => { initial(); focusStartupTitle(); });
     let recovery = 0;
     // Async results can remove the focused control. Recover only if focus was lost.
     const observer = new MutationObserver(() => {
+      focusStartupTitle();
       if (!document.activeElement || document.activeElement === document.body || document.activeElement.matches(":disabled")) {
         cancelAnimationFrame(recovery);
         recovery = requestAnimationFrame(() => {
@@ -120,7 +141,8 @@ export default function useTvNavigation(enabled: boolean) {
         });
       }
     });
+    window.addEventListener("homelab:tv-startup-focus", restartStartupFocus);
     observer.observe(document.getElementById("root")!, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
-    return () => { cancelAnimationFrame(frame); cancelAnimationFrame(recovery); document.removeEventListener("keydown", keydown); document.removeEventListener("focusin", focusin); observer.disconnect(); };
+    return () => { cancelAnimationFrame(frame); cancelAnimationFrame(recovery); document.removeEventListener("keydown", keydown); document.removeEventListener("pointerdown", pointerdown); document.removeEventListener("focusin", focusin); window.removeEventListener("homelab:tv-startup-focus", restartStartupFocus); observer.disconnect(); };
   }, [enabled]);
 }

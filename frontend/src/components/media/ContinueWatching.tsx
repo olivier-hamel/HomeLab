@@ -45,7 +45,7 @@ export default function ContinueWatching({ onResume }: { onResume: (intent: Sear
       {movies.map((movie, index) => {
         const percent = Math.max(0, Math.min(100, movie.playbackPositionSeconds / movie.durationSeconds * 100));
         return <article key={movie.movieId} className="continue-card" style={{ "--tv-stagger": `${Math.min(index, 7) * 30}ms` } as CSSProperties}>
-          <button type="button" className="continue-card-main" aria-label={`Details for ${movie.title}`} onClick={() => setSelected(movie)}>
+          <button type="button" className="continue-card-main" data-tv-startup-focus={index === 0 ? "" : undefined} aria-label={`Details for ${movie.title}`} onClick={() => setSelected(movie)}>
             <span className="continue-poster">{movie.poster ? <img src={movie.poster} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <Film aria-hidden="true" />}
               <span className="continue-progress" aria-hidden="true"><span style={{ width: `${percent}%` }} /></span>
             </span>

@@ -22,6 +22,21 @@ function pause(ms: number, signal: AbortSignal) {
 }
 type SimplePlayback = { nativeSession?: string; simple?: boolean; resumeAt?: number; onFailure?: () => void; onNext?: (position?: number) => void; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void };
 
+function CacheProgress({ stats }: { stats: TorrentStatus }) {
+  const percent = stats.preloadBytes !== null && stats.preloadTarget !== null && stats.preloadTarget > 0
+    ? Math.min(100, Math.max(0, stats.preloadBytes / stats.preloadTarget * 100))
+    : null;
+  const cached = stats.preloadBytes ?? stats.completedBytes;
+  const rate = stats.downloadSpeed === null ? null : `${bytes(stats.downloadSpeed)}/s`;
+  const label = percent !== null ? `${Math.round(percent)}%` : cached !== null ? `${bytes(cached)} cached${rate ? ` · ${rate}` : ""}` : rate ?? "Waiting for data…";
+  return <div className="mx-auto w-full max-w-sm space-y-1" role="progressbar" aria-label="Video cache loading" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === null ? undefined : Math.round(percent)} aria-valuetext={label}>
+    <div className="flex items-center justify-between gap-3 text-xs text-neutral-400"><span>Loading video cache</span><span className="tabular-nums text-orange-300">{label}</span></div>
+    <div className="relative h-1.5 overflow-hidden rounded-full bg-neutral-700">
+      <span className={`block h-full rounded-full bg-orange-500 transition-[width] duration-300 ${percent === null ? "cache-progress-indeterminate" : ""}`} style={percent === null ? undefined : { width: `${percent}%` }} />
+    </div>
+  </div>;
+}
+
 export default function Playback({ source, search, close, simple = false, nativeSession, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { source: Source | string; search?: SearchIntent; close: () => void } & SimplePlayback) {
   const panel = useRef<HTMLElement>(null);
   useTvFocus(panel);
@@ -163,12 +178,12 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     return () => clearTimeout(timer);
   }, [state]);
   useEffect(() => {
-    if (state !== "playing" && state !== "buffering") return;
+    if (state !== "playing" && state !== "buffering" && state !== "checking format") return;
     const controller = new AbortController();
     void (async () => {
       try {
         while (!controller.signal.aborted) {
-          await pause(3000, controller.signal);
+          await pause(state === "playing" ? 3000 : 1000, controller.signal);
           const result = await mediaApi<TorrentStatus>(`playback/${selection.id}`, AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]));
           if (!controller.signal.aborted) { setStats(result); setStatsError(""); }
         }
@@ -304,12 +319,14 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     void target?.requestFullscreen().catch(() => setNotice("Use the native player fullscreen control on this device."));
   };
   const shareUrl = share ? new URL(share.path, window.location.origin).href : "";
+  const cacheProgress = state === "checking format" || state === "buffering" ? <CacheProgress stats={stats} /> : null;
   const playerControls = <>
     <video ref={video} controls playsInline preload="none" aria-label="Selected video" className="aspect-video w-full rounded bg-black"
       onLoadedMetadata={() => { const element = video.current; if (element && pendingDirectSeek.current) { element.currentTime = Math.min(pendingDirectSeek.current, Math.max(0, element.duration - 1)); pendingDirectSeek.current = 0; } }}
       onDurationChange={() => { const value = video.current?.duration; if (value && Number.isFinite(value)) { setNativeDuration(value); latestDuration.current = prepared?.duration ?? value; } }}
       onPlaying={() => { initialResume.current = 0; setState("playing"); setError(""); recordHistory(); }} onWaiting={() => setState("buffering")} onStalled={() => setState("buffering")} onSeeking={() => setState("buffering")} onCanPlay={() => setState(s => s === "playing" ? s : "ready")} onPause={() => { setState(s => s === "stalled" || s === "failed" ? s : "ready"); persistNow(); }} onEnded={() => { if (latestDuration.current) latestPosition.current = latestDuration.current; persistNow(); setState("ready"); }} onProgress={updateBuffer} onTimeUpdate={updateBuffer}
       onError={() => { if (!playbackUrl) return; setState("failed"); setError(simple && isResume ? "Resume couldn't start. Retry playback or choose another source." : simple ? "This version couldn't play. Trying another…" : "Playback was interrupted or the browser could not decode the prepared stream. Retry, choose another file, or use an external player."); if (simple && !isResume && !failedOnce.current) { failedOnce.current = true; onFailure?.(); } }} />
+    {cacheProgress}
     {prepared && (tvMode || prepared.mode !== "direct") && duration !== null && Number.isFinite(duration) && duration > 0 && <PlaybackTimeline duration={duration} position={position} onSeek={seek} />}
     <div className="tv-playback-controls flex flex-wrap items-center gap-3"><span role="status" className="mr-auto text-sm capitalize text-orange-400">{simple && state === "checking format" ? "Loading media... This can take a few seconds." : state}</span>
       {(tvMode || simple) && <Button variant="outline" disabled={!prepared || !duration || state === "checking format"} aria-label="Rewind 10 seconds" onClick={() => skip(-10)}><Rewind />10 s</Button>}
@@ -324,6 +341,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     <div className="simple-watch-pending">
       <LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" />
       <p role="status">{error || (state === "playing" ? "Playing in the fullscreen player" : "Getting your video ready…")}</p>
+      {cacheProgress}
       <Button variant="ghost" onClick={close}>Cancel</Button>
     </div>
   </div>;
