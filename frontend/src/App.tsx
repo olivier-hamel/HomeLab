@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, Bell, Boxes, ChevronRight, Clapperboard, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
+import { Archive, Bell, BookOpen, Boxes, ChevronRight, Clapperboard, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import Overview from "./pages/Overview";
 import Guests from "./pages/Guests";
@@ -7,6 +7,7 @@ import Tasks from "./pages/Tasks";
 import Backups from "./pages/Backups";
 import Infrastructure from "./pages/Infrastructure";
 import TV from "./pages/TV";
+import Memo from "./pages/Memo";
 import { useTvMode } from "./lib/tv";
 import useTvNavigation from "./components/useTvNavigation";
 import { hasNativeVideoPlayer, isNativeApp } from "./native";
@@ -20,12 +21,16 @@ const sections = [
   { id: "backups", icon: Archive, label: "BACKUPS", component: Backups },
   { id: "infrastructure", icon: Server, label: "INFRASTRUCTURE", component: Infrastructure },
   { id: "tv", icon: Clapperboard, label: "TV & Movies", component: TV },
+  { id: "memo", icon: BookOpen, label: "Mémo", component: Memo },
 ] as const;
 
 export default function App() {
   const tvMode = useTvMode();
   useTvNavigation(tvMode);
-  const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>(tvMode ? "tv" : "overview");
+  const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>(() => {
+    const requested = new URLSearchParams(location.search).get("section");
+    return !tvMode ? sections.find(section => section.id === requested)?.id || "overview" : "tv";
+  });
   const [tvFooterActions, setTvFooterActions] = useState<HTMLDivElement | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -43,7 +48,7 @@ export default function App() {
         <label htmlFor="tv-dashboard-section">Dashboard</label>
         <select id="tv-dashboard-section" value={activeSection} onChange={event => setActiveSection(event.target.value as typeof activeSection)}>
           <option value="tv">TV &amp; Movies</option>
-          {sections.filter(section => section.id !== "tv").map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
+          {sections.filter(section => section.id !== "tv" && section.id !== "memo").map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
         </select>
         <span data-build-tag="">
           BUILD {buildTag} · {hasNativeVideoPlayer() ? "NATIVE PLAYER READY" : isNativeApp() ? "NATIVE PLUGIN MISSING" : "WEB PLAYER"}
@@ -97,6 +102,9 @@ export default function App() {
                 title={section.label}
                 onClick={() => {
                   setActiveSection(section.id);
+                  const url = new URL(location.href);
+                  url.searchParams.set("section", section.id);
+                  history.replaceState(null, "", url);
                   setMobileMenuOpen(false);
                 }}
                 className={`flex w-full items-center gap-3 rounded p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 ${sidebarCollapsed ? "md:justify-center" : ""} ${activeSection === section.id ? "bg-orange-500 text-white" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}
@@ -107,7 +115,7 @@ export default function App() {
             ))}
           </nav>
 
-          {!sidebarCollapsed && activeSection !== "tv" && (
+          {!sidebarCollapsed && activeSection !== "tv" && activeSection !== "memo" && (
             <div className="mt-8 hidden rounded border border-neutral-700 bg-neutral-800 p-4 md:block">
               <div className="mb-2 flex items-center gap-2">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
@@ -129,7 +137,7 @@ export default function App() {
             <span className="hidden lg:inline">HOMELAB / </span>
             <span className="text-orange-500">{selectedSection.label}</span>
           </p>
-          {activeSection !== "tv" && <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+          {activeSection !== "tv" && activeSection !== "memo" && <div className="flex shrink-0 items-center gap-2 sm:gap-4">
             <span title="Sample data. Proxmox is not connected." className="rounded border border-orange-500/30 px-2 py-1 text-[10px] tracking-wider text-orange-400">SAMPLE DATA</span>
             <span className="hidden text-xs text-neutral-500 2xl:block">SAMPLE: 2026-09-05 16:45 UTC</span>
             <Button disabled title="Visual preview only" variant="ghost" size="icon" aria-label="Notifications (preview)" className="hidden text-neutral-400 sm:inline-flex">
