@@ -26,6 +26,13 @@ id_ecdsa*
 id_dsa*
 *.pem
 *.key
+*.crt
+*.sqlite3*
+*.sqlite*
+*.db
+**/progress.json
+**/.progress-*
+**/bootstrap/
 secrets/
 data/
 volumes/
