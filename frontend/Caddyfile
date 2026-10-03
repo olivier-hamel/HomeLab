@@ -1,11 +1,12 @@
 {
 	admin off
-	auto_https off
+	auto_https disable_redirects
+	skip_install_trust
 	persist_config off
 	grace_period 10s
 }
 
-:8080 {
+(dashboard) {
 	root * /srv
 	encode zstd gzip
 	log
@@ -25,6 +26,22 @@
 			not remote_ip 127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7
 		}
 		respond @publicMedia "Media access requires a trusted network" 403
+
+		@publicMemo {
+			path /memo /memo/*
+			not remote_ip 127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7
+		}
+		respond @publicMemo "Memo access requires a trusted network" 403
+
+		@memoHttp {
+			path /memo /memo/*
+			protocol http
+		}
+		respond @memoHttp "Open the HTTPS dashboard to use Memo" 426
+		redir /memo /memo/ 308
+		handle_path /memo/* {
+			reverse_proxy memo:8000
+		}
 
 		handle /healthz {
 			header Cache-Control no-store
@@ -69,4 +86,18 @@
 			file_server
 		}
 	}
+}
+
+:8080 {
+	import dashboard
+}
+
+https://{$HTTPS_LAN_HOST:localhost}:8443 {
+	tls internal
+	import dashboard
+}
+
+https://{$HTTPS_TAILSCALE_HOST:localhost}:8444 {
+	tls internal
+	import dashboard
 }
