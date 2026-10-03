@@ -4,6 +4,14 @@ The desktop and mobile browser dashboard includes a Mémo section. It embeds
 `/memo/` on the same HTTPS origin; its styles and study state remain isolated
 from HomeLab and the movie app. Fire TV/native navigation remains unchanged.
 
+On desktop with a mouse, HomeLab navigation collapses to an icon rail and
+expands on hover or keyboard focus. Mobile retains its menu button. The
+fullscreen-view button in the dashboard header hides the HomeLab header and
+sidebar for any section. Use the floating exit button or Escape to restore
+them. The current section stays mounted, including Memo's iframe, so changing
+the view preserves the app. Escape also works inside Memo; an open app dialog
+closes before leaving fullscreen view.
+
 Clone Memo beside this checkout as `memo`, or set `MEMO_SOURCE_DIR` in `.env`.
 The `memo` Compose service builds `memo/web-app/Dockerfile` and publishes no
 backend ports. Caddy strips `/memo` before proxying to that service. Memo's
