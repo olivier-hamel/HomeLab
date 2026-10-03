@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Archive, Bell, BookOpen, Boxes, ChevronRight, Clapperboard, ListChecks, Menu, Monitor, RefreshCw, Server, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Archive, Bell, BookOpen, Boxes, Clapperboard, ListChecks, Maximize2, Menu, Minimize2, Monitor, RefreshCw, Server, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import Overview from "./pages/Overview";
 import Guests from "./pages/Guests";
@@ -32,10 +32,25 @@ export default function App() {
     return !tvMode ? sections.find(section => section.id === requested)?.id || "overview" : "tv";
   });
   const [tvFooterActions, setTvFooterActions] = useState<HTMLDivElement | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarKeyboardFocus, setSidebarKeyboardFocus] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [fullscreenView, setFullscreenView] = useState(false);
+  const fullscreenButton = useRef<HTMLButtonElement>(null);
+  const exitFullscreen = useCallback(() => {
+    setFullscreenView(false);
+    requestAnimationFrame(() => fullscreenButton.current?.focus());
+  }, []);
   const selectedSection = sections.find((section) => section.id === activeSection)!;
   const Page = selectedSection.component;
+
+  useEffect(() => {
+    if (!fullscreenView) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !document.fullscreenElement && !document.querySelector("dialog[open]")) exitFullscreen();
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [fullscreenView, exitFullscreen]);
 
   if (tvMode) {
     return <div className="tv-shell">
@@ -62,22 +77,20 @@ export default function App() {
       <a href="#dashboard-content" className="sr-only z-50 bg-orange-500 p-3 text-white focus:not-sr-only focus:absolute">
         Skip to dashboard
       </a>
-      <aside className={`w-full shrink-0 border-b border-neutral-700 bg-neutral-900 transition-[width] duration-300 md:border-b-0 md:border-r ${sidebarCollapsed ? "md:w-16" : "md:w-70"}`}>
-        <div className={`flex h-20 items-center justify-between gap-2 px-4 ${sidebarCollapsed ? "md:justify-center md:px-2" : ""}`}>
-          <div className={sidebarCollapsed ? "md:hidden" : ""}>
+      <aside
+        className={`dashboard-sidebar w-full shrink-0 border-b border-neutral-700 bg-neutral-900 transition-[width] duration-300 md:w-70 md:border-b-0 md:border-r ${fullscreenView ? "hidden" : ""}`}
+        data-keyboard-focus={sidebarKeyboardFocus}
+        onFocusCapture={event => setSidebarKeyboardFocus(event.target.matches(":focus-visible"))}
+        onBlurCapture={event => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setSidebarKeyboardFocus(false);
+        }}
+      >
+        <div className="dashboard-sidebar-header flex h-20 items-center justify-between gap-2 px-4">
+          <span className="dashboard-sidebar-mark hidden text-lg font-bold tracking-wider text-orange-500" aria-hidden="true">HL</span>
+          <div className="dashboard-sidebar-brand whitespace-nowrap">
             <p className="text-lg font-bold tracking-wider text-orange-500">HOMELAB</p>
             <p className="text-xs text-neutral-500">Work In Progress</p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!sidebarCollapsed}
-            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            className="hidden shrink-0 text-neutral-400 hover:text-orange-500 md:inline-flex"
-          >
-            <ChevronRight className={`h-5 w-5 transition-transform ${sidebarCollapsed ? "" : "rotate-180"}`} />
-          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -91,7 +104,7 @@ export default function App() {
           </Button>
         </div>
 
-        <div className={`${mobileMenuOpen ? "block" : "hidden"} max-h-[60svh] overflow-y-auto px-4 pb-4 md:block md:max-h-none ${sidebarCollapsed ? "md:px-2" : ""}`}>
+        <div className={`dashboard-sidebar-content ${mobileMenuOpen ? "block" : "hidden"} max-h-[60svh] overflow-y-auto px-4 pb-4 md:block md:max-h-none`}>
           <nav id="dashboard-navigation" aria-label="Dashboard sections" className="space-y-2">
             {sections.map((section) => (
               <button
@@ -107,16 +120,16 @@ export default function App() {
                   history.replaceState(null, "", url);
                   setMobileMenuOpen(false);
                 }}
-                className={`flex w-full items-center gap-3 rounded p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 ${sidebarCollapsed ? "md:justify-center" : ""} ${activeSection === section.id ? "bg-orange-500 text-white" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}
+                className={`dashboard-sidebar-link flex w-full items-center gap-3 rounded p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 ${activeSection === section.id ? "bg-orange-500 text-white" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}
               >
                 <section.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                <span className={`text-sm font-medium ${sidebarCollapsed ? "md:hidden" : ""}`}>{section.label}</span>
+                <span className="dashboard-sidebar-label whitespace-nowrap text-sm font-medium">{section.label}</span>
               </button>
             ))}
           </nav>
 
-          {!sidebarCollapsed && activeSection !== "tv" && activeSection !== "memo" && (
-            <div className="mt-8 hidden rounded border border-neutral-700 bg-neutral-800 p-4 md:block">
+          {activeSection !== "tv" && activeSection !== "memo" && (
+            <div className="dashboard-sidebar-sample mt-8 hidden rounded border border-neutral-700 bg-neutral-800 p-4 md:block">
               <div className="mb-2 flex items-center gap-2">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
                 <span className="text-xs text-white">CLUSTER ONLINE</span>
@@ -132,28 +145,51 @@ export default function App() {
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-neutral-700 bg-neutral-800 px-4 sm:px-6">
+        <header className={`dashboard-header ${fullscreenView ? "hidden" : "flex"} h-16 shrink-0 items-center justify-between gap-3 border-b border-neutral-700 bg-neutral-800 px-4 sm:px-6`}>
           <p className="min-w-0 truncate text-xs text-neutral-400 sm:text-sm">
             <span className="hidden lg:inline">HOMELAB / </span>
             <span className="text-orange-500">{selectedSection.label}</span>
           </p>
-          {activeSection !== "tv" && activeSection !== "memo" && <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-            <span title="Sample data. Proxmox is not connected." className="rounded border border-orange-500/30 px-2 py-1 text-[10px] tracking-wider text-orange-400">SAMPLE DATA</span>
-            <span className="hidden text-xs text-neutral-500 2xl:block">SAMPLE: 2026-09-05 16:45 UTC</span>
-            <Button disabled title="Visual preview only" variant="ghost" size="icon" aria-label="Notifications (preview)" className="hidden text-neutral-400 sm:inline-flex">
-              <Bell className="h-4 w-4" />
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+            {activeSection !== "tv" && activeSection !== "memo" && <>
+              <span title="Sample data. Proxmox is not connected." className="rounded border border-orange-500/30 px-2 py-1 text-[10px] tracking-wider text-orange-400">SAMPLE DATA</span>
+              <span className="hidden text-xs text-neutral-500 2xl:block">SAMPLE: 2026-09-05 16:45 UTC</span>
+              <Button disabled title="Visual preview only" variant="ghost" size="icon" aria-label="Notifications (preview)" className="hidden text-neutral-400 sm:inline-flex">
+                <Bell className="h-4 w-4" />
+              </Button>
+              <Button disabled title="Visual preview only" variant="ghost" size="icon" aria-label="Refresh (preview)" className="hidden text-neutral-400 sm:inline-flex">
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </>}
+            <Button
+              ref={fullscreenButton}
+              variant="ghost"
+              size="icon"
+              aria-label="Enter fullscreen view"
+              title="Fullscreen view"
+              aria-controls="dashboard-content"
+              onClick={() => { setFullscreenView(true); setMobileMenuOpen(false); setSidebarKeyboardFocus(false); }}
+              className="shrink-0 text-neutral-400 hover:text-orange-500"
+            >
+              <Maximize2 />
             </Button>
-            <Button disabled title="Visual preview only" variant="ghost" size="icon" aria-label="Refresh (preview)" className="hidden text-neutral-400 sm:inline-flex">
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>}
+          </div>
         </header>
 
         <main id="dashboard-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-auto focus:outline-none">
           {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
-          <Page />
+          {activeSection === "memo" ? <Memo onEscape={fullscreenView ? exitFullscreen : undefined} /> : <Page />}
         </main>
       </div>
+      {fullscreenView && <Button
+        variant="outline"
+        aria-label="Exit fullscreen view"
+        title="Exit fullscreen view (Esc)"
+        onClick={exitFullscreen}
+        className="fixed bottom-4 right-4 z-50 gap-2 border-neutral-600 bg-neutral-900/95 text-neutral-200 shadow-lg hover:bg-neutral-800 hover:text-white"
+      >
+        <Minimize2 /><span className="hidden sm:inline">Exit fullscreen</span>
+      </Button>}
     </div>
   );
 }

@@ -1,9 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 
-export default function Memo() {
+export default function Memo({ onEscape }: { onEscape?: () => void }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
+  const iframe = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    const frame = iframe.current;
+    if (!frame || !onEscape) return;
+    let child: Window | null = null;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !child?.document.querySelector("dialog[open]")) onEscape();
+    };
+    const connect = () => {
+      child?.removeEventListener("keydown", escape);
+      child = frame.contentWindow;
+      child?.addEventListener("keydown", escape);
+    };
+    connect();
+    frame.addEventListener("load", connect);
+    return () => { frame.removeEventListener("load", connect); child?.removeEventListener("keydown", escape); };
+  }, [status, onEscape]);
 
   useEffect(() => {
     if (location.protocol !== "https:") {
@@ -25,7 +43,7 @@ export default function Memo() {
   }, [attempt]);
 
   return <section className="memo-page" aria-label="Mémo">
-    {status === "ready" ? <iframe title="Mémo — mon espace d’étude" src="/memo/" className="memo-frame" /> : <div className="memo-status" role="status">
+    {status === "ready" ? <iframe ref={iframe} title="Mémo — mon espace d’étude" src="/memo/" className="memo-frame" /> : <div className="memo-status" role="status">
       <h1>{status === "error" ? "Mémo prend une pause." : "Ton espace d’étude se prépare…"}</h1>
       {status === "error" && <><p>La connexion est momentanément indisponible. Réessaie dans un instant.</p><button type="button" onClick={() => { setStatus("loading"); setAttempt(value => value + 1); }}><RefreshCw size={18} /> Réessayer</button></>}
     </div>}
