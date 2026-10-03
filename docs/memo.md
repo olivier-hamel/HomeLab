@@ -57,6 +57,16 @@ import or image update.
 
 Full commands, certificate instructions, tests, backups, and rollback are in
 [Memo's deployment guide](https://github.com/olivier-hamel/Memo/blob/main/web-app/DEPLOYMENT.md).
+
+The optional MongoDB library adds private card sets and a French editor. Configure
+`MEMO_MONGODB_URI` and `MEMO_MONGODB_DATABASE` in the ignored `.env.memo-mongodb` file.
+Compose loads it only into Memo. Use a dedicated database user and allow this
+server's outbound connections to your existing database. Accounts and study
+progress continue to use `memo_data`; the database stores immutable card-set
+versions. Import the shared original deck once with
+`docker compose run --rm --no-deps memo python -m backend.decks --owner oli` before
+recreating Memo. Full setup and migration details are in Memo's `web-app/MONGODB.md`.
+
 Keep previous frontend images and configuration for rollback. Recreate only
 the changed services; preserve the movie backend. Never remove the data volumes
 as part of an update.
