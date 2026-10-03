@@ -81,6 +81,9 @@ services:
     build:
       context: "${MEMO_SOURCE_DIR:-../memo}/web-app"
     image: memo-app:local
+    env_file:
+      - path: "${MEMO_MONGODB_ENV_FILE:-./.env.memo-mongodb}"
+        required: false
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
