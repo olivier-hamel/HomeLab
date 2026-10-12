@@ -6,6 +6,6 @@
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check dist/js/app.js && node --check dist/js/components/views.js && node --check dist/js/state.js"
+    "check": "node --check dist/js/app.js && node --check dist/js/components/views.js && node --check dist/js/components/home.js && node --check dist/js/components/shell.js && node --check dist/js/state.js"
   }
 }

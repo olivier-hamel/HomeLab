@@ -11,24 +11,37 @@ export function createCalendarStore(storage = null) {
     if (saved?.timeFormat === "12" || saved?.timeFormat === "24") preferences.timeFormat = saved.timeFormat;
   } catch { /* Storage is optional, including in private browsing. */ }
   const today = todayInZone(preferences.timezone);
-  let state = {view: "month", date: today, today, miniDate: today, preferences, sidebarOpen: false};
+  let state = {page: "home", view: "month", date: today, today, miniDate: today, preferences, sidebarOpen: false};
   const subscribers = new Set();
   function update(patch, reason) {
     state = {...state, ...patch};
     for (const subscriber of subscribers) subscriber(state, reason);
   }
   function selectDate(date, reason = "date") {
-    if (!date || date.getUTCFullYear() < 1 || date.getUTCFullYear() > 9999) return;
-    update({date, miniDate: date, sidebarOpen: false}, reason);
+    if (!validDate(date)) return;
+    update({page: "calendar", date, miniDate: date, sidebarOpen: false}, reason);
   }
+  function validDate(date) { return date instanceof Date && Number.isFinite(date.getTime()) && date.getUTCFullYear() >= 1 && date.getUTCFullYear() <= 9999; }
   return {
     getState: () => state,
     subscribe(callback) {subscribers.add(callback); return () => subscribers.delete(callback);},
     selectDate,
+    openDate(date, view) {
+      if (!validDate(date) || !["month", "week", "day"].includes(view)) return;
+      update({page: "calendar", date, miniDate: date, view, sidebarOpen: false}, "drilldown");
+    },
+    goHome() {
+      const today = todayInZone(state.preferences.timezone);
+      update({page: "home", today, miniDate: today, sidebarOpen: false}, "home");
+    },
     setView(view) {
-      if (["month", "week", "day"].includes(view)) update({view, sidebarOpen: false}, "view");
+      if (["month", "week", "day"].includes(view)) {
+        const date = state.page === "home" ? state.today : state.date;
+        update({page: "calendar", date, miniDate: date, view, sidebarOpen: false}, "view");
+      }
     },
     navigate(direction) {
+      if (state.page === "home") return;
       const next = state.view === "month" ? addMonths(state.date, direction) : addDays(state.date, direction * (state.view === "week" ? 7 : 1));
       selectDate(next, "navigate");
     },

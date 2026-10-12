@@ -1,0 +1,13 @@
+import {icon} from "./icons.js";
+
+export function renderShell() {
+  return `<div class="app-shell"><div class="sidebar-overlay" data-action="close-sidebar"></div><aside id="sidebar" class="sidebar" aria-label="Calendar sidebar"></aside><main class="main"><header class="workspace-header"><div class="workspace-name"><button class="icon-button menu-button" data-action="toggle-sidebar" aria-label="Open sidebar" aria-expanded="false" aria-controls="sidebar">${icon("menu")}</button><nav id="workspace-breadcrumb" class="workspace-breadcrumb" aria-label="Breadcrumb"></nav><span class="workspace-separator"></span><span class="personal-label"><span></span>Personal</span></div><button class="jump-button" data-action="jump" aria-label="Go to a date">${icon("calendar")}<span>Go to date</span><kbd>G</kbd></button></header><section class="calendar-workspace"><div class="calendar-toolbar"><div class="period-controls"><h1 id="period-title"></h1><div class="period-navigation"><button class="icon-button" data-action="prev" aria-label="Previous month">${icon("chevronLeft")}</button><button class="icon-button" data-action="next" aria-label="Next month">${icon("chevronRight")}</button></div><button class="today-button" data-action="today" title="Go to today (T)">Today</button></div><div class="view-switch" role="group" aria-label="Calendar view">${["month", "week", "day"].map(view => `<button data-action="${view}" aria-pressed="false" title="${view[0].toUpperCase() + view.slice(1)} view (${view[0].toUpperCase()})">${view[0].toUpperCase() + view.slice(1)}</button>`).join("")}</div></div><div id="calendar-content" class="calendar-content" tabindex="-1"></div><footer class="calendar-footer"><span id="view-hint"></span><span class="timezone-info">${icon("globe")}<span>Toronto</span><span class="footer-dot">·</span><span id="timezone-offset"></span></span></footer></section></main></div>`;
+}
+export function renderBreadcrumb(state) {
+  const separator = `<span class="breadcrumb-separator">${icon("chevronRight")}</span>`;
+  if (state.page === "home") return '<span class="breadcrumb-current" aria-current="page">Home</span>';
+  const crumbs = [{label: "Home", action: "home"}, {label: "Calendar", action: "month"}];
+  if (state.view === "week" || state.view === "day") crumbs.push({label: "Week", action: "week"});
+  if (state.view === "day") crumbs.push({label: "Day", action: "day"});
+  return crumbs.map((crumb, index) => index === crumbs.length - 1 ? `<span class="breadcrumb-current" aria-current="page">${crumb.label}</span>` : `<button class="breadcrumb-parent" data-action="${crumb.action}">${crumb.label}</button>`).join(separator);
+}

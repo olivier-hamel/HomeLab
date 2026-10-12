@@ -2,7 +2,8 @@ import {createCalendarStore} from "./state.js";
 import {dateKey, parseDate, addDays, fullDate, periodTitle, zoneOffset} from "./date.js";
 import {renderSidebar} from "./components/sidebar.js";
 import {renderCalendar} from "./components/views.js";
-import {icon} from "./components/icons.js";
+import {renderHome} from "./components/home.js";
+import {renderShell, renderBreadcrumb} from "./components/shell.js";
 import {jumpDialog, preferencesDialog, shortcutsDialog} from "./components/dialogs.js";
 
 let storage = null;
@@ -13,8 +14,10 @@ const dialogRoot = document.getElementById("dialog-root");
 let dialogOpener = null;
 let renderedPeriod = null;
 let renderedView = null;
+let renderedPage = null;
+let renderedToday = null;
 
-app.innerHTML = `<div class="app-shell"><div class="sidebar-overlay" data-action="close-sidebar"></div><aside id="sidebar" class="sidebar" aria-label="Calendar sidebar"></aside><main class="main"><header class="workspace-header"><div class="workspace-name"><button class="icon-button menu-button" data-action="toggle-sidebar" aria-label="Open sidebar" aria-expanded="false" aria-controls="sidebar">${icon("menu")}</button><span class="workspace-label">My calendar</span><span class="workspace-separator"></span><span class="personal-label"><span></span>Personal</span></div><button class="jump-button" data-action="jump" aria-label="Go to a date">${icon("calendar")}<span>Go to date</span><kbd>G</kbd></button></header><section class="calendar-workspace"><div class="calendar-toolbar"><div class="period-controls"><h1 id="period-title"></h1><div class="period-navigation"><button class="icon-button" data-action="prev" aria-label="Previous month">${icon("chevronLeft")}</button><button class="icon-button" data-action="next" aria-label="Next month">${icon("chevronRight")}</button></div><button class="today-button" data-action="today" title="Go to today (T)">Today</button></div><div class="view-switch" role="group" aria-label="Calendar view">${["month", "week", "day"].map(view => `<button data-action="${view}" aria-pressed="false" title="${view[0].toUpperCase() + view.slice(1)} view (${view[0].toUpperCase()})">${view[0].toUpperCase() + view.slice(1)}</button>`).join("")}</div></div><div id="calendar-content" class="calendar-content" tabindex="-1"></div><footer class="calendar-footer"><span id="view-hint"></span><span class="timezone-info">${icon("globe")}<span>Toronto</span><span class="footer-dot">·</span><span id="timezone-offset"></span></span></footer></section></main></div>`;
+app.innerHTML = renderShell();
 
 function render(state, reason = "initial") {
   const active = document.activeElement;
@@ -22,8 +25,11 @@ function render(state, reason = "initial") {
   const focusDate = active?.dataset.date;
   const focusWasMonth = active?.classList.contains("month-date");
   const focusWasMini = active?.classList.contains("mini-day");
+  const content = document.getElementById("calendar-content");
   const oldScroll = document.querySelector(".time-scroll")?.scrollTop;
-  if (reason !== "clock") document.getElementById("sidebar").innerHTML = renderSidebar(state);
+  const previousPage = renderedPage;
+  if (reason !== "clock" || renderedToday !== dateKey(state.today)) document.getElementById("sidebar").innerHTML = renderSidebar(state);
+  renderedToday = dateKey(state.today);
   app.querySelector(".app-shell").classList.toggle("sidebar-is-open", state.sidebarOpen);
   app.querySelector(".menu-button").setAttribute("aria-expanded", String(state.sidebarOpen));
   syncSidebarAccess(state);
@@ -35,14 +41,24 @@ function render(state, reason = "initial") {
     if (focusAction) app.querySelector(`[data-action="${focusAction}"]`)?.focus({preventScroll: true});
     return;
   }
+  const isHome = state.page === "home";
+  document.getElementById("workspace-breadcrumb").innerHTML = renderBreadcrumb(state);
+  app.querySelector(".calendar-workspace").classList.toggle("is-home", isHome);
+  app.querySelector(".calendar-toolbar").hidden = isHome;
   const title = periodTitle(state);
-  document.getElementById("period-title").innerHTML = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
-  app.querySelector('[data-action="prev"]').setAttribute("aria-label", `Previous ${state.view}`);
-  app.querySelector('[data-action="next"]').setAttribute("aria-label", `Next ${state.view}`);
-  for (const button of app.querySelectorAll(".view-switch button")) button.setAttribute("aria-pressed", String(button.dataset.action === state.view));
+  if (!isHome) {
+    document.getElementById("period-title").innerHTML = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
+    app.querySelector('[data-action="prev"]').setAttribute("aria-label", `Previous ${state.view}`);
+    app.querySelector('[data-action="next"]').setAttribute("aria-label", `Next ${state.view}`);
+    for (const button of app.querySelectorAll(".view-switch button")) button.setAttribute("aria-pressed", String(button.dataset.action === state.view));
+  }
   const monthKey = dateKey(state.date).slice(0, 7);
-  const retainMonth = state.view === "month" && renderedView === "month" && renderedPeriod === monthKey && ["date", "keyboard-date"].includes(reason);
-  if (retainMonth) {
+  const retainMonth = !isHome && renderedPage === "calendar" && state.view === "month" && renderedView === "month" && renderedPeriod === monthKey && ["date", "keyboard-date"].includes(reason);
+  if (isHome) {
+    content.innerHTML = renderHome(state);
+    content.querySelector(".home-page").classList.toggle("entering", previousPage !== "home");
+  }
+  else if (retainMonth) {
     for (const cell of app.querySelectorAll(".month-cell")) {
       const button = cell.querySelector(".month-date");
       const selected = button.dataset.date === dateKey(state.date);
@@ -50,20 +66,25 @@ function render(state, reason = "initial") {
       cell.setAttribute("aria-selected", String(selected));
       button.tabIndex = selected ? 0 : -1;
     }
-  } else document.getElementById("calendar-content").innerHTML = renderCalendar(state);
+  } else content.innerHTML = renderCalendar(state);
   renderedPeriod = monthKey;
   renderedView = state.view;
-  document.getElementById("view-hint").innerHTML = state.view === "month" ? '<span class="hint-dot"></span>Double-click a date to open the day' : '<span class="hint-dot"></span>Your calendar. A little room to breathe.';
-  document.getElementById("timezone-offset").textContent = zoneOffset(state.preferences.timezone, state.date);
+  renderedPage = state.page;
+  const hints = {month: "Click a date to see its week", week: "Click a day to see its schedule", day: "Your day, hour by hour"};
+  document.getElementById("view-hint").innerHTML = `<span class="hint-dot"></span>${isHome ? "Today, at a glance" : hints[state.view]}`;
+  document.getElementById("timezone-offset").textContent = zoneOffset(state.preferences.timezone, isHome ? state.today : state.date);
+  if (previousPage !== state.page) content.scrollTop = 0;
   const scroll = app.querySelector(".time-scroll");
-  if (scroll) scroll.scrollTop = oldScroll !== undefined && reason !== "view" ? oldScroll : 7 * 64 - 16;
-  if (focusWasMonth || reason === "keyboard-date") app.querySelector(`.month-date[data-date="${dateKey(state.date)}"]`)?.focus({preventScroll: true});
+  if (scroll) scroll.scrollTop = oldScroll !== undefined && !["view", "drilldown"].includes(reason) ? oldScroll : 7 * 64 - 16;
+  if (reason === "home") document.getElementById("home-title")?.focus({preventScroll: true});
+  else if (reason === "drilldown" || (reason === "view" && previousPage === "home")) (app.querySelector(`.time-day-heading[data-date="${dateKey(state.date)}"]`) || app.querySelector(".month-date[tabindex='0']") || content)?.focus({preventScroll: true});
+  else if ((focusWasMonth || reason === "keyboard-date") && !isHome && state.view === "month") app.querySelector(`.month-date[data-date="${dateKey(state.date)}"]`)?.focus({preventScroll: true});
   else if (focusWasMini) {
     if (window.matchMedia("(max-width: 760px)").matches) (app.querySelector(".month-date[tabindex='0']") || document.getElementById("calendar-content"))?.focus({preventScroll: true});
     else app.querySelector(`.mini-day[data-date="${focusDate}"]`)?.focus({preventScroll: true});
   }
   else if (focusAction && !document.contains(active)) app.querySelector(`[data-action="${focusAction}"]`)?.focus({preventScroll: true});
-  if (["navigate", "view", "today", "date", "keyboard-date"].includes(reason)) document.getElementById("announcement").textContent = `${title.primary} ${title.secondary}. ${state.view} view. Selected ${fullDate(state.date)}.`;
+  if (["navigate", "view", "today", "date", "keyboard-date", "drilldown", "home"].includes(reason)) document.getElementById("announcement").textContent = isHome ? `Home. Today is ${fullDate(state.today)}. No events scheduled today.` : `${title.primary} ${title.secondary}. ${state.view} view. Selected ${fullDate(state.date)}.`;
 }
 
 function syncSidebarAccess(state = store.getState()) {
@@ -100,23 +121,22 @@ const actions = {
   prev: () => store.navigate(-1), next: () => store.navigate(1), today: () => store.goToday(),
   month: () => store.setView("month"), week: () => store.setView("week"), day: () => store.setView("day"),
   "mini-prev": () => store.navigateMini(-1), "mini-next": () => store.navigateMini(1),
-  "select-date": element => store.selectDate(parseDate(element.dataset.date)),
-  "open-day": element => {store.selectDate(parseDate(element.dataset.date)); store.setView("day");},
+  home: () => store.goHome(),
+  "open-week": element => store.openDate(parseDate(element.dataset.date), "week"),
+  "open-day": element => store.openDate(parseDate(element.dataset.date), "day"),
+  "today-day": () => store.openDate(store.getState().today, "day"),
+  "today-week": () => store.openDate(store.getState().today, "week"),
   jump: () => openDialog("jump"), settings: () => openDialog("settings"), shortcuts: () => openDialog("shortcuts"),
   "close-dialog": closeDialog, "jump-today": () => {closeDialog(); store.goToday();},
   "toggle-sidebar": () => store.toggleSidebar(), "close-sidebar": () => store.closeSidebar(),
-  "calendar-home": () => {store.goToday(); store.setView("month");}
+  "calendar-home": () => store.setView(store.getState().view)
 };
-document.addEventListener("click", event => {const element = event.target.closest("[data-action]"); if (element) actions[element.dataset.action]?.(element);});
-document.addEventListener("dblclick", event => {
-  const element = event.target.closest(".month-date");
-  if (element) {store.selectDate(parseDate(element.dataset.date)); store.setView("day");}
-});
+document.addEventListener("click", event => {const element = event.target.closest("[data-action]"); if (element) {event.preventDefault(); actions[element.dataset.action]?.(element);}});
 document.addEventListener("submit", event => {
   if (event.target.id === "jump-form") {
     event.preventDefault();
     const date = parseDate(new FormData(event.target).get("date"));
-    if (date) {closeDialog(); store.selectDate(date);}
+    if (date) {closeDialog(); if (store.getState().page === "home") store.openDate(date, "week"); else store.selectDate(date);}
   }
   if (event.target.id === "preferences-form") {
     event.preventDefault();
@@ -141,7 +161,7 @@ document.addEventListener("keydown", event => {
     store.selectDate(addDays(parseDate(dateButton.dataset.date), delta), "keyboard-date");
     return;
   }
-  const shortcuts = {m: actions.month, w: actions.week, d: actions.day, t: actions.today, g: actions.jump, "?": actions.shortcuts, ArrowLeft: actions.prev, ArrowRight: actions.next};
+  const shortcuts = {h: actions.home, m: actions.month, w: actions.week, d: actions.day, t: actions.today, g: actions.jump, "?": actions.shortcuts, ArrowLeft: actions.prev, ArrowRight: actions.next};
   const action = shortcuts[event.key.length === 1 ? event.key.toLowerCase() : event.key];
   if (action) {event.preventDefault(); action();}
 });

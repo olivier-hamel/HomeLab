@@ -1,4 +1,6 @@
 const paths = {
+  home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
+  week: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 11h18M9 11v10m6-10v10"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 11h18"/><path d="M8 15h2v2H8z" fill="currentColor" stroke="none"/>',
   chevronLeft: '<path d="m14 6-6 6 6 6"/>',
   chevronRight: '<path d="m10 6 6 6-6 6"/>',
