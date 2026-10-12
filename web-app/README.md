@@ -261,10 +261,9 @@ L’application est prévue pour un espace personnel local : **un seul processus
 
 | Touche | Action |
 | --- | --- |
-| Espace | Retourner la carte |
-| ← / → | Carte précédente / suivante, sans notation |
-| 1 | À revoir, après révélation |
-| 2 | Bien retenu, après révélation |
+| Espace / ↑ / ↓ | Retourner la carte |
+| 1 / ← | À revoir, après révélation |
+| 2 / → | Bien retenu, après révélation |
 | Entrée | Vérifier la réponse écrite |
 | Maj + Entrée | Nouvelle ligne dans une réponse écrite |
 | Échap | Fermer la fenêtre de paramètres ou d’aide |
