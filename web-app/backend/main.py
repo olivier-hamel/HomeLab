@@ -52,6 +52,7 @@ class Action(BaseModel):
     typed: StrictBool | None = None
     choice: StrictInt | None = None
     config: dict | None = None
+    difficulty: Literal["relaxed", "normal", "strict"] | None = None
     defaults: StrictBool = False
 
 

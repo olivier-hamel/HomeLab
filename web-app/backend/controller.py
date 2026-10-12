@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from .study_engine import Phase, Question, RoundStatus, StudyConfig, StudySession
+from .study_difficulty import MASTERY_PRESETS, current_difficulty, with_difficulty
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 LEGACY_PATH = Path(__file__).resolve().parents[2] / "flashcard_progress.json"
@@ -181,6 +182,8 @@ class WebStudy:
         elif kind == "settings":
             if action.defaults:
                 config = DEFAULT_CONFIG
+            elif action.difficulty is not None:
+                config = with_difficulty(self.session.config, action.difficulty)
             elif action.config is not None:
                 try:
                     config = replace(self.session.config, **action.config)
@@ -252,6 +255,7 @@ class WebStudy:
             next_review_at=min(next_dates) if next_dates else None,
             typed_recall=s.config.allow_typed_recall,
             config=asdict(s.config), default_config=asdict(DEFAULT_CONFIG),
+            mastery_presets=MASTERY_PRESETS, mastery_difficulty=current_difficulty(s.config),
             round_size=s.config.round_size, notice=self.notice, question=current,
             rounds=[dict(id=r.id, status=r.status, total=len(r.card_ids),
                          mastered=sum(by_id[i].mastered for i in r.card_ids)) for r in s.rounds],

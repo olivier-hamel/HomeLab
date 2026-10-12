@@ -6,6 +6,7 @@ import unittest
 from dataclasses import asdict, replace
 
 from backend.study_engine import (Phase, Question, RoundStatus, State, StudyConfig, StudySession)
+from backend.study_difficulty import with_difficulty
 
 
 class EngineTests(unittest.TestCase):
@@ -563,6 +564,59 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(s.current_round_index, 1)
         self.assertTrue(all(c.mastered for c in s.cards[:2]))
         self.assertEqual(self.round_trip(s).current_round_index, 1)
+
+    def test_difficulty_changes_required_recalls_in_both_mastery_phases(self):
+        for final in (False, True):
+            counts = []
+            for difficulty in ('relaxed', 'normal', 'strict'):
+                s = self.make(6, with_difficulty(StudyConfig(allow_multiple_choice=False), difficulty))
+                if final:
+                    self.start_final(s)
+                card = s.cards[0]
+                before = s.progress_for(card).attempts
+                self.master_card(s, card)
+                self.assertTrue(s.progress_for(card).mastered)
+                counts.append(s.progress_for(card).attempts - before)
+            self.assertEqual(counts[0], 2)
+            self.assertLess(counts[0], counts[1])
+            self.assertLess(counts[1], counts[2])
+
+    def test_switching_difficulty_keeps_completed_groups_and_answer_evidence(self):
+        s = self.make(12, with_difficulty(StudyConfig(round_size=6, allow_multiple_choice=False), 'relaxed'))
+        self.finish_current_round(s)
+        self.master_card(s, s.cards[6])
+        self.assertTrue(s.cards[6].mastered)
+        histories = [copy.deepcopy(c.history) for c in s.cards]
+        counts = (s.step, s.session_correct, s.session_wrong)
+        s.configure(with_difficulty(s.config, 'strict'))
+        self.assertEqual(s.rounds[0].status, RoundStatus.COMPLETED)
+        self.assertTrue(all(c.mastered for c in s.cards[:6]))
+        self.assertFalse(s.cards[6].mastered)
+        self.assertEqual([c.history for c in s.cards], histories)
+        self.assertEqual((s.step, s.session_correct, s.session_wrong), counts)
+        self.assertEqual(self.round_trip(s).config, s.config)
+
+    def test_relaxed_masters_after_two_correct_recalls_even_after_errors(self):
+        for kind in ('free_recall', 'typed', 'multiple_choice'):
+            s = self.make(2, with_difficulty(StudyConfig(allow_multiple_choice=False), 'relaxed'))
+            card, other = s.cards
+            for _ in range(8):
+                self.answer_card(s, card, correct=False, kind=kind)
+            self.answer_card(s, card, kind=kind)
+            self.assertFalse(card.mastered)
+            self.answer_card(s, other, correct=False)
+            self.answer_card(s, card, kind='free_recall')
+            self.assertTrue(card.mastered)
+            self.assertEqual(card.consecutive_correct, 2)
+
+    def test_relaxed_single_card_masters_on_second_correct_recall(self):
+        s = self.make(1, with_difficulty(StudyConfig(allow_multiple_choice=False), 'relaxed'))
+        self.answer_card(s, s.cards[0])
+        self.assertFalse(s.cards[0].mastered)
+        self.now += 1
+        self.answer_card(s, s.cards[0])
+        self.assertTrue(s.cards[0].mastered)
+        self.assertEqual(s.phase, Phase.FINAL_MASTERY_ROUND)
 
 
 if __name__ == '__main__':

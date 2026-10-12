@@ -1,6 +1,8 @@
 export type CardState = 'NEW' | 'UNTESTED' | 'LEARNING' | 'FAMILIAR' | 'MASTERED'
 export type RoundStatus = 'LOCKED' | 'ACTIVE' | 'COMPLETED'
 export type Mode = 'LEARN'
+export type MasteryDifficulty = 'relaxed' | 'normal' | 'strict'
+export type MasteryPresets = Record<MasteryDifficulty, Partial<StudyConfig>>
 export type CardInput = { term: string; definition: string }
 export type CardSet = {
   id: string; title: string; description: string; editable: boolean; shared: boolean
@@ -53,6 +55,8 @@ export interface StudyState {
   round_size: number
   config: StudyConfig
   default_config: StudyConfig
+  mastery_presets: MasteryPresets
+  mastery_difficulty: MasteryDifficulty | null
   notice: string
   rounds: { id: number; status: RoundStatus; total: number; mastered: number }[]
   final_status: RoundStatus
@@ -85,4 +89,5 @@ export type Action =
   | { type: 'mode'; mode: Mode }
   | { type: 'settings'; typed: boolean }
   | { type: 'settings'; config: StudyConfig }
+  | { type: 'settings'; difficulty: MasteryDifficulty }
   | { type: 'settings'; defaults: true }

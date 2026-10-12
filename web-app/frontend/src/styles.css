@@ -61,6 +61,15 @@ main { max-width: 1400px; padding: 39px 46px 0; margin: auto; }
 .thin-track { flex: 1; height: 3px; background: #e5e8db; border-radius: 2px; overflow: hidden; }
 .thin-track > div { height: 100%; background: #829965; border-radius: inherit; transition: width .4s; }
 .session-progress > span { font-size: 9px; color: #8a9280; white-space: nowrap; }
+.mastery-difficulty { margin-top: 18px; }
+.mastery-difficulty-heading { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 600; color: var(--green); }
+.mastery-difficulty-heading small { font-weight: 400; color: var(--muted); }
+.mastery-difficulty-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; margin-top: 9px; border: 1px solid var(--line); border-radius: 10px; background: #eef0e7; }
+.mastery-difficulty-options button { min-width: 0; min-height: 40px; padding: 8px 4px; border: 1px solid transparent; border-radius: 7px; background: transparent; font-size: 11px; }
+.mastery-difficulty-options button:hover:not(:disabled) { background: #e2e8d8; }
+.mastery-difficulty-options button[aria-pressed="true"] { background: #fffefa; color: var(--green); border-color: #d7dfca; font-weight: 600; box-shadow: 0 1px 3px #2638310a; }
+.mastery-difficulty > p { margin-top: 8px; font-size: 10px; color: var(--muted); line-height: 1.6; }
+.study-settings .mastery-difficulty { margin: 0 0 24px; }
 .card-stack { position: relative; margin: 0 4px; }
 .paper-behind { position: absolute; inset: 3px 7px -6px; transform: rotate(-1.15deg); border: 1px solid #e1e3d9; background: #eeeFE6; border-radius: 13px; }
 .flashcard { position: relative; display: flex; flex-direction: column; height: 334px; border: 1px solid #e0e3d7; border-radius: 12px; background: #fffefa; box-shadow: 0 8px 25px #21332104; padding: 25px 27px 19px; transition: background .25s; }

@@ -156,6 +156,38 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.state(), state)
         self.assertEqual(self.path.read_bytes(), saved)
 
+    def test_mastery_difficulty_preserves_preferences_and_persists(self):
+        initial = self.state()
+        self.assertEqual(initial["mastery_difficulty"], "normal")
+        self.grade()
+        self.act("settings", config={"allow_typed_recall": True, "weight_learning": 7})
+        histories = [copy.deepcopy(c.history) for c in self.app.state.study.session.cards]
+        for difficulty in ("relaxed", "strict", "normal"):
+            response = self.act("settings", difficulty=difficulty)
+            self.assertEqual(response.status_code, 200, response.text)
+            state = response.json()
+            self.assertEqual(state["mastery_difficulty"], difficulty)
+            self.assertEqual(state["correct"], 1)
+            self.assertEqual(state["config"]["round_size"], 2)
+            self.assertTrue(state["config"]["allow_typed_recall"])
+            self.assertEqual(state["config"]["weight_learning"], 7)
+            self.assertEqual([c.history for c in self.app.state.study.session.cards], histories)
+            with TestClient(create_app(self.path, None, CARDS)) as restarted:
+                restored = restarted.get("/api/state").json()
+                self.assertEqual(restored["mastery_difficulty"], difficulty)
+                self.assertEqual(restored["config"], state["config"])
+        for key, value in initial["mastery_presets"]["normal"].items():
+            self.assertEqual(state["config"][key], initial["config"][key])
+        custom = self.act("settings", config={"mastery_threshold": .9}).json()
+        self.assertIsNone(custom["mastery_difficulty"])
+        self.assertEqual(self.act("settings", defaults=True).json()["mastery_difficulty"], "normal")
+
+    def test_unknown_difficulty_does_not_change_progress(self):
+        state, saved = self.state(), self.path.read_bytes()
+        self.assertEqual(self.act("settings", difficulty="unknown").status_code, 422)
+        self.assertEqual(self.state(), state)
+        self.assertEqual(self.path.read_bytes(), saved)
+
     def test_optional_multiple_choice_and_reverse_modes_persist(self):
         self.act("settings", config={"allow_multiple_choice": True, "allow_reverse_direction": True,
                                      "reverse_after": 1})

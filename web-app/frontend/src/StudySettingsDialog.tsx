@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import Dialog from './Dialog'
-import type { StudyConfig } from './types'
+import type { MasteryPresets, StudyConfig } from './types'
+import MasteryDifficultySelector, { difficultyFor } from './MasteryDifficultySelector'
 
 type NumericKey = { [K in keyof StudyConfig]: StudyConfig[K] extends number ? K : never }[keyof StudyConfig]
 type Field = { key: NumericKey; label: string; help: string; min?: number; max?: number; step?: number | 'any'; percent?: boolean }
@@ -27,8 +28,8 @@ const priorities: Field[] = [
   { key: 'incorrect_answer_penalty', label: 'Baisse du score après une erreur (%)', help: 'Part du score retirée après une erreur. Une erreur remet aussi les compteurs de réussites à zéro.', min: 1, max: 99, percent: true },
 ]
 
-export default function StudySettingsDialog({ config, defaults, busy, error, onSave, onClose }: {
-  config: StudyConfig; defaults: StudyConfig; busy: boolean; error: string
+export default function StudySettingsDialog({ config, defaults, presets, busy, error, onSave, onClose }: {
+  config: StudyConfig; defaults: StudyConfig; presets: MasteryPresets; busy: boolean; error: string
   onSave: (config: StudyConfig) => Promise<boolean>; onClose: () => void
 }) {
   const [draft, setDraft] = useState(config)
@@ -57,6 +58,10 @@ export default function StudySettingsDialog({ config, defaults, busy, error, onS
     }}>
       <p className="modal-description">Ces réglages sont enregistrés pour cet ensemble et cette version. Les réponses sont conservées ; les nouveaux critères s’appliquent au groupe actif. Les groupes déjà terminés restent acquis.</p>
       <fieldset disabled={busy}>
+        <MasteryDifficultySelector value={difficultyFor(draft, presets)} busy={busy} onChange={difficulty => {
+          setDraft(previous => ({ ...previous, ...presets[difficulty] }))
+          setRestored(false)
+        }} />
         <section className="study-settings-section"><h3>Groupes et progression</h3>
           {field({ key: 'round_size', label: 'Taille des groupes', help: 'Nombre de cartes par groupe. Modifier la taille réorganise les groupes en conservant les réponses.' })}
           {mastery.map(field)}

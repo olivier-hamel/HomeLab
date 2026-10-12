@@ -11,6 +11,7 @@ import { apiFetch, memoBase } from './api'
 import { useAccount } from './AuthGate'
 import Modal from './Dialog'
 import StudySettingsDialog from './StudySettingsDialog'
+import MasteryDifficultySelector from './MasteryDifficultySelector'
 
 const stateLabels: Record<CardState, string> = {
   NEW: 'Nouvelle', UNTESTED: 'À confirmer', LEARNING: 'En apprentissage',
@@ -162,6 +163,7 @@ export default function App({ deck, onLibrary, onSet }: { deck?: SetSelection; o
           <section className="study-column" aria-label="Session d’étude">
             <div className="session-heading"><div className="session-icon"><Layers3 size={20} /></div><div><h2>{groupTitle}</h2><p>{groupCaption}</p></div><button type="button" className="icon-button study-config-button" title="Configuration de l’apprentissage" aria-label="Configuration de l’apprentissage" onClick={() => setModal('settings')} disabled={busy}><Settings2 size={19} /></button><button className={`icon-button focus-button ${focusMode ? 'selected' : ''}`} title={focusMode ? 'Quitter le mode concentration' : 'Mode concentration'} aria-label={focusMode ? 'Quitter le mode concentration' : 'Mode concentration'} aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}><Focus size={19} /></button></div>
 
+            <MasteryDifficultySelector value={study.mastery_difficulty} busy={busy} onChange={difficulty => void act({ type: 'settings', difficulty })} />
             <div className="session-progress"><div className="thin-track"><div style={{ width: `${study.active_total ? study.active_mastered / study.active_total * 100 : 100}%` }} /></div><span>{`${study.active_mastered} / ${study.active_total || study.total} maîtrisées`}</span></div>
 
             {q ? <>
@@ -208,7 +210,7 @@ export default function App({ deck, onLibrary, onSet }: { deck?: SetSelection; o
     </div>
 
     {modal === 'help' && <Modal title="Apprendre, simplement." onClose={closeModal}><div className="help-intro"><Sprout size={36} /><p>Un moteur qui suit tes progrès.<br />Un rythme qui te ressemble.</p></div><ol className="help-steps"><li><strong>Rappelle-toi avant de regarder.</strong><p>Lis le terme, formule ta réponse mentalement ou à voix haute, puis retourne la carte.</p></li><li><strong>Évalue ce que tu as retenu.</strong><p>« À revoir » enregistre une erreur. « Bien retenu » enregistre un succès. Un clic sur Suivante passe la carte sans l’évaluer.</p></li><li><strong>Progresse par petits groupes.</strong><p>Les {study.round_size} cartes de chaque groupe doivent être maîtrisées avant de passer au suivant. La maîtrise demande des succès répétés et espacés.</p></li><li><strong>Confirme tes acquis.</strong><p>La maîtrise finale mélange toutes les cartes et représente la seconde moitié de ta progression.</p></li></ol><div className="help-keyboard"><span><Key>espace</Key> Retourner</span><span><Key>←</Key><Key>→</Key> Naviguer</span><span><Key>1</Key> À revoir</span><span><Key>2</Key> Bien retenu</span></div><p className="modal-footnote">En saisie écrite, les touches servent à écrire. Entrée vérifie la réponse ; Maj + Entrée ajoute une ligne.</p></Modal>}
-    {modal === 'settings' && <StudySettingsDialog config={study.config} defaults={study.default_config} busy={busy} error={error} onSave={config => act({ type: 'settings', config })} onClose={closeModal} />}
+    {modal === 'settings' && <StudySettingsDialog config={study.config} defaults={study.default_config} presets={study.mastery_presets} busy={busy} error={error} onSave={config => act({ type: 'settings', config })} onClose={closeModal} />}
     {modal === 'reset' && <Modal title="Une nouvelle page ?" onClose={closeModal}><p className="modal-description">Toute la progression de « {deckTitle} » (version {deck?.version || 1}) sera effacée : réponses, maîtrise des cartes et groupes terminés. Tu recommenceras au premier groupe.</p><div className="modal-actions"><button className="secondary-button" onClick={closeModal} disabled={busy}>Garder ma progression</button><button className="danger-button" disabled={busy} onClick={() => void act({ type: 'reset' })}>Recommencer</button></div>{error && <p role="alert">{error}</p>}</Modal>}
   </div>
 }

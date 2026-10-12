@@ -50,6 +50,17 @@ Version web de l’application Tkinter, avec une nouvelle interface française e
 
 ## Configurer l’apprentissage
 
+Le sélecteur **Difficulté de maîtrise** au-dessus de la carte permet de choisir
+**Facile / Relax**, **Normal** (les critères d’origine) ou **Strict**. Il règle
+le score minimum, les réussites consécutives, les rappels espacés et actifs,
+l’espacement et la pénalité après une erreur. Facile / Relax vise environ deux
+bons rappels par carte ; Strict en demande davantage. Le choix est enregistré pour
+l’ensemble et sa version, sans effacer les réponses ni changer la taille des
+groupes ou les modes de réponse. Les groupes terminés restent acquis ; les
+critères sont réévalués dans le groupe actif ou la maîtrise finale.
+Le même sélecteur est disponible dans les paramètres, où il faut enregistrer
+pour appliquer le choix. Ajuster ensuite un critère affiche **Personnalisée**.
+
 Pendant une session, le bouton de configuration à côté du mode concentration
 ouvre les paramètres d’apprentissage ; **Paramètres** dans la barre latérale
 ouvre la même fenêtre. On peut ajuster la taille des groupes, les réussites
