@@ -2,7 +2,7 @@ import { useId } from 'react'
 import type { MasteryDifficulty, MasteryPresets, StudyConfig } from './types'
 
 const choices: { id: MasteryDifficulty; label: string; help: string }[] = [
-  { id: 'relaxed', label: 'Facile / Relax', help: 'Environ deux bons rappels pour maîtriser une carte.' },
+  { id: 'relaxed', label: 'Rapide', help: 'Environ deux bons rappels pour maîtriser une carte.' },
   { id: 'normal', label: 'Normal', help: 'Le rythme habituel, avec des réussites répétées et espacées.' },
   { id: 'strict', label: 'Strict', help: 'Plus de répétitions, davantage d’espacement et un score plus élevé.' },
 ]

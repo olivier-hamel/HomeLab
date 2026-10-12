@@ -51,9 +51,9 @@ Version web de l’application Tkinter, avec une nouvelle interface française e
 ## Configurer l’apprentissage
 
 Le sélecteur **Difficulté de maîtrise** au-dessus de la carte permet de choisir
-**Facile / Relax**, **Normal** (les critères d’origine) ou **Strict**. Il règle
+**Rapide**, **Normal** (les critères d’origine) ou **Strict**. Il règle
 le score minimum, les réussites consécutives, les rappels espacés et actifs,
-l’espacement et la pénalité après une erreur. Facile / Relax vise environ deux
+l’espacement et la pénalité après une erreur. Rapide vise environ deux
 bons rappels par carte ; Strict en demande davantage. Le choix est enregistré pour
 l’ensemble et sa version, sans effacer les réponses ni changer la taille des
 groupes ou les modes de réponse. Les groupes terminés restent acquis ; les
@@ -261,10 +261,9 @@ L’application est prévue pour un espace personnel local : **un seul processus
 
 | Touche | Action |
 | --- | --- |
-| Espace | Retourner la carte |
-| ← / → | Carte précédente / suivante, sans notation |
-| 1 | À revoir, après révélation |
-| 2 | Bien retenu, après révélation |
+| Espace / ↑ / ↓ | Retourner la carte |
+| 1 / ← | À revoir, après révélation |
+| 2 / → | Bien retenu, après révélation |
 | Entrée | Vérifier la réponse écrite |
 | Maj + Entrée | Nouvelle ligne dans une réponse écrite |
 | Échap | Fermer la fenêtre de paramètres ou d’aide |
