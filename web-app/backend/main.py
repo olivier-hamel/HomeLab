@@ -156,7 +156,11 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
             response = await call_next(request)
             response.headers["Cache-Control"] = "no-store"
             return response
-        return await call_next(request)
+        response = await call_next(request)
+        if path in ("/", "/index.html"):
+            # Revalidate the entry page so reloads use the latest hashed assets.
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     def current_user(request, allow_password_change=False):
         user = app.state.accounts.resolve(request.cookies.get(COOKIE))
