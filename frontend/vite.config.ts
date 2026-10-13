@@ -10,6 +10,10 @@ export default defineConfig({
     strictPort: true,
     // Preserve the browser Host so media origin checks match the dashboard URL.
     proxy: {
+      "^/calendar(?:/|$)": {
+        target: "http://127.0.0.1:4173",
+        rewrite: path => path.replace(/^\/calendar(?=\/|$)/, "") || "/",
+      },
       "^/api(?:/|$)": {
         target: "http://127.0.0.1:3001",
         changeOrigin: false,

@@ -1,7 +1,21 @@
 # HomeLab
 
-**Current status:** the Proxmox sections use temporary sample data and their
-service actions remain disabled. **TV & Movies** adds an optional TMDB catalogue,
+One repository contains the dashboard, TV & Movies, Calendar, and Mémo.
+Use `feat/memo-integration` for development and server deployment. All changes
+use one commit → push → pull workflow; see [SERVER-UPDATE.md](SERVER-UPDATE.md).
+
+**Calendar** is the default page. Its source is in [apps/calendar](apps/calendar/README.md).
+See [Calendar setup](docs/calendar.md).
+
+**Mémo** is the French flashcard app in [apps/memo](apps/memo/README.md), with
+password-protected accounts. See [Memo setup](docs/memo.md) for private HTTPS
+and persistent data. Original Git histories are preserved; see
+[repository structure and history](docs/repository.md).
+
+The browser dashboard contains only Calendar, TV & Movies, and Mémo. The apps
+fill the content area; fullscreen is available from the sidebar.
+
+**TV & Movies** adds an optional TMDB catalogue,
 Prowlarr search and TorrServer playback through backend APIs. It requires private
 network configuration and your own credentials. Follow the
 [TV & Movies setup and verification guide](docs/tv-media.md). Live media services
@@ -31,8 +45,10 @@ flowchart LR
 | --- | --- | --- |
 | `frontend` | Caddy serves the Vite build, handles SPA routes, and proxies `/api` | 8080, published as host port 3000 |
 | `backend` | Next.js standalone server hosts API routes | 3001, unpublished |
+| `calendar` | Authored static app from `apps/calendar` | 4173, unpublished |
+| `memo` | FastAPI and React app from `apps/memo/web-app` | 8000, unpublished |
 
-Both containers run as non-root users. The backend uses outbound network access
+All four containers run as non-root users. The backend uses outbound network access
 for configured media integrations.
 
 ## Try it locally with Docker
@@ -45,7 +61,7 @@ Node.js installed on the host for Docker builds.
 Clone the repository:
 
 ```sh
-git clone https://github.com/olivier-hamel/HomeLab.git homelab
+git clone --branch feat/memo-integration https://github.com/olivier-hamel/HomeLab.git homelab
 cd homelab
 ```
 
@@ -68,7 +84,7 @@ if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
 
 The root example binds to `127.0.0.1:3000` for local use. If you already have a
 `.env`, check its address and port before starting. No credentials are required
-to view the sample dashboard. TV & Movies stays disabled until configured.
+to open Calendar. Mémo uses its own login; TV & Movies requires its media-service configuration.
 
 Build and start the stack from the repository root:
 
@@ -83,11 +99,11 @@ Open [http://localhost:3000](http://localhost:3000). Check
 [/healthz](http://localhost:3000/healthz) for frontend health and
 [/api/health](http://localhost:3000/api/health) for the API response
 `{"status":"ok"}`. A successful API check verifies the proxy connection; the
-dashboard will still show sample data.
+dashboard opens Calendar. Account setup is described in [Memo setup](docs/memo.md).
 
 View logs with `docker compose logs -f --tail=100`. Stop the stack with
 `docker compose stop`; start it again with `docker compose up -d --wait`.
-In Docker Desktop, the project and its two services appear under **Containers**.
+In Docker Desktop, the project and its four services appear under **Containers**.
 
 ## Run it on your home server
 
@@ -109,8 +125,8 @@ network and permitted remote clients.
 ## Develop without Docker
 
 Install [Node.js 24](https://nodejs.org/en/download), including npm. The root
-`.nvmrc` and both apps' `engines` fields select the Node 24 release line.
-Each app has its own `package.json` and npm lockfile.
+`.nvmrc` selects Node 24. Each app keeps its own dependencies and npm lockfile;
+Calendar has no dependencies or build step.
 
 From the repository root, start the frontend in one terminal:
 
@@ -142,6 +158,10 @@ npm test
 npm run build
 ```
 
+For Calendar, run `npm run dev` or `npm test` in `apps/calendar/`.
+For Memo, run `./start.sh --dev` in `apps/memo/web-app/`; see its
+[README](apps/memo/web-app/README.md) for Python dependencies and checks.
+
 The existing `npm start` commands remain available for manual production previews.
 The frontend preview serves `dist` and has no API proxy; use Docker Compose to
 test the full production path. Stop a local Docker stack using port 3000 before
@@ -154,7 +174,7 @@ compose.yml                  Production services and network
 .env.example                 Compose settings for your local copy
 docs/deployment.md           Home-server setup and operations guide
 frontend/
-  src/                       Dashboard UI and sample data
+  src/                       Dashboard navigation and TV & Movies UI
   vite.config.ts             Development server and API proxy
   Caddyfile                  Production static serving and API proxy
   Dockerfile                 Node build and non-root Caddy runtime
@@ -165,6 +185,11 @@ backend/
   Dockerfile                 Node build and non-root standalone runtime
   .env.example               Backend runtime configuration template
   package.json               Backend scripts and dependencies
+apps/
+  calendar/                  Authored static app, Dockerfile, and tests
+  memo/                      Memo desktop app and original study engine
+    web-app/                 FastAPI backend, React frontend, and Dockerfile
+SERVER-UPDATE.md              Single-repository update procedure
 ```
 
 Keep real `.env` files, SSH keys, and application data out of Git. `VITE_*`

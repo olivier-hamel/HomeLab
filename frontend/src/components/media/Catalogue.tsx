@@ -1,45 +1,43 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Film, Info, Play, Search, Star, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { mediaApi, sourceIntent, type Details, type Kind, type SearchIntent, type Title } from "../../lib/media";
+import { mediaApi, sourceIntent, type ContinueWatchingMovie, type Details, type SearchIntent, type Title } from "../../lib/media";
 import { useTvMode } from "../../lib/tv";
-import TvScrollControls from "../TvScrollControls";
+import useTvDialogMotion from "../useTvDialogMotion";
 
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 type CatalogueResponse = { titles: Title[]; pages: number; originalQuery?: string; correctedQuery?: string; correctionProvider?: "gemini" };
 type RecommendationResponse = { provider: "gemini"; basedOn: number; titles: Title[] };
-export default function Catalogue({ find, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
-  const [kind, setKind] = useState<Kind>("movie");
+export default function Catalogue({ find, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent, resumeAt?: number) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
   const [text, setText] = useState("");
   const [q, setQuery] = useState("");
-  const [page, setPage] = useState(1);
   const [chosen, setChosen] = useState<Title | null>(null);
   const [retry, setRetry] = useState(0);
   const [suggestions, setSuggestions] = useState<Title[]>([]);
   const [suggestionFocus, setSuggestionFocus] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  const tvMode = useTvMode();
   useEffect(() => {
     const value = text.trim();
     if (!suggestionFocus || value.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setSuggesting(true);
-      void mediaApi<{ titles: Title[] }>(`suggestions?${new URLSearchParams({ kind, q: value })}`, AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]))
+      void mediaApi<{ titles: Title[] }>(`suggestions?${new URLSearchParams({ kind: "all", q: value })}`, AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]))
         .then(result => { if (!controller.signal.aborted) setSuggestions(result.titles); })
         .catch(() => { if (!controller.signal.aborted) setSuggestions([]); })
         .finally(() => { if (!controller.signal.aborted) setSuggesting(false); });
     }, 300);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [kind, text, suggestionFocus]);
+  }, [text, suggestionFocus]);
   const choose = (title: Title) => {
-    if (simple && title.kind === "movie") find(sourceIntent({ ...title, imdbId: null, tvdbId: null, rating: null, seasons: [] }));
+    if (simple && title.kind === "movie" && !tvMode) find(sourceIntent({ ...title, imdbId: null, tvdbId: null, rating: null, seasons: [] }));
     else setChosen(title);
   };
-  return <div className="space-y-5">
-    <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setSuggestionFocus(false); setQuery(text.trim()); setPage(1); setRetry(r => r + 1); }}>
-      {simple ? <div role="group" aria-label="Catalogue type" className="simple-catalogue-tabs">{(["movie", "tv"] as const).map(value => <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKind(value); setPage(1); setChosen(null); }}>{value === "movie" ? "Movies" : "TV shows"}</button>)}</div> : <><label className="sr-only" htmlFor="catalogue-kind">Catalogue type</label>
-      <select id="catalogue-kind" className={field} value={kind} onChange={e => { setKind(e.target.value as Kind); setPage(1); setChosen(null); }}><option value="movie">Movies</option><option value="tv">TV shows</option></select></>}
+  const exitSearch = () => { setText(""); setQuery(""); setChosen(null); setSuggestions([]); setSuggestionFocus(false); };
+  return <div className="tv-surface-enter space-y-5">
+    <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); setSuggestionFocus(false); setQuery(text.trim()); setRetry(r => r + 1); }}>
       <label className="sr-only" htmlFor="catalogue-query">Search catalogue</label>
       <div className="relative min-w-40 flex-1" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setSuggestionFocus(false); }}>
         <Input id="catalogue-query" maxLength={250} className="h-11 w-full border-neutral-600 bg-neutral-950" placeholder="Find a title…" value={text} onChange={e => { setText(e.target.value); setSuggestions([]); setSuggesting(false); setSuggestionFocus(true); }} onFocus={() => setSuggestionFocus(true)} role="combobox" aria-autocomplete="list" aria-expanded={suggestionFocus && text.trim().length >= 2 && (suggesting || suggestions.length > 0)} aria-controls="catalogue-suggestions" autoComplete="off" />
@@ -54,11 +52,12 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
     </form>
     {!q && continueWatching}
     {!q && recommendations && <RecommendedTitles choose={choose} showDetails={setChosen} simple={simple} />}
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? kind === "movie" ? "Popular movies" : "Popular TV shows" : "Popular on TMDB"}{!simple && " · Metadata only."}</p>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? "Popular movies and TV shows" : "Popular movies and TV shows on TMDB"}{!simple && " · Metadata only."}</p>
+      {q && <Button type="button" variant="outline" data-tv-back="" onClick={exitSearch}><X />Exit search</Button>}
     </div>
-    {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={intent => { setChosen(null); find(intent); }} simple={simple} />}
-    <CatalogueResults key={`${kind}/${q}/${page}/${retry}`} kind={kind} query={q} page={page} setPage={setPage} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
+    {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={(intent, resumeAt) => { setChosen(null); find(intent, resumeAt); }} simple={simple} />}
+    <CatalogueResults key={`${q}/${retry}`} query={q} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
   </div>;
 }
 
@@ -83,45 +82,107 @@ function RecommendedTitles({ choose, showDetails, simple }: { choose: (title: Ti
 }
 
 function TitleGrid({ titles, choose, showDetails, simple }: { titles: Title[]; choose: (title: Title) => void; showDetails: (title: Title) => void; simple: boolean }) {
+  const tvMode = useTvMode();
+  const tvDetails = simple && tvMode;
   return <div className="tv-catalogue-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-    {titles.map(title => <div key={`${title.kind}/${title.id}`} className={`title-card group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 transition-colors hover:border-orange-500 focus-within:border-orange-500 focus-within:outline focus-within:outline-2 focus-within:outline-orange-500 ${simple ? "simple-title-card" : ""}`}>
-      <button className="block w-full text-left focus-visible:outline-none" onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" ? "Watch" : "Choose episode of" : "Details for"} ${title.title}`}>
-        <div className="relative flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}{simple && <span className="simple-card-action"><Play className="h-5 w-5 fill-current" />{title.kind === "movie" ? "Watch now" : "Choose episode"}</span>}</div>
+    {titles.map((title, index) => <div key={`${title.kind}/${title.id}`} style={{ "--tv-stagger": `${Math.min(index, 9) * 22}ms` } as CSSProperties} className={`title-card group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 transition-colors hover:border-orange-500 focus-within:border-orange-500 focus-within:outline focus-within:outline-2 focus-within:outline-orange-500 ${simple ? "simple-title-card" : ""}`}>
+      <button className="block w-full text-left focus-visible:outline-none" data-tv-startup-focus={index === 0 ? "" : undefined} onClick={() => choose(title)} aria-label={`${simple ? title.kind === "movie" && !tvDetails ? "Watch" : title.kind === "tv" ? "Choose episode of" : "Details for" : "Details for"} ${title.title}`}>
+        <div className="relative flex aspect-[2/3] items-center justify-center overflow-hidden bg-neutral-800">{title.poster ? <img src={title.poster} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <Film className="h-12 w-12 text-neutral-600" />}{simple && <span className="simple-card-action"><Play className="h-5 w-5 fill-current" />{title.kind === "movie" ? tvDetails ? "View details" : "Watch now" : "Choose episode"}</span>}</div>
         <div className="space-y-2 p-3"><p className="line-clamp-2 text-sm font-semibold text-white group-hover:text-orange-400">{title.title}</p><p className="text-xs text-neutral-400">{title.year || "Year unknown"} · {title.kind === "movie" ? "Movie" : "TV"}</p>{!simple && <><p className="line-clamp-2 text-xs leading-relaxed text-neutral-500">{title.overview || "No overview available."}</p><span className="block text-xs text-orange-400">View details</span></>}</div>
       </button>
-      {title.kind === "movie" && <button type="button" className="catalogue-info-button absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-black/75 text-white shadow-md backdrop-blur-sm transition-colors hover:border-orange-400 hover:bg-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400" onClick={() => showDetails(title)} aria-label={`More information about ${title.title}`} title={`More information about ${title.title}`}><Info aria-hidden="true" className="h-4 w-4" /></button>}
+      {(!simple || !tvDetails) && title.kind === "movie" && <button type="button" className="catalogue-info-button absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-black/75 text-white shadow-md backdrop-blur-sm transition-colors hover:border-orange-400 hover:bg-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400" onClick={() => showDetails(title)} aria-label={`More information about ${title.title}`} title={`More information about ${title.title}`}><Info aria-hidden="true" className="h-4 w-4" /></button>}
     </div>)}
   </div>;
 }
 
-function CatalogueResults({ kind, query, page, setPage, choose, showDetails, retry, simple }: { kind: Kind; query: string; page: number; setPage: (p: number) => void; choose: (t: Title) => void; showDetails: (t: Title) => void; retry: () => void; simple: boolean }) {
+function CatalogueResults({ query, choose, showDetails, retry, simple }: { query: string; choose: (t: Title) => void; showDetails: (t: Title) => void; retry: () => void; simple: boolean }) {
   const [result, setResult] = useState<CatalogueResponse | null>(null);
   const [error, setError] = useState("");
   const [cancelled, setCancelled] = useState(false);
-  const [controller] = useState(() => new AbortController());
+  const [page, setPage] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState("");
+  const initialRequest = useRef<AbortController | null>(null);
+  const moreRequest = useRef<AbortController | null>(null);
+  const loadingMoreRef = useRef(false);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const tvMode = useTvMode();
+
   useEffect(() => {
-    const stop = new AbortController();
-    const signal = AbortSignal.any([stop.signal, controller.signal, AbortSignal.timeout(20_000)]);
-    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind, q: query, page: String(page) })}`, signal).then(r => { if (!signal.aborted) setResult(r); }).catch(e => { if (!stop.signal.aborted && !controller.signal.aborted) setError(e instanceof Error ? e.message : "Catalogue unavailable."); });
-    return () => stop.abort();
-  }, [kind, query, page, controller]);
+    const controller = new AbortController();
+    initialRequest.current = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
+    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind: "all", q: query, page: "1" })}`, signal)
+      .then(value => { if (!signal.aborted) { setResult(value); setPage(1); } })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Catalogue unavailable."); });
+    return () => controller.abort();
+  }, [query]);
+
+  const loadMore = useCallback(() => {
+    if (!result || page >= result.pages || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setLoadMoreError("");
+    const controller = new AbortController();
+    moreRequest.current = controller;
+    const nextPage = page + 1;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
+    void mediaApi<CatalogueResponse>(`catalogue?${new URLSearchParams({ kind: "all", q: query, page: String(nextPage) })}`, signal)
+      .then(value => {
+        if (signal.aborted) return;
+        setResult(current => current ? {
+          ...value,
+          titles: [...current.titles, ...value.titles.filter(title => !current.titles.some(existing => existing.kind === title.kind && existing.id === title.id))],
+        } : value);
+        setPage(nextPage);
+      })
+      .catch(cause => { if (!controller.signal.aborted) setLoadMoreError(cause instanceof Error ? cause.message : "More titles could not be loaded."); })
+      .finally(() => {
+        if (moreRequest.current === controller) moreRequest.current = null;
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [page, query, result]);
+
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target || !result || page >= result.pages || loadMoreError) return;
+    const root = tvMode ? null : document.getElementById("dashboard-content");
+    const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) loadMore(); }, { root, rootMargin: "600px 0px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [loadMore, loadMoreError, page, result, tvMode]);
+
+  useEffect(() => () => moreRequest.current?.abort(), []);
+
   if (error || cancelled) return <div role="alert" className="space-y-3 rounded border border-orange-500/40 p-5"><p>{error || "Catalogue request cancelled."}</p><Button variant="outline" onClick={retry}>Retry catalogue</Button></div>;
-  if (!result) return <div role="status" className="flex items-center gap-4 p-5">Searching catalogue…<Button variant="outline" onClick={() => { controller.abort(); setCancelled(true); }}>Cancel</Button></div>;
+  if (!result) return <div role="status" className="flex items-center gap-4 p-5">Searching catalogue…<Button variant="outline" onClick={() => { initialRequest.current?.abort(); setCancelled(true); }}>Cancel</Button></div>;
   return <>
     {result.correctedQuery && <p role="status" className="rounded border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-neutral-200">Showing likely matches for <strong className="text-white">{result.correctedQuery}</strong>. Results for your original search are included too.</p>}
     {!result.titles.length && <p className="py-10 text-neutral-400">No titles found. Try a different name.</p>}
     <TitleGrid titles={result.titles} choose={choose} showDetails={showDetails} simple={simple} />
-    <div className="flex items-center justify-center gap-4"><Button variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-xs text-neutral-400">Page {page} / {result.pages || 1}</span><Button variant="outline" disabled={page >= result.pages} onClick={() => setPage(page + 1)}>Next</Button></div>
+    <div ref={sentinel} className="flex min-h-16 flex-col items-center justify-center gap-3 py-2">
+      {loadMoreError ? <div role="alert" className="flex flex-wrap items-center justify-center gap-3 text-sm text-orange-400"><span>{loadMoreError}</span><Button variant="outline" onClick={loadMore}>Retry loading more</Button></div>
+        : page < result.pages ? <><p role="status" className="text-sm text-neutral-400">{loadingMore ? "Loading more titles…" : "Keep scrolling for more titles"}</p><Button type="button" variant="outline" disabled={loadingMore} onClick={loadMore}>{loadingMore ? "Loading…" : "Load more"}</Button></>
+        : result.titles.length > 0 && <p className="text-xs text-neutral-500">You’ve reached the end.</p>}
+    </div>
   </>;
 }
 
-function TitleDetails({ title, close, find, simple }: { title: Title; close: () => void; find: (intent: SearchIntent) => void; simple: boolean }) {
+export function TitleDetails({ title, close, find, simple, initialProgress }: { title: Title; close: () => void; find: (intent: SearchIntent, resumeAt?: number) => void; simple: boolean; initialProgress?: ContinueWatchingMovie }) {
   const tvMode = useTvMode();
+  const tvDetails = simple && tvMode;
   const panel = useRef<HTMLDialogElement>(null);
+  const { dismiss, closing, finish } = useTvDialogMotion(panel, close);
+  const primaryAction = useRef<HTMLButtonElement>(null);
+  const primaryFocused = useRef(false);
   const [data, setData] = useState<Details | null>(null);
   const [error, setError] = useState("");
   const [season, setSeason] = useState<number | undefined>();
   const [failedPoster, setFailedPoster] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ContinueWatchingMovie | null | undefined>(initialProgress ?? (tvDetails && title.kind === "movie" ? undefined : null));
+  const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState("");
   const poster = data?.poster || title.poster;
   useEffect(() => {
     const dialog = panel.current;
@@ -141,16 +202,46 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
     void mediaApi<Details>(`details/${title.kind}/${title.id}`, AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])).then(d => { if (!controller.signal.aborted) { setData(d); setSeason(d.seasons.find(s => s.number > 0)?.number ?? d.seasons[0]?.number); } }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [title.id, title.kind]);
-  return <dialog ref={panel} aria-labelledby="catalogue-details-title" onCancel={e => { e.preventDefault(); close(); }} onClick={e => {
+  useEffect(() => {
+    if (!tvDetails || title.kind !== "movie" || initialProgress) return;
+    const controller = new AbortController();
+    void mediaApi<{ movies: ContinueWatchingMovie[] }>("continue-watching", AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]))
+      .then(result => { if (!controller.signal.aborted) setProgress(result.movies.find(movie => movie.movieId === title.id) ?? null); })
+      .catch(() => { if (!controller.signal.aborted) setProgress(null); });
+    return () => controller.abort();
+  }, [initialProgress, tvDetails, title.id, title.kind]);
+  useEffect(() => {
+    if (!tvDetails || data?.kind !== "movie" || progress === undefined || primaryFocused.current) return;
+    primaryFocused.current = true;
+    primaryAction.current?.focus({ preventScroll: true });
+    primaryAction.current?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
+  }, [data, progress, tvDetails]);
+  const restart = async (details: Details) => {
+    setRestarting(true);
+    setRestartError("");
+    try {
+      await mediaApi("continue-watching/remove", AbortSignal.timeout(10_000), { movieId: details.id });
+      find(sourceIntent(details), 0);
+    } catch (cause) {
+      setRestartError(cause instanceof Error ? cause.message : "Could not restart this movie.");
+      setRestarting(false);
+    }
+  };
+  return <dialog ref={panel} data-tv-closing={closing ? "true" : undefined} onAnimationEnd={finish} onClickCapture={e => { if (closing) { e.preventDefault(); e.stopPropagation(); } }} aria-labelledby="catalogue-details-title" onCancel={e => { e.preventDefault(); dismiss(); }} onClick={e => {
     if (e.target !== e.currentTarget) return;
     const bounds = e.currentTarget.getBoundingClientRect();
-    if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) close();
+    if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) dismiss();
   }} className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl space-y-4 overflow-y-auto overscroll-contain rounded-lg border border-orange-500/40 bg-neutral-900 p-4 text-neutral-200 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm sm:p-6">
-    <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 id="catalogue-details-title" className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2>{data?.kind === "movie" && data.rating !== null && <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-300" aria-label={`IMDb rating ${data.rating} out of 10`}><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" /><strong className="text-white">{data.rating.toFixed(1)}</strong><span className="text-neutral-500">/ 10 IMDb</span></p>}</div><Button size="icon" variant="ghost" className="shrink-0" aria-label="Close details" onClick={close}><X /></Button></div>
+    <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs tracking-widest text-orange-400">CATALOGUE DETAILS</p><h2 id="catalogue-details-title" className="text-xl font-semibold text-white">{title.title} {title.year && `(${title.year})`}</h2>{data?.kind === "movie" && data.rating !== null && <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-300" aria-label={`IMDb rating ${data.rating} out of 10`}><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" /><strong className="text-white">{data.rating.toFixed(1)}</strong><span className="text-neutral-500">/ 10 IMDb</span></p>}</div>{!tvDetails && <Button size="icon" variant="ghost" className="shrink-0" aria-label="Close details" onClick={dismiss}><X /></Button>}</div>
     <div className="grid items-start gap-6 sm:grid-cols-[minmax(0,1fr)_10rem]">
     <div className="min-w-0 space-y-4">
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
-    {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data))}>{simple ? "Watch now" : "Find sources"}</Button> : <div className="space-y-4">
+    {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <div className="flex flex-wrap gap-3">
+      <Button ref={primaryAction} data-tv-initial-focus={tvDetails ? "" : undefined} disabled={restarting || (tvDetails && progress === undefined)} className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data), progress?.playbackPositionSeconds ?? 0)}>{tvDetails && progress === undefined ? "Checking progress…" : tvDetails ? progress ? "Continue" : "Watch" : simple ? "Watch now" : "Find sources"}</Button>
+      {tvDetails && progress && <Button variant="outline" disabled={restarting} onClick={() => { void restart(data); }}>{restarting ? "Starting…" : "Watch from beginning"}</Button>}
+      {tvDetails && <Button variant="ghost" onClick={dismiss}>Close</Button>}
+      {restartError && <p role="alert" className="w-full text-sm text-orange-400">{restartError}</p>}
+    </div> : <div className="space-y-4">
       <label className="flex flex-wrap items-center gap-3 text-sm">Season<select className={field} value={season ?? ""} onChange={e => setSeason(Number(e.target.value))}>{data.seasons.map(s => <option key={s.number} value={s.number}>{s.name} ({s.episodes ?? "?"} episodes)</option>)}</select></label>
       {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} simple={simple} /> : <p>No season information is available.</p>}
     </div>}
@@ -159,7 +250,6 @@ function TitleDetails({ title, close, find, simple }: { title: Title; close: () 
       {poster && poster !== failedPoster ? <img src={poster} alt={`${title.title} poster`} referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={() => setFailedPoster(poster)} /> : <div className="flex flex-col items-center gap-2 text-neutral-500"><Film className="h-10 w-10" aria-hidden="true" /><span className="text-xs">No poster available</span></div>}
     </div>
     </div>
-    {tvMode && <TvScrollControls dialog />}
   </dialog>;
 }
 function Episodes({ title, season, find, simple }: { title: Details; season: number; find: (intent: SearchIntent) => void; simple: boolean }) {

@@ -75,6 +75,7 @@ const fixture = createServer(async (req, res) => {
       assert.equal(req.headers.authorization, `Bearer ${secret}`);
       const title = { id: 10378, title: 'Big Buck Bunny', name: 'Authorized fixture series', release_date: '2008-04-10', first_air_date: '2008-04-10', overview: 'Creative Commons film by the Blender Foundation. This catalogue response is a test fixture.', poster_path: null, external_ids: { imdb_id: 'tt1254207', tvdb_id: 200 }, seasons: [{ season_number: 1, name: 'Season 1', episode_count: 2 }] };
       if (url.pathname.includes('/season/')) return json({ episodes: [{ episode_number: 1, name: 'Authorized episode one', air_date: '2008-01-01', overview: 'Fixture episode' }, { episode_number: 2, name: 'Authorized episode two', air_date: '2008-01-02', overview: 'Fixture episode' }] });
+      if (url.pathname.includes('trending/all') || url.pathname.includes('search/multi')) return json({ results: [{ ...title, media_type: 'movie' }, { ...title, id: 10379, media_type: 'tv' }], total_pages: 2 });
       return json(url.pathname.includes('popular') || url.pathname.includes('search') ? { results: [title], total_pages: 2 } : title);
     }
     if (url.pathname.startsWith('/api/v1/') || url.pathname === '/1/download') {
@@ -84,7 +85,7 @@ const fixture = createServer(async (req, res) => {
       if (url.pathname === '/api/v1/indexerstatus') return json([]);
       if (url.pathname === '/api/v1/search') return url.searchParams.get('indexerIds') === '2' ? json({ error: secret }, 503) : json([
         { title: 'Big Buck Bunny 2008 1080p H264 AAC MP4 — licensed fixture', size: 2 * 1024 ** 3, seeders: 4000 },
-        { title: 'Big Buck Bunny 2008 720p H264 AAC MP4 — alternate fixture', size: 1024 ** 3, seeders: 3000 },
+        { title: 'Big Buck Bunny 2008 720p H264 AAC MP4 — alternate fixture', size: 1024 ** 3, seeders: 100 },
         { title: 'Big Buck Bunny 2008 2160p HEVC DTS — heavy fixture', size: 20 * 1024 ** 3, seeders: 9999 },
         { title: 'Maids Big Buck Bunny 2008 1080p — unrelated fixture', size: videoBytes.length, seeders: null },
       ].map(row => ({ ...row, leechers: 3, downloadUrl: `${upstream}/1/download?apikey=${secret}&link=fixture`, imdbId: 1254207 })));
@@ -221,7 +222,7 @@ try {
     assert.deepEqual(errors, []);
     assert.ok(!browserUrls.some(u => u.includes(secret) || u.includes('generativelanguage.googleapis.com')));
     assert.ok(!logs.join('').includes(secret));
-    const report = { services: 'MOCK TMDB/Prowlarr/TorrServer/Gemini', checks: ['canonical movie metadata', 'wrong-title exclusion before Gemini', 'no wrong-title recommendation after dismissing matches', '3000-seeder streaming target', 'late AI dismissal', 'cached reviews', 'manual sorting', 'restore hidden sources', 'dismiss active selection', 'source layouts at 1440/768/390/320', 'no automatic streaming', 'private credentials'], aiReviews: metrics.aiReviews };
+    const report = { services: 'MOCK TMDB/Prowlarr/TorrServer/Gemini', checks: ['canonical movie metadata', 'wrong-title exclusion before Gemini', 'no wrong-title recommendation after dismissing matches', '100-seeder streaming target', 'late AI dismissal', 'cached reviews', 'manual sorting', 'restore hidden sources', 'dismiss active selection', 'source layouts at 1440/768/390/320', 'no automatic streaming', 'private credentials'], aiReviews: metrics.aiReviews };
     writeFileSync(resolve(out, 'source-assist-report.json'), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report, null, 2));
   } else {
@@ -310,10 +311,8 @@ try {
   }
   await click('Stop and close');
   await click('Catalogue');
-  await until(`!!document.querySelector('#catalogue-kind')`);
-  await evaluate(`const select = document.querySelector('#catalogue-kind'); select.value = 'tv'; select.dispatchEvent(new Event('change', {bubbles:true}))`);
-  await until(`!!document.querySelector('button[aria-label="Details for Big Buck Bunny"]')`);
-  await evaluate(`document.querySelector('button[aria-label="Details for Big Buck Bunny"]').click()`);
+  await until(`!![...document.querySelectorAll('.title-card')].find(card => card.innerText.includes('TV'))`);
+  await evaluate(`[...document.querySelectorAll('.title-card')].find(card => card.innerText.includes('TV')).querySelector('button').click()`);
   await until(`!!document.querySelector('dialog[open] select option[value="2"]')`);
   await evaluate(`const selects = document.querySelectorAll('dialog[open] select'); selects[1].value = '2'; selects[1].dispatchEvent(new Event('change', {bubbles:true}))`);
   const addsBeforeEpisode = metrics.adds;

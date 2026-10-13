@@ -7,14 +7,14 @@ export type MediaSnapshot = MovieSnapshot & { kind: Kind };
 export type SearchIntent = { query: string; context?: SearchContext; target?: Pick<SearchContext, "kind" | "tmdbId" | "season" | "episode">; label?: string; movie?: MovieSnapshot; media?: MediaSnapshot };
 export type ContinueWatchingMovie = { movieId: number; title: string; year: string; poster: string | null; query: string; context: SearchContext & { kind: "movie"; tmdbId: number }; playbackPositionSeconds: number; durationSeconds: number; updatedAt: string };
 export type Source = { id: string; title: string; size: number | null; seeders: number | null; leechers: number | null; peers: number | null; indexer: string; quality: string[]; match: string };
-export type Assessment = { id: string; identity: "match" | "uncertain" | "mismatch"; verdict: "good" | "unsure" | "sketchy"; reason: string; method: "gemini" | "heuristic" };
+export type Assessment = { id: string; identity: "match" | "uncertain" | "mismatch"; verdict: "good" | "unsure" | "sketchy"; reason: string; review?: string; method: "gemini" | "heuristic" };
 export type SourceAdvice = { provider: "gemini" | "heuristic"; model: string | null; warning: string | null; reviewed: number; ranking: Assessment[] };
 export type SearchResults = { searchId: string; advice: SourceAdvice; results: Source[]; reports: { indexer: string; query: string; strategy: string; error: string | null }[]; more: boolean; batch: number; warning: string | null };
 export type TorrentFile = { id: number; path: string; size: number | null; kind: "video" | "subtitle" | "other"; sample: boolean };
 export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
 export type Selection = { id: string; stream: string; file: TorrentFile };
 export type PlaybackOption = { id: string; mode: "direct" | "remux" | "transcode"; mime: string; container: string; video: "copy" | "h264" | "vp9"; audio: "copy" | "aac" | "opus" | "none" };
-export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; options: PlaybackOption[] };
+export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; width?: number; height?: number; frameRate?: number; options: PlaybackOption[] };
 export type PreparedPlayback = PlaybackOption & { stream: string; duration: number | null };
 
 export const mediaProfiles = [
@@ -37,12 +37,23 @@ export function activeMediaProfile(): MediaProfileId {
   return loadMediaProfile() ?? "default";
 }
 
-export function supportedPlayback(options: PlaybackOption[], canPlayType: (mime: string) => string): string[] {
-  return options.filter(option => canPlayType(option.mime) !== "").map(option => option.id);
+export type PlaybackTarget = "browser" | "android-tv";
+export function supportedPlayback(options: PlaybackOption[], canPlayType: (mime: string) => string, target: PlaybackTarget = "browser"): string[] {
+  return options.filter(option => {
+    if (canPlayType(option.mime) === "") return false;
+    // Fire OS WebView can report support for a codec even when MediaCodec only
+    // decodes its audio track. Prefer a conservative stream for the APK so a
+    // nominally supported HEVC/10-bit/high-level source cannot play as black video.
+    return target === "browser" || (option.container === "mp4" && option.video === "h264" && ["aac", "none"].includes(option.audio));
+  }).map(option => option.id);
 }
-export async function preparePlayback(id: string, signal: AbortSignal, canPlayType: (mime: string) => string): Promise<PreparedPlayback> {
+export async function preparePlayback(id: string, signal: AbortSignal, canPlayType: (mime: string) => string, target: PlaybackTarget = "browser", nativeSupport?: (inspection: PlaybackInspection) => Promise<string[] | null>): Promise<PreparedPlayback> {
   const inspection = await mediaApi<PlaybackInspection>("inspect", signal, { id });
-  return mediaApi<PreparedPlayback>("prepare", signal, { id, supported: supportedPlayback(inspection.options, canPlayType) });
+  const nativeOptions = nativeSupport ? await nativeSupport(inspection) : null;
+  if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
+  // Old APKs have no capability method. Keep their conservative stream until upgraded.
+  const supported = nativeOptions ?? supportedPlayback(inspection.options, canPlayType, target);
+  return mediaApi<PreparedPlayback>("prepare", signal, { id, supported: inspection.options.filter(option => supported.includes(option.id)).map(option => option.id) });
 }
 
 export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unknown): Promise<T> {
@@ -115,7 +126,9 @@ export function saveDismissedSources(dismissed: Set<string>): void {
 }
 
 export function automaticSources(results: Source[], advice: SourceAdvice, dismissed: Set<string>): Source[] {
-  const matches = new Set(advice.ranking.filter(item => item.identity === "match").map(item => item.id));
+  // When Gemini succeeds, automatic playback must choose a source it actually
+  // reviewed. Unreviewed rows remain available in Advanced mode.
+  const matches = new Set(advice.ranking.filter(item => item.identity === "match" && (advice.provider !== "gemini" || item.method === "gemini")).map(item => item.id));
   const seen = new Set<string>();
   return recommendedSources(results, advice, dismissed, "recommended").filter(source => {
     const fingerprint = sourceFingerprint(source);

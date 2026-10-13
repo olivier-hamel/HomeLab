@@ -9,7 +9,7 @@ export type PlaybackOption = {
   id: string; mode: "direct" | "remux" | "transcode"; mime: string;
   container: string; video: "copy" | "h264" | "vp9"; audio: "copy" | "aac" | "opus" | "none";
 };
-export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; options: PlaybackOption[] };
+export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; width: number; height: number; frameRate: number; options: PlaybackOption[] };
 
 function extraData(value: unknown): Buffer {
   // ffprobe's hex dump has an offset and an ASCII column. Never parse the latter.
@@ -119,7 +119,7 @@ export function inspectPlayback(probe: MediaProbe): PlaybackInspection {
   }
   const cost = (o: PlaybackOption) => o.mode === "direct" ? 0 : 1 + (o.video !== "copy" ? 100 : 0) + (!["copy", "none"].includes(o.audio) ? 10 : 0);
   options.sort((a, b) => cost(a) - cost(b));
-  return { duration: probe.duration, video: probe.video.codec, audio: probe.audio?.codec ?? null, options };
+  return { duration: probe.duration, video: probe.video.codec, audio: probe.audio?.codec ?? null, width: probe.video.width, height: probe.video.height, frameRate: probe.video.frameRate, options };
 }
 export function choosePlayback(inspection: PlaybackInspection, supported: unknown): PlaybackOption {
   if (!Array.isArray(supported) || supported.length > 20 || supported.some(id => typeof id !== "string" || id.length > 64)) throw new MediaError("input", "Invalid browser playback capabilities.", 400);

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { BoundedCache, envNumber, list, record, string, type Fetcher, type Kind } from "./core.ts";
+import { BoundedCache, envNumber, list, record, string, type Fetcher } from "./core.ts";
 import { bounded, readLimited } from "./http.ts";
 import { ASSIST_MODEL } from "./source-assist.ts";
-import { Tmdb, type Catalogue, type Title } from "./tmdb.ts";
+import { Tmdb, type Catalogue, type CatalogueKind, type Title } from "./tmdb.ts";
 
 function words(value: string): string[] {
   return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().match(/[a-z0-9]+/g) ?? [];
@@ -54,7 +54,7 @@ export class CatalogueSearch {
   private corrections = new BoundedCache<string | null>(200, 24 * 60 * 60_000);
   constructor(fetcher: Fetcher = fetch, tmdb = new Tmdb(fetcher)) { this.fetcher = fetcher; this.tmdb = tmdb; }
 
-  async browse(kind: Kind, query: string, page: number, signal: AbortSignal): Promise<SmartCatalogue> {
+  async browse(kind: CatalogueKind, query: string, page: number, signal: AbortSignal): Promise<SmartCatalogue> {
     const primary = await this.tmdb.browse(kind, query, page, signal);
     if (!query || primary.titles.slice(0, 8).some(title => closeTitleMatch(query, title.title))) return primary;
     const correctedQuery = await this.correct(kind, query, primary.titles, signal);
@@ -71,7 +71,7 @@ export class CatalogueSearch {
     return { ...primary, pages: Math.max(primary.pages, corrected.pages), titles, originalQuery: query, correctedQuery, correctionProvider: "gemini" };
   }
 
-  private async correct(kind: Kind, query: string, titles: Title[], signal: AbortSignal): Promise<string | null> {
+  private async correct(kind: CatalogueKind, query: string, titles: Title[], signal: AbortSignal): Promise<string | null> {
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) return null;
     const cacheKey = createHash("sha256").update(apiKey).update(kind).update(query.toLowerCase()).digest("hex");
