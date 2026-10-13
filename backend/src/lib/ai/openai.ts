@@ -58,17 +58,18 @@ export async function generateOpenAIObject(options: {
       if (!response.ok) {
         const envelope = await readLimited(response, 16 * 1024).then(bytes => record(JSON.parse(new TextDecoder().decode(bytes)))).catch(() => ({}));
         const upstream = record(record(envelope).error);
-        const reported = upstream.code ?? upstream.type;
-        const upstreamCode = typeof reported === "string" && ["invalid_api_key", "authentication_error", "permission_denied", "invalid_request_error", "model_not_found", "rate_limit_exceeded", "insufficient_quota", "server_error", "timeout"].includes(reported) ? reported : "UNKNOWN";
+        const upstreamCode = [upstream.code, upstream.type].find((value): value is string => typeof value === "string" && ["invalid_api_key", "authentication_error", "permission_denied", "invalid_request_error", "model_not_found", "rate_limit_exceeded", "insufficient_quota", "credit_balance_exhausted", "server_error", "timeout"].includes(value)) ?? "UNKNOWN";
         const [code, message] = response.status === 400 ? ["ai_request", "La demande d’analyse a été refusée. Vérifie la configuration du serveur."]
           : [401, 403].includes(response.status) ? ["ai_credentials", "Le service d’analyse n’est pas autorisé. Vérifie la configuration du serveur."]
           : response.status === 404 ? ["ai_model", "Le service d’analyse n’est pas disponible. Vérifie la configuration du serveur."]
-          : ["ai_unavailable", response.status === 429 ? "La limite de requêtes ou le quota du service d’analyse est atteint. Patiente avant de réessayer." : "L’analyse est temporairement indisponible. Réessaie dans un instant."];
+          : ["ai_unavailable", upstreamCode === "credit_balance_exhausted" ? "Le crédit du service d’analyse est épuisé. Vérifie sa facturation avant de réessayer."
+            : upstreamCode === "insufficient_quota" ? "Le quota du service d’analyse est épuisé. Vérifie sa configuration avant de réessayer."
+            : response.status === 429 ? "La limite de requêtes du service d’analyse est atteinte. Patiente avant de réessayer." : "L’analyse est temporairement indisponible. Réessaie dans un instant."];
         const retryAfter = response.headers.get("retry-after");
         const retryAfterMs = retryAfter === null ? 0 : /^\d+(?:\.\d+)?$/.test(retryAfter.trim()) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now();
         const wait = Math.max(backoff, Number.isFinite(retryAfterMs) ? retryAfterMs : 0);
         // All attempts and backoffs share the browser's preparation deadline.
-        if ([408, 429, 500, 502, 503, 504].includes(response.status) && upstreamCode !== "insufficient_quota" && attempt < retries && wait < deadline - Date.now()) {
+        if ([408, 429, 500, 502, 503, 504].includes(response.status) && !["insufficient_quota", "credit_balance_exhausted"].includes(upstreamCode) && attempt < retries && wait < deadline - Date.now()) {
           await delay(wait, undefined, { signal });
           continue;
         }

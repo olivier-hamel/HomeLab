@@ -1,4 +1,4 @@
-import { generateOpenAIObject } from "../ai/openai.ts";
+import { generateOpenAIObject, OpenAIProviderError } from "../ai/openai.ts";
 import { MediaError, type Fetcher } from "../media/core.ts";
 import { validatePdf, validateAnalysis } from "./documents.ts";
 import { eventSchemaForTypes } from "./events.ts";
@@ -46,8 +46,10 @@ export async function analyseCalendarPdf(options: { name: string; pdf: Uint8Arra
     };
     // Preserve provider diagnostics for the local CLI while giving PDF-specific
     // messages to the app; HTTP 400/auth/model errors are kept distinct.
-    if (error instanceof MediaError && messages[error.code]) error.message = error.status === 429
-      ? "La limite de requêtes ou le quota d’analyse est atteint. Ton PDF est conservé; patiente avant de réessayer."
+    if (error instanceof OpenAIProviderError && ["credit_balance_exhausted", "insufficient_quota"].includes(error.upstreamCode)) {
+      error.message = "Le quota d’analyse est épuisé. Ton PDF est conservé; la facturation du service doit être vérifiée avant de relancer le scan.";
+    } else if (error instanceof MediaError && messages[error.code]) error.message = error.status === 429
+      ? "La limite de requêtes d’analyse est atteinte. Ton PDF est conservé; patiente avant de réessayer."
       : messages[error.code];
     throw error;
   }
