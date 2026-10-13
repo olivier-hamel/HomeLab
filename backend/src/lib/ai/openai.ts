@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 // Server-only configuration shared by all Tempo event creation and document scans.
 export const DEFAULT_OPENAI_MODEL = "gpt-6.1-sol";
+export const EVENT_CREATION_MODEL = "gpt-6-luna";
 export function openaiApiKey() { return process.env.OPENAI_API_KEY?.trim() || ""; }
 export function openaiModel() { return DEFAULT_OPENAI_MODEL; }
 
@@ -22,12 +23,13 @@ export class OpenAIProviderError extends MediaError {
 export async function generateOpenAIObject(options: {
   instruction: string; input: unknown; schema: object; signal: AbortSignal;
   fetcher?: Fetcher; timeout?: number; retries?: number;
+  model?: typeof DEFAULT_OPENAI_MODEL | typeof EVENT_CREATION_MODEL;
   pdf?: Uint8Array; filename?: string; schemaName?: string;
   maxOutputTokens?: number; maxResponseBytes?: number;
 }): Promise<unknown> {
   const key = openaiApiKey();
   if (!key) throw new MediaError("ai_setup", "La création assistée est indisponible. Tu peux remplir les détails manuellement.", 503);
-  const model = openaiModel();
+  const model = options.model ?? openaiModel();
   const timeout = options.timeout ?? 20_000;
   const deadline = Date.now() + timeout;
   const retries = options.retries ?? 0;

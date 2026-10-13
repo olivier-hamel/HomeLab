@@ -5,7 +5,7 @@ rythme des journées et accompagne Mémo. Tempo ouvre directement le calendrier,
 avec des vues par mois, semaine et jour. La recherche Web, les tâches du jour et
 l’aperçu de l’agenda sont dans l’app distincte [Accueil](../../docs/home.md). Les événements
 sont enregistrés dans MongoDB pour chaque compte HomeLab. Tu peux les créer
-en langage naturel avec GPT-6.1 Sol, vérifier les détails avant l’ajout, puis
+en langage naturel avec GPT-6 Luna, vérifier les détails avant l’ajout, puis
 les modifier ou les supprimer. Aucun événement de démonstration n’est inclus.
 
 ## Lancer en local
@@ -136,8 +136,9 @@ Renseigne `MONGODB_URI` et `OPENAI_API_KEY` dans `backend/.env` (voir
 [le modèle](../../backend/.env.example)). La clé reste exclusivement sur le serveur.
 `MONGODB_DATABASE` vaut `homelab` par défaut; `MONGODB_USERNAME` et
 `MONGODB_PASSWORD` remplacent les marqueurs dans une URI si nécessaire.
-La création depuis une description et les scans PDF/PowerPoint utilisent le
-modèle fixe `gpt-6.1-sol` via l’API Responses d’OpenAI et la même `OPENAI_API_KEY`.
+La création depuis une description utilise `gpt-6-luna`; les scans PDF/PowerPoint
+utilisent `gpt-6.1-sol`. Les deux modèles sont fixés dans le code serveur et
+utilisent l’API Responses d’OpenAI avec la même `OPENAI_API_KEY`.
 Mémo, qui tourne dans un service Python distinct, conserve sa configuration `MEMO_*`.
 
 Les collections `calendar_events`, `calendar_event_types` et leurs index sont créés automatiquement.
@@ -184,7 +185,7 @@ OpenAI reçoit les noms, importances et identifiants du compte pour choisir le
 type le plus approprié au titre, également lors des scans PDF/PowerPoint; les IDs
 possibles sont limités par le schéma et vérifiés par le serveur.
 
-GPT-6.1 Sol comprend par exemple « Souper tous les dimanches à 19 h pendant deux
+GPT-6 Luna comprend par exemple « Souper tous les dimanches à 19 h pendant deux
 heures » ou « Yoga un mardi sur deux à 18 h, six fois ». Il demande une précision
 pour les règles non prises en charge, comme le dernier dimanche du mois.
 OpenAI prépare seulement un brouillon : l’ajout nécessite

@@ -1,5 +1,5 @@
 import { createAccountVerifier, type AccountVerifier } from "../accounts.ts";
-import { openaiApiKey, generateOpenAIObject, OpenAIProviderError } from "../ai/openai.ts";
+import { openaiApiKey, generateOpenAIObject, OpenAIProviderError, EVENT_CREATION_MODEL } from "../ai/openai.ts";
 import { BoundedCache, MediaError, record, type Fetcher } from "../media/core.ts";
 import { readLimited } from "../media/http.ts";
 import { eventId, eventSchemaForTypes, validateEvent, validDate } from "./events.ts";
@@ -98,7 +98,7 @@ export function createCalendarApi(fetcher: Fetcher = fetch, store = new Calendar
         const eventTypes = await store.types.list(user.username);
         const schema = { type: "object", properties: { event: { anyOf: [eventSchemaForTypes(eventTypes), { type: "null" }] }, clarification: { type: ["string", "null"] } }, required: ["event", "clarification"], additionalProperties: false };
         // Keep the whole retry sequence below the browser's 30-second deadline.
-        const result = record(await generateOpenAIObject({ instruction, input: { text: body.text.trim(), currentDate: currentDate(), selectedDate: body.selectedDate, timezone: "America/Toronto", eventTypes }, schema, signal: request.signal, fetcher, retries: 2, timeout: 27_000 }));
+        const result = record(await generateOpenAIObject({ model: EVENT_CREATION_MODEL, instruction, input: { text: body.text.trim(), currentDate: currentDate(), selectedDate: body.selectedDate, timezone: "America/Toronto", eventTypes }, schema, signal: request.signal, fetcher, retries: 2, timeout: 27_000 }));
         if (result.event === null && typeof result.clarification === "string" && result.clarification.trim()) return json({ event: null, clarification: result.clarification.slice(0, 400) });
         try {
           const event = validateEvent(result.event);

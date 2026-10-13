@@ -11,7 +11,7 @@ test -f .env || cp .env.example .env
 ```
 
 Dans `backend/.env`, renseigne `OPENAI_API_KEY` avec ta clé OpenAI. Tu peux aussi
-la fournir dans l’environnement du terminal. Tempo utilise toujours `gpt-6.1-sol`.
+la fournir dans l’environnement du terminal. Ce test de scan utilise `gpt-6.1-sol`.
 Le fichier `.env` est ignoré par Git; ne mets pas la clé dans une commande ou
 un fichier suivi. MongoDB n’est pas nécessaire pour ce test.
 
@@ -47,7 +47,7 @@ arrête les autres et affiche l’erreur.
 
 Le fichier `backend/.env` est créé depuis le modèle s’il manque. Complète
 `OPENAI_API_KEY` pour préparer les événements depuis une description avec
-`gpt-6.1-sol` et scanner les documents, puis `MONGODB_URI`
+`gpt-6-luna` et scanner les documents avec `gpt-6.1-sol`, puis `MONGODB_URI`
 pour enregistrer les événements. Redémarre
 le backend après avoir ajouté la clé. Le lanceur
 utilise `homelab_calendar_dev` pour Tempo et `homelab_memo_dev` pour la
