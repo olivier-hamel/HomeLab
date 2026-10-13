@@ -253,3 +253,27 @@ Les tests des archives historiques restent dans `backend/tests/calendar-document
 Pour l’API, lance `npm test`, `npm run lint`, `npm run typecheck` et `npm run build`
 dans `backend/`. Pour le calendrier, utilise `node scripts/test-calendar-ui.mjs`
 depuis la racine après installation de Playwright dans Mémo et de Chrome.
+
+## Tâches récurrentes
+
+Les tâches disposent du même champ « Répétition » que les événements : chaque
+jour, semaine (plusieurs jours possibles), mois ou année, avec intervalle et fin
+par date ou nombre d’occurrences. « Première échéance » donne le point de départ;
+une tâche sans échéance doit en recevoir une pour se répéter. Le chat peut aussi
+préparer une série, par exemple « Réviser chaque mercredi à 20 h, six fois ».
+
+Chaque échéance se coche séparément dans le mois, la semaine, la journée ou
+l’accueil. L’accueil affiche la première occurrence non terminée, même en retard,
+puis passe à la suivante après la coche. Les occurrences cochées aujourd’hui
+restent visibles; « Voir les terminées » montre aussi les coches plus anciennes.
+Notes, documents et liens sont communs à la série. Le dialogue modifie la série
+et permet de cocher sa première occurrence; les autres se cochent à leur date.
+Supprimer une série demande confirmation et retire toutes ses occurrences.
+
+Les coches sont enregistrées côté serveur dans `completedOccurrences`, un objet
+associant chaque date d’occurrence à sa date de complétion. Un PATCH de coche
+utilise `{ completed, updatedAt, occurrenceDate }`; le serveur vérifie que cette
+date appartient à la série. Les créations et éditions ne permettent pas de
+remplacer cet historique. Les modifications simultanées gardent le contrôle de
+version existant. Une tâche Moodle rendue récurrente conserve son calendrier
+personnalisé et ses coches lors des synchronisations automatiques.

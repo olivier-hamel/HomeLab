@@ -19,7 +19,7 @@ export type EventInput = {
 };
 export type MoodleSource = { key: string; entity: "event" | "assignment"; remoteId: number; courseId: number | null; semester: string; url: string; fingerprint: string; available: boolean; personalDeadlineChecked?: boolean };
 export type EventSource = { documentId: string; documentName: string; proposalId: string; page: number | null; origin?: "library" };
-export type CalendarEvent = EventInput & { id: string; createdAt: string; updatedAt: string; source?: EventSource; moodle?: MoodleSource };
+export type CalendarEvent = EventInput & { id: string; createdAt: string; updatedAt: string; source?: EventSource; moodle?: MoodleSource; completedOccurrences?: Record<string, string> };
 export const eventSchema = {
   type: "object", additionalProperties: false,
   properties: {
@@ -95,7 +95,7 @@ export function validateEvent(value: unknown): EventInput {
       if (!validDate(due.date) || (due.time !== null && (typeof due.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(due.time)))) throw new MediaError("input", "Vérifie l’échéance de la tâche.", 400);
       deadline = { date: due.date, time: due.time as string | null };
     }
-    if (row.recurrence) throw new MediaError("input", "Une tâche possède une seule échéance.", 400);
+    if (row.recurrence && !deadline) throw new MediaError("input", "Ajoute une première échéance pour répéter la tâche.", 400);
     row.date = deadline?.date ?? row.date;
     row.endDate = row.date;
     row.startTime = row.endTime = deadline?.time ?? null;

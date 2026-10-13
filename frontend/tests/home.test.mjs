@@ -103,3 +103,30 @@ test('legacy task migration resumes after an interrupted write with the same req
     assert.equal(calls[0].requestId, calls[1].requestId); assert.equal(store.getSnapshot().tasks.length, 0);
   } finally { globalThis.fetch = original; }
 });
+
+test('Home shows the earliest unfinished recurrence and completed today, advancing after completion and restoring reopened dates', async () => {
+  const model = await import('../../apps/calendar/dist/js/events.js');
+  const { applyTaskCompletion } = await import('../src/lib/home.ts');
+  let task = { ...homeTaskInput('Routine', '2026-10-12'), id: 'routine', recurrence: { frequency: 'daily', interval: 1, weekdays: [], until: null, count: 3 }, completedOccurrences: {} };
+  const rows = () => plannerTasks([task], '2026-10-13', false, model);
+  assert.deepEqual(rows().map(row => row.deadline.date), ['2026-10-12']);
+  task = applyTaskCompletion(task, true, '2026-10-12T12:00:00Z', '2026-10-12');
+  assert.deepEqual(rows().map(row => row.deadline.date), ['2026-10-13']);
+  task = applyTaskCompletion(task, true, '2026-10-13T12:00:00Z', '2026-10-13');
+  assert.deepEqual(rows().map(row => [row.deadline.date, row.completed]), [['2026-10-14', false], ['2026-10-13', true]]);
+  assert.equal(plannerTasks([task], '2026-10-13', true, model).length, 3);
+  task = applyTaskCompletion(task, false, null, '2026-10-12');
+  assert.deepEqual(rows().map(row => row.deadline.date), ['2026-10-12', '2026-10-13']);
+  assert(task.completedOccurrences['2026-10-13']);
+  task = applyTaskCompletion(task, true, '2026-10-13T12:00:00Z', '2026-10-12');
+  task = applyTaskCompletion(task, true, '2026-10-13T12:00:00Z', '2026-10-14');
+  assert(rows().every(row => row.completed));
+});
+
+test('Home finds future skipped month and leap-day occurrences without expanding an unbounded series', async () => {
+  const model = await import('../../apps/calendar/dist/js/events.js');
+  const monthly = { ...homeTaskInput('Mensuelle', '2026-01-31'), id: 'month', recurrence: { frequency: 'monthly', interval: 1, weekdays: [], until: null, count: null }, completedOccurrences: { '2026-01-31': '2026-01-31T12:00:00Z' } };
+  assert.equal(plannerTasks([monthly], '2026-02-01', false, model)[0].deadline.date, '2026-03-31');
+  const yearly = { ...monthly, ...homeTaskInput('Bissextile', '2096-02-29'), recurrence: { ...monthly.recurrence, frequency: 'yearly' }, completedOccurrences: { '2096-02-29': '2096-02-29T12:00:00Z' } };
+  assert.equal(plannerTasks([yearly], '2100-01-01', false, model)[0].deadline.date, '2104-02-29');
+});

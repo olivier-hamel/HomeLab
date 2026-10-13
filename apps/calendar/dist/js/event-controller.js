@@ -1,5 +1,5 @@
 import {dateKey, parseDate, addDays, fullDate} from "./date.js";
-import {createEventRepository} from "./events.js";
+import {createEventRepository, eventsOnDate} from "./events.js";
 import {eventDialog} from "./components/event-dialog.js";
 import {recurrenceLabel, firstOccurrenceDate} from "./recurrence.js";
 
@@ -17,13 +17,17 @@ export function createEventController(store, dialogRoot) {
   }
   function syncRecurrence(form) {
     const task = form.elements.kind.value === "task";
+    const frequency = form.elements.recurrenceFrequency.value;
+    const enabled = frequency !== "none";
+    if (task && enabled) form.elements.hasDeadline.checked = true;
+    form.elements.hasDeadline.disabled = task && enabled;
     const hasDeadline = !task || form.elements.hasDeadline.checked;
     form.querySelector("#task-status-fields").hidden = !task;
     form.querySelector("#task-details-fields").hidden = !task;
     form.querySelector("#event-start-datetime").hidden = !hasDeadline;
     form.elements.date.required = hasDeadline;
-    form.querySelector(".event-recurrence").hidden = task;
-    if (task) form.elements.recurrenceFrequency.value = "none";
+    form.querySelector("#task-recurrence-note").hidden = !task || !enabled;
+    form.querySelector("#task-completed-label").textContent = enabled ? "Première occurrence terminée" : "Tâche terminée";
     form.elements.contextName.required = task && !!form.elements.contextKind.value;
     form.elements.contextName.disabled = !task || !form.elements.contextKind.value;
     form.querySelector("#event-all-day-toggle").hidden = task && !hasDeadline;
@@ -33,22 +37,20 @@ export function createEventController(store, dialogRoot) {
       field.hidden = form.elements.allDay.checked || task && (input.name === "endTime" || !hasDeadline);
       input.disabled = field.hidden; input.required = !field.hidden;
     }
-    const frequency = form.elements.recurrenceFrequency.value;
-    const enabled = frequency !== "none";
     const ending = form.elements.recurrenceEnd.value;
     const allDay = form.elements.allDay.checked;
     const multiday = form.elements.occurrenceMultiDay;
     if (!enabled || !allDay) multiday.checked = form.elements.endDate.value > form.elements.date.value;
     const singleDay = enabled && allDay && !multiday.checked;
-    form.querySelector("#event-multiday-toggle").hidden = !enabled || !allDay;
+    form.querySelector("#event-multiday-toggle").hidden = task || !enabled || !allDay;
     form.querySelector("#event-end-datetime").hidden = singleDay || task;
     form.elements.endDate.required = !singleDay && !task;
     if (task) form.elements.endDate.value = form.elements.date.value;
     if (singleDay) form.elements.endDate.value = form.elements.date.value;
-    form.querySelector("#event-date-label").textContent = task ? "Échéance" : enabled ? "À partir du" : "Date de début";
+    form.querySelector("#event-date-label").textContent = task ? enabled ? "Première échéance" : "Échéance" : enabled ? "À partir du" : "Date de début";
     form.querySelector('label[for="event-start"]').textContent = task ? "Heure limite" : "Heure de début";
     form.querySelector("#event-end-date-label").textContent = enabled ? "Fin de la première occurrence" : "Date de fin";
-    form.querySelector("#event-occurrence-note").hidden = !enabled || singleDay;
+    form.querySelector("#event-occurrence-note").hidden = task || !enabled || singleDay;
     const occurrenceEnd = parseDate(form.elements.endDate.value);
     const suggestion = form.querySelector("#event-series-end-suggestion");
     suggestion.hidden = !enabled || ending !== "never" || !occurrenceEnd || form.elements.endDate.value <= form.elements.date.value;
@@ -72,6 +74,13 @@ export function createEventController(store, dialogRoot) {
     form.querySelector("#event-recurrence-summary").textContent = recurrenceLabel(rule);
     const date = parseDate(form.elements.date.value);
     const first = firstOccurrenceDate(form.elements.date.value, rule);
+    if (task && first && current?.event?.kind === "task") {
+      const key = dateKey(first), checkbox = form.elements.completed;
+      // Changing the first deadline selects that date's checkmark. Never copy
+      // a completed old occurrence onto a newly chosen first occurrence.
+      if (checkbox.dataset.date && checkbox.dataset.date !== key) checkbox.checked = current.event.recurrence ? !!current.event.completedOccurrences?.[key] : key === current.event.date && !!current.event.completed;
+      checkbox.dataset.date = key;
+    }
     const note = form.querySelector("#event-recurrence-date-note");
     if (first && dateKey(first) !== form.elements.date.value) {
       const offset = Math.round((first.getTime() - date.getTime()) / 86_400_000);
@@ -247,7 +256,7 @@ export function createEventController(store, dialogRoot) {
       const deadline = form.elements.hasDeadline.checked ? {date: input.date, time: allDay ? null : input.startTime} : null;
       const contextKind = form.elements.contextKind.value;
       const previousContext = context.event?.context;
-      Object.assign(input, {kind: "task", completed: form.elements.completed.checked, deadline, recurrence: null, endDate: input.date, allDay: !deadline?.time, startTime: deadline?.time || null, endTime: deadline?.time || null,
+      Object.assign(input, {kind: "task", completed: form.elements.completed.checked, deadline, endDate: input.date, allDay: !deadline?.time, startTime: deadline?.time || null, endTime: deadline?.time || null,
         notes: form.elements.notes.value.trim(), links: form.elements.links.value.split(/\r?\n/).map(link => link.trim()).filter(Boolean), documentIds: fields.getAll("documentIds"),
         context: contextKind ? {kind: contextKind, name: form.elements.contextName.value.trim(), ...(previousContext?.courseId && previousContext.kind === contextKind && previousContext.name === form.elements.contextName.value.trim() ? {courseId: previousContext.courseId} : {})} : null});
     } else if (context.event?.kind === "task") Object.assign(input, {kind: "event", completed: false, completedAt: null, deadline: null});
@@ -263,6 +272,7 @@ export function createEventController(store, dialogRoot) {
     if (alignedEnd.getUTCFullYear() > 9999) {error("La fin de l’occurrence dépasse la dernière date possible."); return;}
     input.date = dateKey(first);
     input.endDate = dateKey(alignedEnd);
+    if (input.kind === "task" && input.deadline) input.deadline.date = input.date;
     error(""); busy("save");
     try {
       const result = context.event ? await repository.updateEvent(context.event, input, context.controller.signal) : await repository.addEvent(input, context.requestId, context.controller.signal);
@@ -288,12 +298,15 @@ export function createEventController(store, dialogRoot) {
     "toggle-task": async element => {
       const event = store.getState().events.find(row => row.id === element.dataset.eventId);
       if (!event || event.kind !== "task") return;
+      const occurrence = eventsOnDate([event], element.dataset.occurrenceDate)[0];
+      if (!occurrence) return;
+      const completed = !occurrence.completed;
       element.disabled = true;
       try {
-        const result = await repository.completeTask(event, !event.completed);
+        const result = await repository.completeTask(occurrence, completed);
         ++loadId; store.setEvents(store.getState().events.map(row => row.id === event.id ? result.event : row));
-        toast(result.event.completed ? "Tâche terminée." : "Tâche remise à faire.");
-        document.querySelector(`[data-action="toggle-task"][data-event-id="${event.id}"]`)?.focus({preventScroll: true});
+        toast(completed ? "Tâche terminée." : "Tâche remise à faire.");
+        document.querySelector(`[data-action="toggle-task"][data-event-id="${event.id}"][data-occurrence-date="${occurrence.occurrenceDate || occurrence.date}"]`)?.focus({preventScroll: true});
       } catch (err) {element.disabled = false; toast(err.message); if (["conflict", "not_found"].includes(err.code)) void loadEvents();}
     },
     "moodle-sync": async element => {element.disabled = true; try {await repository.syncMoodle(); await loadEvents();} catch (err) {toast(err.message);} finally {element.disabled = false;}},

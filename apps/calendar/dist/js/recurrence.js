@@ -39,6 +39,7 @@ export function occurrencesBetween(event, start, end) {
     if (finish.getUTCFullYear() > 9999) return false;
     const endDate = dateKey(finish);
     const occurrence = {...event, date: key, endDate, occurrenceDate: key, seriesDate: event.date};
+    if (event.kind === "task") Object.assign(occurrence, {deadline: {...event.deadline, date: key}, completed: !!event.completedOccurrences?.[key], completedAt: event.completedOccurrences?.[key] || null});
     if (intersects(occurrence, start, end)) results.push(occurrence);
     return true;
   }
@@ -81,7 +82,20 @@ export function occurrencesBetween(event, start, end) {
 }
 
 function intersects(event, start, end) {
-  return event.date <= end && event.endDate >= start && (event.allDay || event.endDate !== start || event.endTime !== "00:00");
+  return event.date <= end && event.endDate >= start && (event.kind === "task" || event.allDay || event.endDate !== start || event.endTime !== "00:00");
+}
+
+export function nextOccurrence(event, from) {
+  const rule = event.recurrence, date = parseDate(from);
+  if (!date || from > "9999-12-31") return null;
+  if (!rule) return occurrencesBetween(event, from, "9999-12-31")[0] || null;
+  // A small number of periods includes skipped month days and leap years.
+  // Expand this bounded window rather than every date in an unbounded series.
+  const limit = rule.frequency === "daily" ? addDays(date, 16 * rule.interval)
+    : rule.frequency === "weekly" ? addDays(date, 16 * 7 * rule.interval)
+    : rule.frequency === "monthly" ? civilDate(date.getUTCFullYear(), date.getUTCMonth() + 16 * rule.interval + 1, 0)
+    : civilDate(date.getUTCFullYear() + 16 * rule.interval, 11, 31);
+  return occurrencesBetween(event, from, limit.getUTCFullYear() > 9999 ? "9999-12-31" : dateKey(limit))[0] || null;
 }
 
 export function recurrenceLabel(rule) {
