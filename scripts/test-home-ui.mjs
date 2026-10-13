@@ -11,7 +11,7 @@ const { chromium } = require('playwright'), { expect } = require('@playwright/te
 const output = resolve(root, 'artifacts/home');
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
-const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, locale: 'fr-CA' });
+const context = await browser.newContext({ viewport: { width: 1440, height: 1440 }, locale: 'fr-CA' });
 const page = await context.newPage(), errors = [];
 page.on('pageerror', error => errors.push(error.message));
 await page.clock.install({ time: new Date('2026-10-12T15:15:00Z') });
@@ -31,6 +31,9 @@ await context.route('**/*', async route => {
   if (url.pathname.startsWith('/memo/api/auth/')) return json(route, { enabled: true, user, accounts: [{ username: 'oli', display_name: 'Oli' }, { username: 'max', display_name: 'Max' }] });
   if (url.pathname === '/api/calendar/events') return failEvents ? json(route, { error: 'Indisponible' }, 503) : json(route, { events, aiAvailable: true });
   if (url.pathname === '/api/calendar/documents') return json(route, { documents: [], folders: [] });
+  if (url.pathname.startsWith('/api/')) return json(route, { error: 'API non utilisée par cette vérification.' }, 503);
+  if (url.pathname === '/memo/healthz') return route.fulfill({ body: 'ok' });
+  if (url.pathname === '/memo/') return route.fulfill({ contentType: 'text/html', body: '<title>Mémo</title>Mémo' });
   if (url.pathname === '/calendar/healthz') return route.fulfill({ body: 'ok' });
   if (url.pathname.startsWith('/calendar/')) {
     const file = resolve(root, 'apps/calendar/dist', url.pathname.slice('/calendar/'.length) || 'index.html');
@@ -41,7 +44,7 @@ await context.route('**/*', async route => {
   return route.continue();
 });
 const url = process.env.HOMELAB_UI_URL || 'http://localhost:3000';
-const shot = name => page.screenshot({ animations: 'disabled', path: resolve(output, `${name}.png`), fullPage: true });
+const shot = name => page.screenshot({ animations: 'disabled', path: resolve(output, `${name}.png`) });
 const ready = () => expect(page.locator('.start-agenda-event')).toHaveCount(4);
 const home = async () => { await page.goto(`${url}/?section=home`); await ready(); };
 const noOverflow = async () => {
@@ -81,13 +84,9 @@ try {
   await task.getByRole('checkbox').uncheck(); await task.getByRole('button').click();
   await expect(page.locator('.start-task-list li')).toHaveCount(3);
   await input.fill('Brouillon conservé');
-  // Let each session response complete before advancing to its timeout.
-  for (let cycle = 0; cycle < 2; cycle++) {
-    const refreshed = page.waitForResponse(response => response.url().endsWith('/memo/api/auth/me'));
-    await page.clock.runFor(30_000);
-    await (await refreshed).finished();
-  }
-  await page.clock.runFor(1_000); await expect(input).toHaveValue('Brouillon conservé'); await expect(input).toBeFocused();
+  await expect(input).toHaveValue('Brouillon conservé');
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(input).toHaveValue('Brouillon conservé'); await expect(input).toBeFocused();
 
   // Cross-tab task changes use the original per-account key.
   const other = await context.newPage(); await other.goto(`${url}/?section=home`);
@@ -100,7 +99,7 @@ try {
   const frame = page.frameLocator('iframe[title="Tempo — calendrier"]');
   await expect(frame.locator('#event-title')).toHaveValue('Cours de mécanique');
   await expect(frame.locator('.home-page')).toHaveCount(0);
-  await frame.getByRole('button', { name: 'Fermer la fenêtre', exact: true }).click();
+  await frame.locator('[data-action="close-event-dialog"]').first().click();
   await page.goBack(); await ready();
   await page.locator('.start-upcoming-list button').filter({ hasText: 'Révision hebdomadaire' }).click();
   await expect(page).toHaveURL(/date=2026-10-19.*event=series/);
@@ -118,7 +117,11 @@ try {
   }
   for (const width of [1920, 1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 }); await noOverflow();
-    if (width === 390 || width === 320) await shot(`mobile-${width}`);
+    if (width === 390 || width === 320) {
+      await shot(`mobile-${width}`);
+      await page.locator('.start-upcoming').scrollIntoViewIfNeeded(); await shot(`mobile-${width}-agenda`);
+      await page.locator('.start-topbar').scrollIntoViewIfNeeded();
+    }
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('#start-title').click(); await page.keyboard.press('/');

@@ -44,11 +44,13 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
 
   useEffect(() => {
     const controller = new AbortController();
+    let loadId = 0;
     const load = () => {
+      const id = ++loadId;
       void loadHomeAgenda(controller.signal).then(result => {
-        if (!controller.signal.aborted) setAgenda({ status: "ready", ...result });
+        if (!controller.signal.aborted && id === loadId) setAgenda({ status: "ready", ...result });
       }).catch(() => {
-        if (!controller.signal.aborted) setAgenda({ status: "error", events: [] });
+        if (!controller.signal.aborted && id === loadId) setAgenda({ status: "error", events: [] });
       });
     };
     const visible = () => { if (!document.hidden) { setNow(new Date()); load(); } };
@@ -59,7 +61,9 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
   }, [attempt, user.username]);
 
   useEffect(() => {
-    const sync = (event: StorageEvent) => { if (event.storageArea === localStorage) store.sync(event.key); };
+    const sync = (event: StorageEvent) => {
+      try { if (event.storageArea === localStorage) store.sync(event.key); } catch { /* Storage is optional. */ }
+    };
     const shortcut = (event: KeyboardEvent) => {
       if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey && !(event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]"))) {
         event.preventDefault(); search.current?.focus();
@@ -79,7 +83,7 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
       <header className="start-topbar"><span className="start-wordmark"><House size={18} /> Accueil<span className="start-wordmark-dot">.</span></span><span className="start-zone"><span /> Toronto <span className="start-zone-divider">/</span> {time}</span></header>
 
       <section className="start-hero" aria-labelledby="start-title">
-        <div className="start-hero-copy"><p className="start-eyebrow">{dateLabel(today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p><h1 id="start-title">{greeting},<br /><span>{user.display_name}.</span></h1><p className="start-hero-subtitle">Une nouvelle page pour ta journée.</p><div className="start-summary"><span><CheckCheck size={16} /> {remaining} tâche{remaining > 1 ? "s" : ""} à faire</span><span><CalendarDays size={16} /> {agenda.status === "ready" ? `${events.length} événement${events.length > 1 ? "s" : ""} aujourd’hui` : "Ton agenda arrive"}</span></div></div>
+        <div className="start-hero-copy"><p className="start-eyebrow">{dateLabel(today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p><h1 id="start-title">{greeting},<br /><span>{user.display_name}.</span></h1><p className="start-hero-subtitle">Une nouvelle page pour ta journée.</p><div className="start-summary"><span><CheckCheck size={16} /> {remaining} tâche{remaining > 1 ? "s" : ""} à faire</span><span><CalendarDays size={16} /> {agenda.status === "ready" ? `${events.length} événement${events.length > 1 ? "s" : ""} aujourd’hui` : agenda.status === "error" ? "Agenda indisponible" : "Ton agenda arrive"}</span></div></div>
         <div className="start-day-art" aria-hidden="true"><div className="start-orbit start-orbit-one" /><div className="start-orbit start-orbit-two" /><Sun className="start-art-sun" /><div className="start-date-card"><span>{dateLabel(today, { weekday: "long" })}</span><strong>{dateLabel(today, { day: "numeric" })}</strong><span>{dateLabel(today, { month: "long" })}</span><div><span /><span /><span /></div></div><span className="start-art-caption">À ton rythme.</span></div>
       </section>
 
@@ -105,7 +109,7 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
           {agenda.status !== "ready" ? pending() : events.length ? <div className="start-agenda-list">{events.slice(0, 5).map(event => {
             const ended = !event.allDay && event.endDate === today && event.endTime <= time;
             const ongoing = !event.allDay && !ended && (event.date < today || event.startTime <= time);
-            return <button key={`${event.id}-${event.date}`} className={`start-agenda-event ${ended ? "is-past" : ""} ${ongoing ? "is-current" : ""}`} onClick={() => openEvent(event)}><span className="start-event-time">{event.allDay ? "Toute la journée" : event.date < today ? "Se poursuit" : event.startTime.replace(":", " h ")}<span className="start-timeline-dot" /></span><span className="start-event-copy"><strong>{event.title}</strong><small>{agenda.model?.eventTime(event, preferences.timeFormat)}</small>{event.description && <small className="start-event-description">{event.description}</small>}{ongoing || event === next ? <span className="start-event-badge">{ongoing ? "En cours" : "À suivre"}</span> : null}</span><ArrowUpRight size={15} /></button>;
+            return <button key={`${event.id}-${event.date}`} className={`start-agenda-event ${ended ? "is-past" : ""} ${ongoing ? "is-current" : ""}`} onClick={() => openEvent(event)}><span className="start-event-time">{event.allDay ? "Journée" : event.date < today ? "Se poursuit" : agenda.model?.timeLabel(event.startTime, preferences.timeFormat)}<span className="start-timeline-dot" /></span><span className="start-event-copy"><strong>{event.title}</strong><small>{agenda.model?.eventTime(event, preferences.timeFormat)}</small>{event.description && <small className="start-event-description">{event.description}</small>}{ongoing || event === next ? <span className="start-event-badge">{ongoing ? "En cours" : "À suivre"}</span> : null}</span><ArrowUpRight size={15} /></button>;
           })}{events.length > 5 && <button className="start-text-button" onClick={() => onNavigate("calendar", { date: today, view: "day" })}>Voir les {events.length} événements <ArrowRight size={15} /></button>}</div> : <div className="start-empty"><Sun size={30} /><h3>Du temps pour toi.</h3><p>Aucun événement prévu aujourd’hui.</p><button className="start-text-button" onClick={() => onNavigate("calendar", { date: today, create: true })}>Prévoir un moment <Plus size={15} /></button></div>}
           <footer className="start-agenda-footer"><Clock3 size={14} /><span>Ton agenda Tempo, toujours au même endroit.</span></footer>
         </section>

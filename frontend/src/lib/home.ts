@@ -8,6 +8,7 @@ export type CalendarModel = {
   eventsOnDate: (events: CalendarEvent[], date: string) => CalendarEvent[];
   eventsInRange: (events: CalendarEvent[], start: string, end: string) => CalendarEvent[];
   eventTime: (event: CalendarEvent, format: string) => string;
+  timeLabel: (time: string, format: string) => string;
 };
 
 export const HOME_TIMEZONE = "America/Toronto";
@@ -106,7 +107,7 @@ export function homeStoreFor(username: string) {
     try { storage = localStorage; } catch { /* Storage is optional. */ }
     store = createHomeStore(username, storage);
     sessionStores.set(username, store);
-  } else store.sync();
+  } else if (store.getSnapshot().saved) store.sync();
   return store;
 }
 
