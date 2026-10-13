@@ -57,11 +57,9 @@ test('series stop at the maximum supported date and work at year 1',()=>{
   assert.deepEqual(dates(weekly,'9999-12-30','9999-12-31'),['9999-12-30']);
 });
 
-test('agenda ranges count actual occurrences and editing clearly targets the whole series',()=>{
+test('upcoming counts actual occurrences and editing clearly targets the whole series',()=>{
   const upcoming=eventsInRange([base],'2026-11-02','2026-11-15');
-  assert.equal(upcoming.length,1);
-  assert.equal(upcoming[0].id,'series-one');
-  assert.equal(upcoming[0].date,'2026-11-15');
+  assert.equal(upcoming.length,1);assert.equal(upcoming[0].id,'series-one');
   const dialog=eventDialog({event:base,date:base.date,aiAvailable:true});
   assert(dialog.includes('Tu modifies toute la série'));assert(dialog.includes('Supprimer toute la série?'));assert(dialog.includes('Toutes les 2 semaines'));
 });

@@ -3,6 +3,7 @@ import {escapeHtml as esc} from "../account.js";
 import {parseDate, WEEKDAYS} from "../date.js";
 import {recurrenceLabel} from "../recurrence.js";
 import {documentUrl} from "../documents.js";
+import {eventTypeOptions} from "../event-types.js";
 
 function recurrenceFields(draft) {
   const rule = draft.recurrence;
@@ -20,7 +21,7 @@ function recurrenceFields(draft) {
     </div></div>`;
 }
 
-export function eventDialog({event, date, aiAvailable, documents = [], documentsStatus = "loading"}) {
+export function eventDialog({event, date, aiAvailable, documents = [], documentsStatus = "loading", eventTypes = []}) {
   const editing = !!event;
   const draft = event || {title: "", description: "", date, endDate: date, startTime: "09:00", endTime: "10:00", allDay: false};
   const source = event?.source;
@@ -34,6 +35,7 @@ export function eventDialog({event, date, aiAvailable, documents = [], documents
     <section id="manual-panel" ${editing ? "" : 'role="tabpanel" aria-labelledby="manual-tab"'} ${!editing && aiAvailable ? "hidden" : ""}>
       ${!editing ? `<div id="event-review" class="event-review" role="status" hidden>${icon("check")}<span>Les détails sont prêts. Vérifie-les avant d’ajouter l’événement.</span></div>${!aiAvailable ? '<p class="ai-offline-note">La création assistée est indisponible. Tu peux ajouter ton événement ici.</p>' : ""}` : ""}
       <form id="event-save-form"><div class="event-fields"><div class="event-field"><label class="field-label" for="event-title">Titre <span aria-hidden="true">*</span></label><input id="event-title" name="title" type="text" value="${esc(draft.title)}" placeholder="Donne un nom à ce moment" maxlength="160" required/></div>
+      <div class="event-field"><label class="field-label" for="event-type">Type d’événement</label><select id="event-type" name="typeId">${eventTypeOptions(eventTypes, draft.typeId)}</select></div>
       <label class="all-day-toggle"><input type="checkbox" name="allDay" ${draft.allDay ? "checked" : ""}/><span>Toute la journée</span></label>
       <div class="event-datetime"><div class="event-field"><label class="field-label" for="event-date">Date de début</label><input id="event-date" type="date" name="date" value="${esc(draft.date)}" min="0001-01-01" max="9999-12-31" required/></div><div class="event-field event-time-field" ${draft.allDay ? "hidden" : ""}><label class="field-label" for="event-start">Heure de début</label><input id="event-start" type="time" name="startTime" value="${draft.startTime || "09:00"}" ${draft.allDay ? "disabled" : "required"}/></div></div>
       <div class="event-datetime"><div class="event-field"><label class="field-label" for="event-end-date">Date de fin</label><input id="event-end-date" type="date" name="endDate" value="${esc(draft.endDate)}" min="${esc(draft.date)}" max="9999-12-31" required/></div><div class="event-field event-time-field" ${draft.allDay ? "hidden" : ""}><label class="field-label" for="event-end">Heure de fin</label><input id="event-end" type="time" name="endTime" value="${draft.endTime || "10:00"}" ${draft.allDay ? "disabled" : "required"}/></div></div>

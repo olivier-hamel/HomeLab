@@ -1,5 +1,6 @@
 import {dateKey} from "./date.js";
 import {occurrencesBetween} from "./recurrence.js";
+import {eventImportance} from "./event-types.js";
 
 export const eventCount = count => `${count} événement${count > 1 ? "s" : ""}`;
 export function eventsOnDate(events = [], date) {
@@ -20,7 +21,7 @@ export function eventTime(event, format = "24") {
   return event.allDay ? "Toute la journée" : `${timeLabel(event.startTime, format)} – ${timeLabel(event.endTime, format)}`;
 }
 const minutes = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
-export function layoutTimedEvents(events, date) {
+export function layoutTimedEvents(events, date, types = []) {
   const key = dateKey(date);
   const rows = eventsOnDate(events, key).filter(event => !event.allDay).map(event => ({event,
     start: event.date === key ? minutes(event.startTime) : 0,
@@ -37,6 +38,12 @@ export function layoutTimedEvents(events, date) {
       row.lane = lane;
     }
     for (const row of group) row.lanes = lanes.length;
+    const weights = lanes.map((_, lane) => Math.max(...group.filter(row => row.lane === lane).map(row => ({4: 1.5, 5: 2})[eventImportance(row.event, types)] || 1)));
+    const total = weights.reduce((sum, value) => sum + value, 0);
+    for (const row of group) {
+      row.offset = weights.slice(0, row.lane).reduce((sum, value) => sum + value, 0) / total;
+      row.width = weights[row.lane] / total;
+    }
   }
   for (const row of rows) {
     if (row.start >= groupEnd) {finish(); group = []; groupEnd = -1;}
@@ -65,6 +72,9 @@ export function createEventRepository(fetcher = fetch) {
   }
   return {
     list: signal => request("events", "GET", null, signal),
+    listEventTypes: signal => request("event-types", "GET", null, signal),
+    addEventType: (type, requestId, signal) => request("event-types", "POST", {type, requestId}, signal),
+    deleteEventType: (id, signal) => request(`event-types/${id}`, "DELETE", {}, signal),
     interpret: (text, selectedDate, signal) => request("interpret", "POST", {text, selectedDate}, signal),
     addEvent: (event, requestId, signal) => request("events", "POST", {event, requestId}, signal),
     updateEvent: (event, input, signal) => request(`events/${event.id}`, "PATCH", {event: input, updatedAt: event.updatedAt}, signal),

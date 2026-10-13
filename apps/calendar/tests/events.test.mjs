@@ -24,4 +24,5 @@ test('events render safely in all calendar views',()=>{
   store.openDate(civilDate(2026,9,12),view); const html=renderCalendar(store.getState());
   assert(html.includes('data-event-id="event-one"')); assert(!html.includes('<img')); assert(html.includes('&lt;img'));
  }
+
 });

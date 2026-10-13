@@ -1,4 +1,5 @@
 import {createEventController} from "./event-controller.js";
+import {createEventTypeController} from "./event-type-controller.js";
 import {createNotificationController} from "./notifications.js";
 import {createCalendarStore} from "./state.js";
 import {calendarAccount, escapeHtml} from "./account.js";
@@ -27,6 +28,7 @@ let renderedToday = null;
 
 app.innerHTML = renderShell();
 const eventController = createEventController(store, dialogRoot);
+const eventTypeController = createEventTypeController(store, dialogRoot, eventController);
 const notificationController = createNotificationController(store, dialogRoot, eventController);
 
 function render(state, reason = "initial") {
@@ -41,7 +43,13 @@ function render(state, reason = "initial") {
   if (reason !== "clock" || renderedToday !== dateKey(state.today)) document.getElementById("sidebar").innerHTML = renderSidebar(state);
   renderedToday = dateKey(state.today);
   app.querySelector(".app-shell").classList.toggle("sidebar-is-open", state.sidebarOpen);
-  app.querySelector(".menu-button").setAttribute("aria-expanded", String(state.sidebarOpen));
+  const menuButton = app.querySelector(".menu-button");
+  const notificationCount = state.libraryNotifications?.count || 0;
+  const menuBadge = document.getElementById("tempo-menu-notifications-count");
+  menuButton.setAttribute("aria-expanded", String(state.sidebarOpen));
+  menuButton.setAttribute("aria-label", notificationCount ? `Ouvrir le menu, ${notificationCount} événement${notificationCount > 1 ? "s" : ""} à vérifier` : "Ouvrir le menu");
+  menuBadge.hidden = !notificationCount;
+  menuBadge.textContent = notificationCount;
   syncSidebarAccess(state);
   if (reason === "sidebar") {
     (state.sidebarOpen ? app.querySelector(".sidebar-close") : app.querySelector(".menu-button"))?.focus();
@@ -128,6 +136,7 @@ const actions = {
   "open-week": element => store.openDate(parseDate(element.dataset.date), "week"),
   "open-day": element => store.openDate(parseDate(element.dataset.date), "day"),
   jump: () => openDialog("jump"), settings: () => openDialog("settings"), shortcuts: () => openDialog("shortcuts"),
+  "manage-event-types": () => {void eventTypeController.open();},
   "close-dialog": closeDialog, "jump-today": () => {closeDialog(); store.goToday();},
   "toggle-sidebar": () => store.toggleSidebar(), "close-sidebar": () => store.closeSidebar(),
   "calendar-home": () => store.setView(store.getState().view)

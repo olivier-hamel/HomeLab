@@ -3,6 +3,7 @@ import { geminiApiKey } from "../ai/gemini.ts";
 import { analyseCalendarPdf } from "../calendar/pdf-analysis.ts";
 import { validateEvent } from "../calendar/events.ts";
 import { CalendarEventStore } from "../calendar/store.ts";
+import { CalendarEventTypeStore, assertEventType, resolveEventType } from "../calendar/event-types.ts";
 import { MediaError, record } from "../media/core.ts";
 import { entryId, moodleAuthorized, proposalId, publicLibrary, queuedScan, type LibraryFile, type TempoProposal } from "./model.ts";
 import { libraryRows } from "./storage.ts";
@@ -19,7 +20,8 @@ export class TempoScans {
   private store: LibraryStore;
   private analyse: typeof analyseCalendarPdf;
   private convert: typeof powerpointPreview;
-  constructor(store: LibraryStore = libraryStore, analyse = analyseCalendarPdf, convert = powerpointPreview) { this.store = store; this.analyse = analyse; this.convert = convert; }
+  private types: CalendarEventTypeStore;
+  constructor(store: LibraryStore = libraryStore, analyse = analyseCalendarPdf, convert = powerpointPreview, types = new CalendarEventTypeStore()) { this.store = store; this.analyse = analyse; this.convert = convert; this.types = types; }
   async request(username: string, id: string) {
     const file = await this.store.get(username, id); accessible(username, file);
     if (!geminiApiKey()) throw new MediaError("ai_setup", "Configure Gemini pour rechercher des événements dans ce document.", 503);
@@ -60,7 +62,7 @@ export class TempoScans {
         const preview = file.previewId || await this.store.savePreview(username, file, await this.convert(file.name, await this.store.blobs.get(file.blobId!)));
         pdf = await this.store.blobs.get(preview);
       }
-      const result = await this.analyse({ name: file.name.replace(/\.pptx?$/i, ".pdf"), pdf, signal: AbortSignal.timeout(105_000), library: true });
+      const result = await this.analyse({ name: file.name.replace(/\.pptx?$/i, ".pdf"), pdf, signal: AbortSignal.timeout(105_000), library: true, eventTypes: await this.types.list(username) });
       await this.store.mutate(username, library => {
         const row = library.files.find(row => row.id === id), scan = row?.tempoScan;
         if (!scan || scan.token !== token) return;
@@ -94,10 +96,15 @@ export class TempoScans {
     if (!scan || scan.id !== scanId || scan.state !== "ready" || scan.blobId !== file.blobId) throw new MediaError("conflict", "Ce scan a changé. Actualise les propositions ou relance le scan.", 409);
     if (!Array.isArray(selection) || !Array.isArray(ignored) || selection.length + ignored.length > 100 || !selection.length && !ignored.length) throw new MediaError("input", "Choisis les propositions à ajouter ou à ignorer.", 400);
     const proposals = new Map(scan.proposals.map(row => [row.id, row])), seen = new Set<string>();
+    const types = await this.types.list(username);
     const accepts = selection.map(value => {
       const row = record(value), proposal = proposals.get(entryId(row.proposalId));
       if (!proposal || seen.has(proposal.id) || file.tempoDecisions?.[proposal.id] === "ignored") throw new MediaError("input", "Cette proposition n’est pas disponible.", 400);
-      seen.add(proposal.id); return { proposal, event: validateEvent(row.event) };
+      seen.add(proposal.id);
+      const event = validateEvent(row.event);
+      // A stored proposal may outlive its type; newly selected types must exist.
+      event.typeId = event.typeId === proposal.event.typeId ? resolveEventType(event.typeId, types) : assertEventType(event.typeId, types);
+      return { proposal, event };
     });
     const rejects = ignored.map(value => {
       const proposal = proposals.get(entryId(value));

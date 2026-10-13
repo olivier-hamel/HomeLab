@@ -46,7 +46,10 @@ Un port occupé est signalé avant le démarrage; si un service échoue, le scri
 arrête les autres et affiche l’erreur.
 
 Le fichier `backend/.env` est créé depuis le modèle s’il manque. Complète
-`GEMINI_API_KEY` et `MONGODB_URI` pour scanner les documents et enregistrer les événements. Le lanceur
+`OPENAI_API_KEY` pour préparer les événements depuis une description avec
+`gpt-6.1-sol`, `GEMINI_API_KEY` pour scanner les documents et `MONGODB_URI`
+pour enregistrer les événements. `OPENAI_MODEL` est facultatif. Redémarre
+le backend après avoir ajouté la clé. Le lanceur
 utilise `homelab_calendar_dev` pour Tempo et `homelab_memo_dev` pour la
 bibliothèque Mémo. Les comptes et fichiers Mémo locaux restent dans
 `.local-data/memo-calendar/`. Tous les services écoutent sur loopback.

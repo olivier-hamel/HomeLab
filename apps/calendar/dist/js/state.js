@@ -19,7 +19,7 @@ export function createCalendarStore(storage = null, account = null) {
     preferences = restorePreferences(JSON.parse(storage?.getItem(storageKey) || "null"));
   } catch { /* Storage is optional, including in private browsing. */ }
   const today = todayInZone(preferences.timezone);
-  let state = {page: "calendar", view: "month", date: today, today, miniDate: today, preferences, account, sidebarOpen: false, events: [], eventsStatus: "loading", eventsError: "", aiAvailable: true, documents: [], documentFolders: [], currentFolderId: null, documentsStatus: "loading", documentsError: "", documentJobs: [], documentQuery: "", documentFilter: "all", selectedDocumentId: null, documentDetailsOpen: false};
+  let state = {page: "calendar", view: "month", date: today, today, miniDate: today, preferences, account, sidebarOpen: false, events: [], eventTypes: [], eventsStatus: "loading", eventsError: "", aiAvailable: true, documents: [], documentFolders: [], currentFolderId: null, documentsStatus: "loading", documentsError: "", documentJobs: [], documentQuery: "", documentFilter: "all", selectedDocumentId: null, documentDetailsOpen: false};
   const subscribers = new Set();
   function update(patch, reason) {
     state = {...state, ...patch};
@@ -35,6 +35,7 @@ export function createCalendarStore(storage = null, account = null) {
     subscribe(callback) {subscribers.add(callback); return () => subscribers.delete(callback);},
     selectDate,
     setEvents(events, patch = {}) {update({events, ...patch}, "events");},
+    setEventTypes(eventTypes) {update({eventTypes}, "event-types");},
     setDocuments(documents, patch = {}) {update({documents, ...patch}, "documents");},
     openDocumentFolder(id = null) {
       if (id && !state.documentFolders.some(folder => folder.id === id)) return;

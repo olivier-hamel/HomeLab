@@ -33,7 +33,7 @@ export function createDocumentController(store, dialogRoot, eventController) {
       const previous = parseDate(original.date)?.getUTCDay(), next = parseDate(date)?.getUTCDay();
       if (next !== undefined) recurrence = {...recurrence, weekdays: [...new Set(recurrence.weekdays.map(day => day === previous ? next : day))].sort()};
     }
-    return {...original, title: field("title").value.trim(), description: field("description").value.trim(), date, endDate: field("endDate").value,
+    return {...original, typeId: field("typeId").value, title: field("title").value.trim(), description: field("description").value.trim(), date, endDate: field("endDate").value,
       allDay, startTime: allDay ? null : field("startTime").value, endTime: allDay ? null : field("endTime").value, recurrence};
   }
   function captureDrafts() {

@@ -54,7 +54,7 @@ export function createEventController(store, dialogRoot) {
     const id = ++loadId;
     try {
       const result = await repository.list();
-      if (id === loadId) store.setEvents(result.events, {eventsStatus: "ready", eventsError: "", aiAvailable: result.aiAvailable});
+      if (id === loadId) store.setEvents(result.events, {eventsStatus: "ready", eventsError: "", aiAvailable: result.aiAvailable, eventTypes: result.eventTypes || []});
     } catch (error) {
       if (id === loadId) store.setEvents(store.getState().events, {eventsStatus: "error", eventsError: error.message});
     }
@@ -111,7 +111,7 @@ export function createEventController(store, dialogRoot) {
     const state = store.getState();
     const opener = document.activeElement;
     const date = selectedDate || dateKey(state.page === "home" ? state.today : state.date);
-    dialogRoot.innerHTML = eventDialog({event, date, aiAvailable: state.aiAvailable, documents: state.documents, documentsStatus: state.documentsStatus});
+    dialogRoot.innerHTML = eventDialog({event, date, aiAvailable: state.aiAvailable, documents: state.documents, documentsStatus: state.documentsStatus, eventTypes: state.eventTypes});
     const dialog = dialogRoot.querySelector("dialog");
     const context = {dialog, event, opener, dirty: false, busy: null, controller: new AbortController(), requestId: crypto.randomUUID()};
     current = context;
@@ -199,7 +199,7 @@ export function createEventController(store, dialogRoot) {
     if (!context || context.busy) return;
     const fields = new FormData(form);
     const allDay = fields.get("allDay") === "on";
-    const input = {title: fields.get("title").trim(), description: fields.get("description").trim(), date: fields.get("date"), endDate: fields.get("endDate"), startTime: allDay ? null : fields.get("startTime"), endTime: allDay ? null : fields.get("endTime"), allDay, recurrence: recurrenceInput(form)};
+    const input = {title: fields.get("title").trim(), description: fields.get("description").trim(), date: fields.get("date"), endDate: fields.get("endDate"), startTime: allDay ? null : fields.get("startTime"), endTime: allDay ? null : fields.get("endTime"), allDay, recurrence: recurrenceInput(form), typeId: fields.get("typeId") || "none"};
     if (!input.title) {error("Ajoute un titre à cet événement."); return;}
     if (input.endDate < input.date || (!allDay && `${input.endDate}T${input.endTime}` <= `${input.date}T${input.startTime}`)) {error("La fin doit être après le début de l’événement."); return;}
     if (input.recurrence?.frequency === "weekly" && !input.recurrence.weekdays.includes(parseDate(input.date).getUTCDay())) {error("Sélectionne au moins le jour de la date de début pour répéter l’événement chaque semaine."); return;}
