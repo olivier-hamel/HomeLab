@@ -27,17 +27,17 @@ export default function Calendar({ onEscape }: { onEscape?: () => void }) {
     const controller = new AbortController();
     fetch("/calendar/healthz", { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]), cache: "no-store" })
       .then(async response => {
-        if (!response.ok || (await response.text()).trim() !== "ok") throw new Error("Calendar unavailable");
+        if (!response.ok || (await response.text()).trim() !== "ok") throw new Error("Tempo est indisponible");
         if (!controller.signal.aborted) setStatus("ready");
       })
       .catch(() => { if (!controller.signal.aborted) setStatus("error"); });
     return () => controller.abort();
   }, [attempt]);
 
-  return <section className="calendar-page" aria-label="Calendar">
-    {status === "ready" ? <iframe ref={iframe} title="Calendar — your day at a glance" src="/calendar/" className="calendar-frame" /> : <div className="calendar-status" role="status">
-      <h1>{status === "error" ? "Calendar is unavailable." : "Opening your calendar…"}</h1>
-      {status === "error" && <><p>The connection is temporarily unavailable. Please try again.</p><button type="button" onClick={() => { setStatus("loading"); setAttempt(value => value + 1); }}><RefreshCw size={18} /> Try again</button></>}
+  return <section className="calendar-page" aria-label="Tempo">
+    {status === "ready" ? <iframe ref={iframe} title="Tempo — ta journée en un coup d’œil" src="/calendar/" className="calendar-frame" /> : <div className="calendar-status" role="status">
+      <h1>{status === "error" ? "Tempo est indisponible." : "Ouverture de Tempo…"}</h1>
+      {status === "error" && <><p>La connexion est temporairement indisponible. Réessaie dans un instant.</p><button type="button" onClick={() => { setStatus("loading"); setAttempt(value => value + 1); }}><RefreshCw size={18} /> Réessayer</button></>}
     </div>}
   </section>;
 }

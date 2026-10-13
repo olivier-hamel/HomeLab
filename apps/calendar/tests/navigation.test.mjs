@@ -31,6 +31,7 @@ test("Month → week → day preserves the chosen date across a month boundary",
 test("Home uses today's date after browsing a different year, and its shortcuts open today", () => {
   const store = createCalendarStore();
   assert.equal(store.getState().page, "home");
+  store.setEvents([], {eventsStatus: "ready"});
   const actualToday = dateKey(store.getState().today);
   store.openDate(civilDate(2031, 4, 17), "day");
   store.goHome();
@@ -40,8 +41,8 @@ test("Home uses today's date after browsing a different year, and its shortcuts 
   const html = renderHome(state);
   assert(html.includes(formatDate(state.today, {weekday: "long", month: "long", day: "numeric"})));
   assert(html.includes(`data-date="${actualToday}"`));
-  assert.match(html, /You have no events scheduled for today/);
-  assert.match(html, /0 events/);
+  assert.match(html, /Tu n’as aucun événement prévu aujourd’hui/);
+  assert.match(html, /0 événement/);
   assert(!html.includes("2031"));
   store.setView("month");
   assert.equal(dateKey(store.getState().date), actualToday);
@@ -53,20 +54,20 @@ test("Home uses today's date after browsing a different year, and its shortcuts 
 
 test("Home greeting respects Toronto time instead of the host time zone", () => {
   const state = {...createCalendarStore().getState(), today: civilDate(2026, 9, 12)};
-  assert.match(renderHome(state, new Date("2026-10-12T13:00:00Z")), /Good morning\./);
-  assert.match(renderHome(state, new Date("2026-10-12T19:00:00Z")), /Good afternoon\./);
-  assert.match(renderHome(state, new Date("2026-10-12T23:00:00Z")), /Good evening\./);
+  assert.match(renderHome(state, new Date("2026-10-12T13:00:00Z")), /Bonjour\./);
+  assert.match(renderHome(state, new Date("2026-10-12T19:00:00Z")), /Bon après-midi\./);
+  assert.match(renderHome(state, new Date("2026-10-12T23:00:00Z")), /Bonsoir\./);
 });
 
 test("Every level has a clear breadcrumb back to the wider calendar", () => {
   const store = createCalendarStore();
-  assert.match(renderBreadcrumb(store.getState()), /aria-current="page">Home/);
+  assert.match(renderBreadcrumb(store.getState()), /aria-current="page">Accueil/);
   store.openDate(civilDate(2026, 9, 12), "day");
   const html = renderBreadcrumb(store.getState());
   assert.match(html, /data-action="home"/);
   assert.match(html, /data-action="month"/);
   assert.match(html, /data-action="week"/);
-  assert.match(html, /aria-current="page">Day/);
+  assert.match(html, /aria-current="page">Jour/);
 });
 
 test("Invalid drilldown dates and views do not disturb the current page", () => {

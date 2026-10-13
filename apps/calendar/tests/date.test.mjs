@@ -36,7 +36,7 @@ test("Weeks and titles handle year boundaries", () => {
   const days = weekDates(date, 1);
   assert.equal(dateKey(days[0]), "2026-12-28");
   assert.equal(dateKey(days[6]), "2027-01-03");
-  assert.deepEqual(periodTitle({date, view: "week", preferences: {weekStart: 1}}), {primary: "Dec 28 – Jan 3", secondary: "2026–2027"});
+  assert.deepEqual(periodTitle({date, view: "week", preferences: {weekStart: 1}}), {primary: "28 déc. – 3 janv.", secondary: "2026–2027"});
 });
 test("Views keep the selected date; each navigates its own period", () => {
   const store = createCalendarStore();

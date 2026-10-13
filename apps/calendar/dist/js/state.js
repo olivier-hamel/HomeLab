@@ -1,5 +1,6 @@
 import {addDays, addMonths, civilDate, todayInZone, DEFAULT_TIMEZONE} from "./date.js";
 
+// Keep the original key so Tempo preserves existing account preferences.
 const STORAGE_KEY = "clear-calendar:preferences:v1";
 const DEFAULT_PREFERENCES = {weekStart: 1, timeFormat: "12", timezone: DEFAULT_TIMEZONE};
 
@@ -12,7 +13,7 @@ export function createCalendarStore(storage = null, account = null) {
     if (saved?.timeFormat === "12" || saved?.timeFormat === "24") preferences.timeFormat = saved.timeFormat;
   } catch { /* Storage is optional, including in private browsing. */ }
   const today = todayInZone(preferences.timezone);
-  let state = {page: "home", view: "month", date: today, today, miniDate: today, preferences, account, sidebarOpen: false};
+  let state = {page: "home", view: "month", date: today, today, miniDate: today, preferences, account, sidebarOpen: false, events: [], eventsStatus: "loading", eventsError: "", aiAvailable: true};
   const subscribers = new Set();
   function update(patch, reason) {
     state = {...state, ...patch};
@@ -27,6 +28,7 @@ export function createCalendarStore(storage = null, account = null) {
     getState: () => state,
     subscribe(callback) {subscribers.add(callback); return () => subscribers.delete(callback);},
     selectDate,
+    setEvents(events, patch = {}) {update({events, ...patch}, "events");},
     openDate(date, view) {
       if (!validDate(date) || !["month", "week", "day"].includes(view)) return;
       update({page: "calendar", date, miniDate: date, view, sidebarOpen: false}, "drilldown");

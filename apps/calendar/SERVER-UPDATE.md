@@ -1,6 +1,6 @@
-# Server updates
+# Mises à jour du serveur
 
-Calendar is part of the unified HomeLab repository. Use the root
-[SERVER-UPDATE.md](../../SERVER-UPDATE.md): commit and push HomeLab’s
-`feat/memo-integration` branch, pull it on the server, and rebuild the changed
-services. There is no separate Calendar push or pull, and no backup step.
+Tempo fait partie du dépôt HomeLab. Suis le fichier
+[SERVER-UPDATE.md](../../SERVER-UPDATE.md) à la racine : commit et push sur la
+branche `feat/memo-integration`, pull sur le serveur, puis reconstruction des
+services modifiés. Tempo utilise cette même procédure, sans étape de sauvegarde.

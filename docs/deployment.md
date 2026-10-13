@@ -7,7 +7,7 @@ You can also use an existing Ubuntu server without Proxmox.
 
 The repository supplies the dashboard and its deployment files. Your hypervisor,
 other guests, storage, backups, and remote-access service are separate parts of
-your lab. The dashboard contains Calendar, TV & Movies, and Mémo, protected by
+your lab. The dashboard contains Tempo, TV & Movies, and Mémo, protected by
 one HomeLab HTTPS login using the existing Mémo accounts. See [shared accounts](accounts.md).
 Start with access from your home network. The optional TV & Movies
 integration has its own [setup and verification guide](tv-media.md), including
@@ -237,9 +237,9 @@ curl -i "$APP_URL/missing.css"
 ```
 
 Expect `ok` from `/healthz` and `{"status":"ok"}` from `/api/health`.
-`/` and `/?section=tv` return HTML with status 200. The dashboard opens Calendar
+`/` and `/?section=tv` return HTML with status 200. The dashboard opens Tempo
 by default; `?section=tv` and `?section=memo` select the other apps. Unknown
-section names, including removed pages, fall back to Calendar.
+section names, including removed pages, fall back to Tempo.
 All missing API and asset paths listed above should return 404. A Next.js 404
 may contain HTML, but it must not be the dashboard's index page or a 200 response.
 Future extensionless assets outside `/assets` need their own reserved prefix

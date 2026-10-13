@@ -27,7 +27,7 @@ closing details retains the modal focus trap until its brief exit finishes.
 TV mode provides larger text, five poster columns at 720p and seven at 1080p,
 extra space around the screen edges, and a strong orange focus outline. TV mode
 opens TV & Movies directly; desktop and mobile use the sidebar to switch between
-Calendar, TV & Movies, and Mémo.
+Tempo, TV & Movies, and Mémo.
 
 - **Arrows / D-pad:** move between controls; focused items scroll into view.
 - **Scrolling:** the TV view uses normal browser page scrolling. Use Silk's

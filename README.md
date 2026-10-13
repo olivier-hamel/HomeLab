@@ -1,23 +1,23 @@
 # HomeLab
 
-One repository contains the dashboard, TV & Movies, Calendar, and Mémo.
+One repository contains the dashboard, TV & Movies, Tempo, and Mémo.
 Use `feat/memo-integration` for development and server deployment. All changes
 use one commit → push → pull workflow; see [SERVER-UPDATE.md](SERVER-UPDATE.md).
 
 **HomeLab** opens with its own HTTPS login page and lists the existing Mémo accounts.
-One Mémo session opens Calendar, TV & Movies, and Mémo; no duplicate accounts are created.
+One Mémo session opens Tempo, TV & Movies, and Mémo; no duplicate accounts are created.
 The cinema profile can switch without a password while the HomeLab login stays unchanged.
 See [shared accounts](docs/accounts.md).
 
-**Calendar** is the default page after login. Its source is in [apps/calendar](apps/calendar/README.md).
-See [Calendar setup](docs/calendar.md).
+**Tempo** is the default page after login. Its source is in [apps/calendar](apps/calendar/README.md).
+See [Tempo setup](docs/calendar.md).
 
 **Mémo** is the flashcard app in [apps/memo](apps/memo/README.md), with
 password-protected accounts. See [Memo setup](docs/memo.md) for private HTTPS
 and persistent data. Original Git histories are preserved; see
 [repository structure and history](docs/repository.md).
 
-The browser dashboard contains only Calendar, TV & Movies, and Mémo. The apps
+The browser dashboard contains only Tempo, TV & Movies, and Mémo. The apps
 fill the content area; fullscreen is available from the sidebar.
 
 **TV & Movies** adds an optional TMDB catalogue,
@@ -105,7 +105,7 @@ Open [http://localhost:3000](http://localhost:3000). Check
 [/healthz](http://localhost:3000/healthz) for frontend health and
 [/api/health](http://localhost:3000/api/health) for the API response
 `{"status":"ok"}`. A successful API check verifies the proxy connection; the
-dashboard displays the HomeLab account chooser, then opens Calendar after login.
+dashboard displays the HomeLab account chooser, then opens Tempo after login.
 Account setup is described in [shared accounts](docs/accounts.md).
 
 View logs with `docker compose logs -f --tail=100`. Stop the stack with
@@ -133,7 +133,7 @@ network and permitted remote clients.
 
 Install [Node.js 24](https://nodejs.org/en/download), including npm. The root
 `.nvmrc` selects Node 24. Each app keeps its own dependencies and npm lockfile;
-Calendar has no dependencies or build step.
+Tempo has no dependencies or build step.
 
 From the repository root, start the frontend in one terminal:
 
@@ -168,7 +168,7 @@ npm test
 npm run build
 ```
 
-For Calendar, run `npm run dev` or `npm test` in `apps/calendar/`.
+For Tempo, run `npm run dev` or `npm test` in `apps/calendar/`.
 For Memo, run `./start.sh --dev` in `apps/memo/web-app/`; see its
 [README](apps/memo/web-app/README.md) for Python dependencies and checks.
 

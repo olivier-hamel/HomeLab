@@ -1,8 +1,8 @@
+import { geminiApiKey, geminiModel } from "../ai/gemini.ts";
 import { randomUUID } from "node:crypto";
 import { BoundedCache, envNumber, list, MediaError, record, required, string, type Fetcher } from "./core.ts";
 import { bounded, readLimited } from "./http.ts";
 import { closeTitleMatch } from "./catalogue-search.ts";
-import { RECOMMENDATION_MODEL } from "./recommendations.ts";
 import { Tmdb, type Title } from "./tmdb.ts";
 import type { WatchHistoryRecord } from "./progress-store.ts";
 
@@ -48,7 +48,7 @@ export class MovieDiscovery {
   constructor(fetcher: Fetcher = fetch, tmdb: Pick<Tmdb, "browse"> & Partial<Pick<Tmdb, "details">> = new Tmdb(fetcher)) { this.fetcher = fetcher; this.tmdb = tmdb; }
 
   async next(owner: string, profile: string | undefined, input: Record<string, unknown>, history: () => Promise<WatchHistoryRecord[]>, signal: AbortSignal): Promise<DiscoveryBatch> {
-    required("GEMINI_API_KEY");
+    if (!geminiApiKey()) required("GEMINI_API_KEY");
     let previous: Session | undefined;
     let interested: Movie[];
     let alreadyProposed: Movie[] = [];
@@ -87,12 +87,12 @@ export class MovieDiscovery {
   }
 
   private async suggest(interested: Movie[], alreadyProposed: Movie[], signal: AbortSignal): Promise<Suggestion[]> {
-    const apiKey = required("GEMINI_API_KEY").trim();
+    const apiKey = geminiApiKey() || required("GEMINI_API_KEY").trim();
     const contents = [
       { role: "user", parts: [{ text: JSON.stringify({ interested, alreadyProposed }) }] },
     ];
     return bounded("Movie discovery", envNumber("MEDIA_DISCOVERY_AI_TIMEOUT_MS", 30_000, 1000, 60_000), signal, async boundedSignal => {
-      const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${RECOMMENDATION_MODEL}:generateContent`, {
+      const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
         method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, signal: boundedSignal, cache: "no-store", redirect: "manual",
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: instruction }] },
