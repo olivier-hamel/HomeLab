@@ -83,7 +83,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       <div className="brand-mark"><Flower2 size={34} strokeWidth={1.5} /></div>
       <div className="auth-brand">mémo<span>.</span></div>
       <h1>{enabled === null ? 'Ton espace se prépare…' : passwordForm ? 'Un espace bien à toi.' : 'Heureux de te retrouver.'}</h1>
-      <p>{passwordForm ? 'Choisis un nouveau mot de passe pour protéger ta progression.' : enabled === null ? 'Un instant, tes cartes t’attendent.' : 'Connecte-toi pour reprendre ton apprentissage à ton rythme.'}</p>
+      <p>{passwordForm ? 'Choisis un nouveau mot de passe pour protéger ta progression.' : enabled === null ? 'Un instant, tes cartes t’attendent.' : 'Connecte-toi pour reprendre ton apprentissage.'}</p>
       {error && <div className="auth-error" role="alert">{error}</div>}
       {enabled === null ? error && <button className="primary-button" onClick={() => void load()}>Réessayer</button> : <form key={passwordForm ? 'password' : 'login'} onSubmit={async event => {
         event.preventDefault()

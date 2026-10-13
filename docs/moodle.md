@@ -5,6 +5,10 @@ and its Streamable HTTP client. It initializes a new MCP session, discovers the
 three required tools (including paginated discovery), performs the requested
 read, then terminates and closes the session. A failed connection does not
 leave a cached broken session behind.
+The newer `list_events` and `list_assignments` tools are discovered when
+available and drive [Tempo's deterministic calendar/task synchronization](calendar.md#tâches-et-moodle).
+Older connectors can still serve Library files; Tempo reports that these two
+additional tools are missing until the connector is updated.
 
 ## Access and configuration
 
@@ -101,7 +105,7 @@ the transport to browser JavaScript.
 
 | Route | Request | Response |
 | --- | --- | --- |
-| `GET /api/moodle/status` | HomeLab session | `available`, three discovered tool names, `personalAccount` |
+| `GET /api/moodle/status` | HomeLab session | `available`, discovered supported tool names, `personalAccount` |
 | `GET /api/moodle/courses` | HomeLab session | `{ courses: [{ id, shortname, fullname }] }` |
 | `POST /api/moodle/files` | `{ "course_id": 123 }` | `{ course_id, files: [{ id, filename, mimetype, filesize, section, module }] }` |
 | `POST /api/moodle/read` | `{ "course_id": 123, "file_id": "exact-id-from-files" }` | `{ file: { filename, course_id, text, truncated, characters_extracted, note } }` |

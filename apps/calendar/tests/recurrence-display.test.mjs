@@ -14,7 +14,7 @@ function render(events, view) {
 }
 const button = (html, id) => html.match(new RegExp(`<button\\b[^>]*data-event-id="${id}"[^>]*>[\\s\\S]*?</button>`))?.[0];
 
-test('daily and weekly recurrence up to three weeks uses markers only in overview views', () => {
+test('daily and weekly recurrence up to three weeks uses markers in the month and readable cards in week/day views', () => {
   for (const [frequency, interval, compact] of [
     ['daily', 1, true], ['daily', 21, true], ['daily', 22, false],
     ['weekly', 1, true], ['weekly', 2, true], ['weekly', 3, true], ['weekly', 4, false],
@@ -24,8 +24,8 @@ test('daily and weekly recurrence up to three weeks uses markers only in overvie
     for (const view of ['month', 'week', 'day']) {
       const html = button(render([event], view), event.id);
       assert(html, `${frequency}/${interval}/${view} keeps the event accessible`);
-      assert.equal(html.includes('recurring-event-marker'), compact && view !== 'day', `${frequency}/${interval}/${view}`);
-      assert.equal(html.includes('event-chip-title'), !compact || view === 'day');
+      assert.equal(html.includes('recurring-event-marker'), compact && view === 'month', `${frequency}/${interval}/${view}`);
+      assert.equal(html.includes('event-chip-title'), !compact || view !== 'month');
       assert(html.includes('aria-label="Rencontre hebdomadaire'));
       assert(html.includes('Modifier toute la série'));
     }
@@ -50,17 +50,18 @@ test('frequent events leave both month event slots and the overflow count for oc
   assert(!render(events.slice(0, 3), 'month').includes('more-events'));
 });
 
-test('weekly recurring time markers have separate lanes and do not split the appointment lane', () => {
+test('weekly recurring cards share readable overlap lanes with appointments', () => {
   const events = [
     {...base, recurrence:weekly},
     {...base, id:'other-routine', recurrence:weekly},
     {...base, id:'appointment', title:'Rendez-vous ponctuel'},
   ];
   const week = render(events, 'week');
-  assert.match(button(week, 'appointment'), /width:calc\(100% - 6px\)/);
-  assert.match(week, /class="time-events" style="right:min\(25%, 24px\)"/);
-  assert.match(button(week, 'routine'), /top:512px;height:126px;left:0%;width:50%/);
-  assert.match(button(week, 'other-routine'), /left:50%;width:50%/);
+  for (const id of ['routine', 'other-routine', 'appointment']) {
+    assert.match(button(week, id), /width:calc\(33\.333/);
+    assert(button(week, id).includes('event-chip-title'));
+  }
+  assert(!week.includes('time-recurring-events'));
   const day = render(events, 'day');
   assert(!day.includes('recurring-event-marker'));
   assert.match(button(day, 'appointment'), /width:calc\(33\.333/);
@@ -73,7 +74,7 @@ test('all-day and overnight series remain compact with escaped accessible detail
   for (const view of ['month', 'week', 'day']) {
     const html = render([allDay], view);
     const markup = button(html, event.id);
-    assert.equal(markup.includes('recurring-event-marker'), view !== 'day');
+    assert.equal(markup.includes('recurring-event-marker'), view === 'month');
     assert(markup.includes('is-all-day'));
     assert(markup.includes('&lt;Routine &amp; repos&gt;, Toute la journée'));
     assert(markup.includes('document : &lt;Document&gt;'));
@@ -82,6 +83,6 @@ test('all-day and overnight series remain compact with escaped accessible detail
   const overnight = {...event, startTime:'23:00', endTime:'01:00', endDate:'2026-10-13'};
   const html = render([overnight], 'week');
   assert.equal((html.match(/data-event-id="routine"/g) || []).length, 2);
-  assert.match(html, /top:1472px;height:62px/);
-  assert.match(html, /top:0px;height:62px/);
+  assert.match(html, /top:95\.83333333333334%/);
+  assert.match(html, /top:0%;height:min/);
 });

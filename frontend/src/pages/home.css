@@ -66,6 +66,14 @@
 .start-task-list { padding: 0; margin: 0 0 16px; max-height: 282px; overflow-y: auto; list-style: none; flex: 1; }
 .start-task-list li { display: flex; align-items: center; gap: 12px; padding: 9px 0; min-height: 49px; border-bottom: 1px solid #eef2f8; }
 .start-task-list label { position: relative; display: flex; gap: 11px; min-width: 0; align-items: center; flex: 1; cursor: pointer; font-size: 13px; }
+.start-task-list li > label { flex:0 0 20px; }
+.start-task-list li > .start-task-details { display:flex; flex-direction:column; align-items:flex-start; flex:1; height:auto; min-width:0; color:var(--start-ink); text-align:left; }
+.start-task-details strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.start-task-details small { color:#60718d; font-size:10px; margin-top:5px; }
+.start-task-list .is-complete .start-task-details strong { text-decoration:line-through; color:#60718d; }
+.start-tasks .start-panel-note { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; }
+.start-tasks .start-panel-note > span { width:100%; }
+.start-task-error { color:#9b4438; font-size:12px; margin-bottom:10px; }
 .start-task-list label > span:last-child { overflow-wrap: anywhere; }
 .start-task-list input { position: absolute; opacity: 0; width: 20px; height: 20px; }
 .start-task-check { display: grid; place-items: center; width: 19px; height: 19px; flex-shrink: 0; border: 1px solid #bac8de; border-radius: 6px; color: transparent; }

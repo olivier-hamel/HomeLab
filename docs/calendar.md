@@ -1,5 +1,58 @@
 # Tempo
 
+## Tâches et Moodle
+
+Le dialogue de création accepte un événement ou une tâche. Chat choisit la
+nature selon la description, puis les détails restent modifiables avant l’ajout.
+La saisie manuelle propose aussi ce choix. Une tâche contient un état à faire /
+terminée et une échéance (date, heure facultative). Les boîtes Moodle sans date
+conservent une échéance vide : elles restent dans Accueil sans inventer une date
+dans le calendrier. Les notes, liens HTTP(S), documents de Bibliothèque et
+cours ou projet sont facultatifs. Une tâche sans rattachement est acceptée.
+
+Les tâches apparaissent au jour de l’échéance dans le mois et dans la bande
+supérieure des vues semaine/jour, avec leur heure limite et une case à cocher.
+Les tâches terminées restent consultables et peuvent être remises à faire.
+Le même état est affiché dans Accueil. Tout est enregistré par compte dans
+`calendar_events`; les anciens événements restent compatibles.
+
+Le serveur importe les événements visibles et les boîtes de remise Moodle sans
+IA. Il détecte la session courante à Toronto (H : janvier–avril, E : mai–juillet,
+A : août–décembre) et sélectionne les cours portant cette session dans leur nom
+ou code Moodle. `CALENDAR_MOODLE_SEMESTER=H27`, `E27` ou `A26` permet de la
+forcer; une valeur vide conserve la détection automatique. Ce réglage est
+indépendant de `LIBRARY_MOODLE_SEMESTER`.
+Quand Moodle fournit la date de début du trimestre, elle borne également les
+événements généraux pour exclure ceux de la session précédente.
+
+La synchronisation commence après le démarrage du backend et vérifie chaque
+compte Moodle autorisé toutes les 30 minutes, même sans navigateur. L’ouverture
+du calendrier ou d’Accueil déclenche aussi une vérification si nécessaire.
+« Actualiser » dans Tempo permet une demande immédiate. Les dates UTC sont
+converties à Toronto; les prolongations personnelles vérifiées ont priorité sur
+la date du cours. Une prolongation non vérifiée est signalée. Les remises sont
+lues cours par cours, et leurs rappels calendrier sont dédoublonnés. Une remise
+déjà soumise est cochée à sa première importation; les synchronisations suivantes
+préservent l’état choisi dans HomeLab.
+
+Un identifiant stable par source permet de mettre à jour les titres et échéances
+sans recréer les éléments ni écraser notes, liens, pièces liées ou coches.
+Supprimer un élément importé conserve une marque de suppression durable dans
+MongoDB : même une actualisation manuelle ou un redémarrage ne le réimporte pas.
+Une réponse partielle ou une panne conserve les éléments déjà présents; seuls
+les inventaires complets peuvent masquer un élément retiré de Moodle. Les
+anciens semestres déjà importés restent consultables comme historique.
+
+`GET /api/calendar/events` inclut les tâches et, pour les comptes autorisés,
+`moodleSync`. `POST /api/calendar/moodle-sync` demande une actualisation.
+`PATCH /api/calendar/events/:id` accepte `{ completed, updatedAt }` pour changer
+seulement la coche, avec protection contre les versions périmées. Les suppressions
+utilisent la route DELETE habituelle. `calendar_moodle_sync` conserve les dates
+de vérification et le verrou de synchronisation entre processus.
+
+Validation : `backend/tests/calendar-tasks.test.mjs`,
+`apps/calendar/tests/tasks.test.mjs` et `scripts/test-calendar-tasks-ui.mjs`.
+
 Tempo est le calendrier en français de HomeLab. L’app [Accueil](home.md) s’ouvre
 par défaut après la connexion. Les liens `?section=home`, `?section=calendar`,
 `?section=tv`, `?section=memo` et `?section=library` sélectionnent respectivement

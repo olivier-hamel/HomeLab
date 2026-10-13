@@ -12,9 +12,14 @@ export type Recurrence = {
 export type EventInput = {
   title: string; description: string; date: string; endDate: string;
   startTime: string | null; endTime: string | null; allDay: boolean; recurrence: Recurrence | null; typeId: string;
+  kind?: "event" | "task"; completed?: boolean; completedAt?: string | null;
+  deadline?: { date: string; time: string | null } | null;
+  notes?: string; links?: string[]; documentIds?: string[];
+  context?: { kind: "course" | "project"; name: string; courseId?: number } | null;
 };
+export type MoodleSource = { key: string; entity: "event" | "assignment"; remoteId: number; courseId: number | null; semester: string; url: string; fingerprint: string; available: boolean; personalDeadlineChecked?: boolean };
 export type EventSource = { documentId: string; documentName: string; proposalId: string; page: number | null; origin?: "library" };
-export type CalendarEvent = EventInput & { id: string; createdAt: string; updatedAt: string; source?: EventSource };
+export type CalendarEvent = EventInput & { id: string; createdAt: string; updatedAt: string; source?: EventSource; moodle?: MoodleSource };
 export const eventSchema = {
   type: "object", additionalProperties: false,
   properties: {
@@ -43,6 +48,19 @@ export function eventSchemaForTypes(types: { id: string }[]) {
   return { ...eventSchema, properties: { ...eventSchema.properties, typeId: { ...eventSchema.properties.typeId, enum: types.map(type => type.id) } } };
 }
 
+// Document scans retain their existing event contract; conversational creation
+// can choose between a scheduled moment and work with a deadline.
+export function plannerSchemaForTypes(types: { id: string }[]) {
+  const schema = eventSchemaForTypes(types);
+  return { ...schema, properties: { ...schema.properties,
+    kind: { type: "string", enum: ["event", "task"] },
+    completed: { type: "boolean", description: "False for a new task unless explicitly already done." },
+    deadline: { anyOf: [{ type: "null" }, { type: "object", additionalProperties: false, properties: { date: { type: "string" }, time: { type: ["string", "null"] } }, required: ["date", "time"] }] },
+    notes: { type: "string" }, links: { type: "array", items: { type: "string" }, maxItems: 30 },
+    context: { anyOf: [{ type: "null" }, { type: "object", additionalProperties: false, properties: { kind: { type: "string", enum: ["course", "project"] }, name: { type: "string" } }, required: ["kind", "name"] }] },
+  }, required: [...schema.required, "kind", "completed", "deadline", "notes", "links", "context"] };
+}
+
 export function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value < "0001-01-01") return false;
   const date = new Date(`${value}T12:00:00Z`);
@@ -65,7 +83,24 @@ function validateRecurrence(value: unknown, date: string): Recurrence | null {
   return { frequency: rule.frequency as Recurrence["frequency"], interval: rule.interval as number, weekdays: [...rule.weekdays].sort((a, b) => a - b), until: rule.until as string | null, count: rule.count as number | null };
 }
 export function validateEvent(value: unknown): EventInput {
-  const row = record(value);
+  const row = { ...record(value) };
+  if (row.kind !== undefined && row.kind !== "event" && row.kind !== "task") throw new MediaError("input", "Choisis un événement ou une tâche.", 400);
+  const task = row.kind === "task";
+  let deadline: EventInput["deadline"];
+  if (task) {
+    if (typeof row.completed !== "boolean") throw new MediaError("input", "Indique si la tâche est terminée.", 400);
+    if (row.deadline === null) deadline = null;
+    else {
+      const due = record(row.deadline);
+      if (!validDate(due.date) || (due.time !== null && (typeof due.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(due.time)))) throw new MediaError("input", "Vérifie l’échéance de la tâche.", 400);
+      deadline = { date: due.date, time: due.time as string | null };
+    }
+    if (row.recurrence) throw new MediaError("input", "Une tâche possède une seule échéance.", 400);
+    row.date = deadline?.date ?? row.date;
+    row.endDate = row.date;
+    row.startTime = row.endTime = deadline?.time ?? null;
+    row.allDay = !deadline?.time;
+  }
   if (typeof row.title !== "string" || !row.title.trim() || row.title.length > 160 || (/[\r\n]/.test(row.title) || row.title.includes("\u0000"))) throw new MediaError("input", "Ajoute un titre de 160 caractères maximum.", 400);
   if (typeof row.description !== "string" || row.description.length > 4000 || row.description.includes("\u0000")) throw new MediaError("input", "La description doit contenir au plus 4 000 caractères.", 400);
   if (!validDate(row.date) || !validDate(row.endDate) || row.endDate < row.date) throw new MediaError("input", "Vérifie les dates de début et de fin.", 400);
@@ -75,7 +110,34 @@ export function validateEvent(value: unknown): EventInput {
     if (row.startTime !== null || row.endTime !== null) throw new MediaError("input", "Un événement sur toute la journée ne doit pas avoir d’horaire.", 400);
   } else {
     if (typeof row.startTime !== "string" || typeof row.endTime !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(row.startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(row.endTime)) throw new MediaError("input", "Ajoute une heure de début et de fin valides.", 400);
-    if (`${row.endDate}T${row.endTime}` <= `${row.date}T${row.startTime}`) throw new MediaError("input", "La fin doit être après le début de l’événement.", 400);
+    if (!task && `${row.endDate}T${row.endTime}` <= `${row.date}T${row.startTime}`) throw new MediaError("input", "La fin doit être après le début de l’événement.", 400);
   }
-  return { title: row.title.trim(), description: row.description.trim(), date: row.date, endDate: row.endDate, allDay: row.allDay, startTime: row.startTime as string | null, endTime: row.endTime as string | null, recurrence: validateRecurrence(row.recurrence, row.date), typeId: eventTypeId(row.typeId) };
+  const extra: Partial<EventInput> = {};
+  if (row.kind !== undefined) extra.kind = row.kind as EventInput["kind"];
+  if (task) Object.assign(extra, { completed: row.completed, deadline, completedAt: typeof row.completedAt === "string" && Number.isFinite(Date.parse(row.completedAt)) ? row.completedAt : null });
+  if (row.notes !== undefined) {
+    if (typeof row.notes !== "string" || row.notes.length > 8000 || row.notes.includes("\u0000")) throw new MediaError("input", "Les notes doivent contenir au plus 8 000 caractères.", 400);
+    extra.notes = row.notes.trim();
+  }
+  if (row.links !== undefined) {
+    if (!Array.isArray(row.links) || row.links.length > 30 || row.links.some(link => {
+      if (typeof link !== "string" || link.length > 2048) return true;
+      try { const url = new URL(link); return !["https:", "http:"].includes(url.protocol) || !!url.username || !!url.password; } catch { return true; }
+    })) throw new MediaError("input", "Ajoute au plus 30 liens HTTP ou HTTPS valides.", 400);
+    extra.links = [...new Set(row.links as string[])];
+  }
+  if (row.documentIds !== undefined) {
+    if (!Array.isArray(row.documentIds) || row.documentIds.length > 50 || row.documentIds.some(id => typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(id))) throw new MediaError("input", "Choisis des documents valides dans Bibliothèque.", 400);
+    extra.documentIds = [...new Set(row.documentIds as string[])];
+  }
+  if (row.context !== undefined) {
+    if (row.context === null) extra.context = null;
+    else {
+      const context = record(row.context);
+      if (!["course", "project"].includes(context.kind as string) || typeof context.name !== "string" || !context.name.trim() || context.name.length > 240 || /[\p{Cc}]/u.test(context.name)) throw new MediaError("input", "Ajoute un nom de cours ou de projet valide.", 400);
+      if (context.courseId !== undefined && (!Number.isSafeInteger(context.courseId) || Number(context.courseId) <= 0 || context.kind !== "course")) throw new MediaError("input", "Cours Moodle invalide.", 400);
+      extra.context = { kind: context.kind as "course" | "project", name: context.name.trim(), ...(context.courseId !== undefined ? { courseId: Number(context.courseId) } : {}) };
+    }
+  }
+  return { title: row.title.trim(), description: row.description.trim(), date: row.date, endDate: row.endDate, allDay: row.allDay, startTime: row.startTime as string | null, endTime: row.endTime as string | null, recurrence: validateRecurrence(row.recurrence, row.date), typeId: eventTypeId(row.typeId), ...extra };
 }

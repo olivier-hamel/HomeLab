@@ -38,8 +38,6 @@ function render(state, reason = "initial") {
   const focusWasMonth = active?.classList.contains("month-date");
   const focusWasMini = active?.classList.contains("mini-day");
   const content = document.getElementById("calendar-content");
-  const oldScroll = document.querySelector(".time-scroll")?.scrollTop;
-  const previousPage = renderedPage;
   if (reason !== "clock" || renderedToday !== dateKey(state.today)) document.getElementById("sidebar").innerHTML = renderSidebar(state);
   renderedToday = dateKey(state.today);
   app.querySelector(".app-shell").classList.toggle("sidebar-is-open", state.sidebarOpen);
@@ -64,7 +62,13 @@ function render(state, reason = "initial") {
   status.hidden = state.eventsStatus === "ready";
   status.innerHTML = state.eventsStatus === "error" ? `<span>${escapeHtml(state.eventsError)}</span><button data-action="events-retry">Réessayer</button>` : "Chargement de tes événements…";
   status.classList.toggle("has-error", state.eventsStatus === "error");
+  const syncStatus = document.getElementById("moodle-sync-status");
+  const sync = state.moodleSync;
+  syncStatus.hidden = !sync;
+  syncStatus.classList.toggle("has-error", sync?.status === "error" || sync?.status === "warning");
+  if (sync) syncStatus.innerHTML = `<span>Moodle · ${escapeHtml(sync.semester || "Session actuelle")} · ${escapeHtml(sync.message || "Synchronisation automatique toutes les 30 minutes")}</span><button data-action="moodle-sync" ${sync.status === "running" ? "disabled" : ""}>${sync.status === "running" ? "Mise à jour…" : "Actualiser"}</button>`;
   const title = periodTitle(state);
+  app.querySelector(".calendar-toolbar").dataset.view = state.view;
   document.getElementById("period-title").innerHTML = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
   app.querySelector('[data-action="prev"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "précédente" : "précédent"}`);
   app.querySelector('[data-action="next"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "suivante" : "suivant"}`);
@@ -86,9 +90,6 @@ function render(state, reason = "initial") {
   const hints = {month: "Clique sur une date pour voir sa semaine", week: "Clique sur un jour pour voir son horaire", day: "Ta journée, heure par heure"};
   document.getElementById("view-hint").innerHTML = `<span class="hint-dot"></span>${hints[state.view]}`;
   document.getElementById("timezone-offset").textContent = zoneOffset(state.preferences.timezone, state.date);
-  if (previousPage !== state.page) content.scrollTop = 0;
-  const scroll = app.querySelector(".time-scroll");
-  if (scroll) scroll.scrollTop = oldScroll !== undefined && !["view", "drilldown"].includes(reason) ? oldScroll : 7 * 64 - 16;
   if (reason === "drilldown" || reason === "view") (app.querySelector(`.time-day-heading[data-date="${dateKey(state.date)}"]`) || app.querySelector(".month-date[tabindex='0']") || content)?.focus({preventScroll: true});
   else if ((focusWasMonth || reason === "keyboard-date") && state.view === "month") app.querySelector(`.month-date[data-date="${dateKey(state.date)}"]`)?.focus({preventScroll: true});
   else if (focusWasMini) {

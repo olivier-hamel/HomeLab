@@ -1,10 +1,10 @@
 import { type Collection } from "mongodb";
 import { database } from "../database.ts";
 import { MediaError } from "../media/core.ts";
-import { DEFAULT_EVENT_TYPE_ID, eventId, validateEvent, type CalendarEvent, type EventInput, type EventSource } from "./events.ts";
+import { DEFAULT_EVENT_TYPE_ID, eventId, validateEvent, type CalendarEvent, type EventInput, type EventSource, type MoodleSource } from "./events.ts";
 import { CalendarEventTypeStore, assertEventType, resolveEventType } from "./event-types.ts";
 
-export type StoredEvent = CalendarEvent & { username: string };
+export type StoredEvent = CalendarEvent & { username: string; removedAt?: string };
 let collectionPromise: Promise<Collection<StoredEvent>> | null = null;
 async function eventCollection() {
   collectionPromise ??= (async () => {
@@ -16,7 +16,7 @@ async function eventCollection() {
   return collectionPromise;
 }
 function publicEvent(event: StoredEvent): CalendarEvent {
-  return { ...validateEvent(event), id: event.id, createdAt: event.createdAt, updatedAt: event.updatedAt, ...(event.source ? { source: event.source } : {}) };
+  return { ...validateEvent(event), id: event.id, createdAt: event.createdAt, updatedAt: event.updatedAt, ...(event.source ? { source: event.source } : {}), ...(event.moodle ? { moodle: event.moodle } : {}) };
 }
 function owner(username: string) {
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(username)) throw new MediaError("account", "Compte invalide.", 403);
@@ -29,11 +29,12 @@ export class CalendarEventStore {
   async list(username: string): Promise<CalendarEvent[]> {
     const events = await (await this.collection()).find({ username: owner(username) }).sort({ date: 1, startTime: 1, id: 1 }).toArray();
     const types = await this.types.list(username);
-    return events.map(event => ({ ...publicEvent(event), typeId: resolveEventType(event.typeId, types) }));
+    return events.filter(event => !event.removedAt && event.moodle?.available !== false).map(event => ({ ...publicEvent(event), typeId: resolveEventType(event.typeId, types) }));
   }
   async create(username: string, input: EventInput, requestId: string, source?: EventSource) {
     const id = eventId(requestId);
     input = { ...validateEvent(input), typeId: assertEventType(input.typeId, await this.types.list(username)) };
+    if (input.kind === "task") input.completedAt = input.completed ? new Date().toISOString() : null;
     const now = new Date().toISOString();
     const collection = await this.collection();
     const filter = { username: owner(username), id };
@@ -50,6 +51,9 @@ export class CalendarEventStore {
   async update(username: string, id: string, input: EventInput, version: string) {
     input = { ...validateEvent(input), typeId: assertEventType(input.typeId, await this.types.list(username)) };
     const collection = await this.collection();
+    const current = await collection.findOne({ username: owner(username), id });
+    if (current?.removedAt || current?.moodle?.available === false) throw new MediaError("not_found", "Cet élément n’est plus disponible.", 404);
+    if (input.kind === "task") input.completedAt = input.completed ? current?.completedAt || new Date().toISOString() : null;
     const updatedAt = new Date(Math.max(Date.now(), Date.parse(version) + 1)).toISOString();
     const event = await collection.findOneAndUpdate({ username: owner(username), id, updatedAt: version }, { $set: { ...input, updatedAt } }, { returnDocument: "after" });
     if (!event) await this.explainMissing(collection, username, id);
@@ -64,8 +68,64 @@ export class CalendarEventStore {
   }
   async remove(username: string, id: string, version: string) {
     const collection = await this.collection();
+    const current = await collection.findOne({ username: owner(username), id });
+    if (current?.removedAt) return;
+    // The imported row itself is a durable tombstone, including after restarts.
+    // An import only ever inserts this stable ID once, so deletion races are safe.
+    if (current?.moodle) {
+      const removedAt = new Date(Math.max(Date.now(), Date.parse(version) + 1)).toISOString();
+      const result = await collection.findOneAndUpdate({ username, id, updatedAt: version }, { $set: { removedAt, updatedAt: removedAt } }, { returnDocument: "after" });
+      if (!result) await this.explainMissing(collection, username, id);
+      return;
+    }
     const result = await collection.deleteOne({ username: owner(username), id, updatedAt: version });
     if (!result.deletedCount && await collection.findOne({ username, id })) throw new MediaError("conflict", "Cet événement a changé. Ferme cette fenêtre et actualise le calendrier.", 409);
+  }
+  async complete(username: string, id: string, completed: boolean, version: string) {
+    const collection = await this.collection();
+    const current = await collection.findOne({ username: owner(username), id });
+    if (!current || current.removedAt || current.moodle?.available === false) throw new MediaError("not_found", "Cette tâche n’existe plus.", 404);
+    if (current.kind !== "task") throw new MediaError("input", "Seule une tâche peut être cochée.", 400);
+    const updatedAt = new Date(Math.max(Date.now(), Date.parse(version) + 1)).toISOString();
+    const event = await collection.findOneAndUpdate({ username, id, updatedAt: version }, { $set: { completed, completedAt: completed ? updatedAt : null, updatedAt } }, { returnDocument: "after" });
+    if (!event) await this.explainMissing(collection, username, id);
+    return publicEvent(event!);
+  }
+  async importMoodle(username: string, id: string, input: EventInput, moodle: MoodleSource) {
+    input = validateEvent(input); owner(username); eventId(id);
+    const collection = await this.collection();
+    const filter = { username, id };
+    const now = new Date().toISOString();
+    try {
+      await collection.updateOne(filter, { $setOnInsert: { ...input, ...filter, moodle, createdAt: now, updatedAt: now } }, { upsert: true });
+    } catch (error) { if ((error as { code?: number }).code !== 11000) throw error; }
+    // Re-read on optimistic conflicts so a checkmark, note or deletion cannot
+    // be overwritten by a concurrently running Moodle refresh.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const current = await collection.findOne(filter);
+      if (!current || current.removedAt || !current.moodle) return;
+      if (current.moodle.fingerprint === moodle.fingerprint && current.moodle.available) return;
+      const remote = { title: input.title, description: input.description, date: input.date, endDate: input.endDate, startTime: input.startTime, endTime: input.endTime, allDay: input.allDay, recurrence: input.recurrence,
+        ...(input.kind ? { kind: input.kind } : {}), ...(input.deadline !== undefined ? { deadline: input.deadline } : {}), context: input.context };
+      // Keep a project, manually named course or intentionally empty context.
+      // Only the original Moodle course association follows remote renames.
+      if (current.context?.kind !== "course" || current.context.courseId !== current.moodle.courseId) remote.context = current.context;
+      if (current.kind === "task" && current.moodle.personalDeadlineChecked && !moodle.personalDeadlineChecked) {
+        Object.assign(remote, { deadline: current.deadline, date: current.date, endDate: current.endDate, startTime: current.startTime, endTime: current.endTime, allDay: current.allDay });
+      }
+      const updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
+      const changed = await collection.findOneAndUpdate({ ...filter, updatedAt: current.updatedAt }, { $set: { ...remote, moodle, updatedAt } }, { returnDocument: "after" });
+      if (changed) return;
+    }
+    throw new MediaError("conflict", "La synchronisation sera reprise au prochain passage.", 409);
+  }
+  async reconcileMoodle(username: string, keys: Set<string>, semester: string) {
+    const collection = await this.collection();
+    const rows = await collection.find({ username: owner(username) }).sort({ id: 1 }).toArray();
+    for (const event of rows) {
+      if (!event.moodle || event.removedAt || event.moodle.semester !== semester || keys.has(event.moodle.key) || !event.moodle.available) continue;
+      await collection.findOneAndUpdate({ username, id: event.id, updatedAt: event.updatedAt }, { $set: { moodle: { ...event.moodle, available: false }, updatedAt: new Date(Math.max(Date.now(), Date.parse(event.updatedAt) + 1)).toISOString() } });
+    }
   }
   private async explainMissing(collection: Collection<StoredEvent>, username: string, id: string): Promise<never> {
     if (await collection.findOne({ username, id })) throw new MediaError("conflict", "Cet événement a changé. Ferme cette fenêtre et actualise le calendrier.", 409);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ArrowRight, ArrowUpRight, BookOpen, CalendarDays, Check, CheckCheck, Clapperboard, Clock3, FolderOpen, House, Plus, RefreshCw, Search, Sun, Trash2 } from "lucide-react";
 import { useAccount } from "../lib/account-context";
-import { dateLabel, dayAfter, HOME_TIMEZONE, homeStoreFor, loadHomeAgenda, todayKey, visibleTasks } from "../lib/home";
+import { dateLabel, dayAfter, HOME_TIMEZONE, homeStoreFor, loadHomeAgenda, todayKey, plannerTasks, writeHomeTask, homeTaskInput, migrateHomeTasks } from "../lib/home";
 import type { CalendarEvent, CalendarModel } from "../lib/home";
 import type { Navigate } from "../lib/navigation";
 import "./home.css";
@@ -17,26 +17,32 @@ type Agenda = { status: "loading" | "ready" | "error"; events: CalendarEvent[]; 
 export default function Home({ onNavigate }: { onNavigate: Navigate }) {
   const { user } = useAccount();
   const [store] = useState(() => homeStoreFor(user.username));
-  const { tasks, saved, preferences } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const { preferences } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [now, setNow] = useState(() => new Date());
   const [agenda, setAgenda] = useState<Agenda>({ status: "loading", events: [] });
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const [taskError, setTaskError] = useState("");
+  const [taskBusy, setTaskBusy] = useState<string | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
+  const agendaVersion = useRef(0);
+  const taskOperation = useRef(false);
+  const newTaskRequest = useRef<{ title: string; id: string } | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const taskInput = useRef<HTMLInputElement>(null);
   const taskList = useRef<HTMLUListElement>(null);
   const today = todayKey(now);
-  const todayTasks = visibleTasks(tasks, today);
-  const completed = todayTasks.filter(task => task.completedDate).length;
+  const todayTasks = plannerTasks(agenda.events, today, showCompleted);
+  const completed = todayTasks.filter(task => task.completed).length;
   const remaining = todayTasks.length - completed;
   const time = new Intl.DateTimeFormat("en-GB", { timeZone: HOME_TIMEZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(now);
   const hour = Number(time.slice(0, 2));
   const greeting = hour < 12 ? "Bonjour" : hour < 17 ? "Bon après-midi" : "Bonsoir";
-  const events = agenda.model?.eventsOnDate(agenda.events, today) || [];
+  const events = agenda.model?.eventsOnDate(agenda.events.filter(event => event.kind !== "task"), today) || [];
   const tomorrow = dayAfter(today, 1);
-  const upcoming = agenda.model?.eventsInRange(agenda.events, tomorrow, dayAfter(today, 14)) || [];
+  const upcoming = agenda.model?.eventsInRange(agenda.events.filter(event => event.kind !== "task"), tomorrow, dayAfter(today, 14)) || [];
   const next = events.find(event => !event.allDay && (event.endDate > today || event.endTime > time));
   const engine = preferences.searchEngine;
   const engineLabel = engine === "google" ? "Google" : "DuckDuckGo";
@@ -44,21 +50,24 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    let loadId = 0;
+
     const load = () => {
-      const id = ++loadId;
+      if (taskOperation.current) return;
+      const id = ++agendaVersion.current;
       void loadHomeAgenda(controller.signal).then(result => {
-        if (!controller.signal.aborted && id === loadId) setAgenda({ status: "ready", ...result });
+        if (!controller.signal.aborted && id === agendaVersion.current) setAgenda({ status: "ready", ...result });
       }).catch(() => {
-        if (!controller.signal.aborted && id === loadId) setAgenda({ status: "error", events: [] });
+        if (!controller.signal.aborted && id === agendaVersion.current) setAgenda({ status: "error", events: [] });
       });
     };
     const visible = () => { if (!document.hidden) { setNow(new Date()); load(); } };
-    load();
+    void migrateHomeTasks(store, user.username, todayKey()).then(() => { if (!controller.signal.aborted) { setTaskError(""); load(); } }).catch(() => {
+      if (!controller.signal.aborted) { setTaskError("Certaines anciennes tâches attendent leur transfert. Réessaie pour les enregistrer dans Tempo."); load(); }
+    });
     const timer = setInterval(visible, 60_000);
     document.addEventListener("visibilitychange", visible);
     return () => { controller.abort(); clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
-  }, [attempt, user.username]);
+  }, [attempt, user.username, store]);
 
   useEffect(() => {
     const sync = (event: StorageEvent) => {
@@ -74,6 +83,29 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
     return () => { window.removeEventListener("storage", sync); window.removeEventListener("keydown", shortcut); };
   }, [store]);
 
+  async function taskAction(id: string, work: () => Promise<{ event?: CalendarEvent }>, message: string, optimistic?: Partial<CalendarEvent>) {
+    if (taskOperation.current) return;
+    taskOperation.current = true; ++agendaVersion.current;
+    const focusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setTaskBusy(id); setTaskError("");
+    const previousTask = agenda.events.find(event => event.id === id);
+    if (optimistic) setAgenda(previous => ({ ...previous, events: previous.events.map(event => event.id === id ? { ...event, ...optimistic } : event) }));
+    try {
+      const result = await work();
+      setAgenda(previous => ({ ...previous, events: result.event ? [...previous.events.filter(event => event.id !== result.event!.id), result.event] : previous.events.filter(event => event.id !== id) }));
+      setAnnouncement(message);
+      return true;
+    } catch (error) {
+      if (optimistic && previousTask) setAgenda(previous => ({ ...previous, events: previous.events.map(event => event.id === id ? previousTask : event) }));
+      setTaskError(error instanceof Error ? error.message : "La tâche n’a pas pu être enregistrée.");
+      setAttempt(value => value + 1);
+      return false;
+    } finally {
+      taskOperation.current = false; setTaskBusy(null);
+      requestAnimationFrame(() => { if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true }); });
+    }
+  }
+
   function pending() {
     return <div className="start-empty" role="status"><CalendarDays size={28} /><p>{agenda.status === "error" ? "Ton agenda est momentanément indisponible." : "Chargement de ton agenda…"}</p>{agenda.status === "error" && <button className="start-text-button" onClick={() => { setAgenda({ status: "loading", events: [] }); setAttempt(value => value + 1); }}><RefreshCw size={15} /> Réessayer</button>}</div>;
   }
@@ -84,7 +116,7 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
 
       <section className="start-hero" aria-labelledby="start-title">
         <div className="start-hero-copy"><p className="start-eyebrow">{dateLabel(today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p><h1 id="start-title">{greeting},<br /><span>{user.display_name}.</span></h1><p className="start-hero-subtitle">Une nouvelle page pour ta journée.</p><div className="start-summary"><span><CheckCheck size={16} /> {remaining} tâche{remaining > 1 ? "s" : ""} à faire</span><span><CalendarDays size={16} /> {agenda.status === "ready" ? `${events.length} événement${events.length > 1 ? "s" : ""} aujourd’hui` : agenda.status === "error" ? "Agenda indisponible" : "Ton agenda arrive"}</span></div></div>
-        <div className="start-day-art" aria-hidden="true"><div className="start-orbit start-orbit-one" /><div className="start-orbit start-orbit-two" /><Sun className="start-art-sun" /><div className="start-date-card"><span>{dateLabel(today, { weekday: "long" })}</span><strong>{dateLabel(today, { day: "numeric" })}</strong><span>{dateLabel(today, { month: "long" })}</span><div><span /><span /><span /></div></div><span className="start-art-caption">À ton rythme.</span></div>
+        <div className="start-day-art" aria-hidden="true"><div className="start-orbit start-orbit-one" /><div className="start-orbit start-orbit-two" /><Sun className="start-art-sun" /><div className="start-date-card"><span>{dateLabel(today, { weekday: "long" })}</span><strong>{dateLabel(today, { day: "numeric" })}</strong><span>{dateLabel(today, { month: "long" })}</span><div><span /><span /><span /></div></div></div>
       </section>
 
       <form className="start-search" role="search" aria-label="Rechercher sur le Web" action={engine === "google" ? "https://www.google.com/search" : "https://duckduckgo.com/"} method="get" target="_top" onSubmit={event => {
@@ -98,11 +130,12 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
       <nav className="start-launcher" aria-label="Mes applications">{apps.map(app => <button key={app.id} className={`start-launch start-${app.color}`} onClick={() => onNavigate(app.id)}><span className="start-launch-icon"><app.icon size={21} /></span><span><strong>{app.name}</strong><small>{app.detail}</small></span><ArrowUpRight size={16} /></button>)}</nav>
 
       <div className="start-main-grid">
-        <section className="start-panel start-tasks" aria-labelledby="start-tasks-title"><header className="start-panel-heading"><div><p className="start-eyebrow">Une chose à la fois</p><h2 id="start-tasks-title">À faire aujourd’hui<span className="start-count">{remaining}</span></h2></div><span className="start-progress-label">{completed}/{todayTasks.length}</span></header>
+        <section className="start-panel start-tasks" aria-labelledby="start-tasks-title"><header className="start-panel-heading"><div><p className="start-eyebrow">Une chose à la fois</p><h2 id="start-tasks-title">Mes tâches<span className="start-count">{remaining}</span></h2></div><span className="start-progress-label">{completed}/{todayTasks.length}</span></header>
           <div className="start-progress" role="progressbar" aria-label="Tâches terminées" aria-valuemin={0} aria-valuemax={Math.max(1, todayTasks.length)} aria-valuenow={completed}><span style={{ width: `${todayTasks.length ? completed / todayTasks.length * 100 : 0}%` }} /></div>
-          {todayTasks.length ? <ul ref={taskList} className="start-task-list">{todayTasks.map(task => <li key={task.id} className={task.completedDate ? "is-complete" : undefined}><label><input type="checkbox" checked={!!task.completedDate} onChange={() => { store.toggle(task.id, today); setAnnouncement(task.completedDate ? "Tâche remise à faire." : "Tâche terminée."); }} /><span className="start-task-check" aria-hidden="true"><Check size={14} /></span><span>{task.title}</span></label><button aria-label={`Supprimer la tâche : ${task.title}`} onClick={() => { const index = todayTasks.findIndex(value => value.id === task.id); store.remove(task.id); setAnnouncement("Tâche supprimée."); requestAnimationFrame(() => (taskList.current?.querySelectorAll<HTMLInputElement>('input')[Math.max(0, index - 1)] || taskInput.current)?.focus()); }}><Trash2 size={15} /></button></li>)}</ul> : <div className="start-task-empty"><span><CheckCheck size={25} /></span><h3>Fais de la place à l’essentiel.</h3><p>Ajoute les petites choses que tu veux accomplir.</p></div>}
-          <form className="start-task-form" onSubmit={event => { event.preventDefault(); if (store.add(draft)) { setDraft(""); setAnnouncement("Tâche ajoutée."); taskInput.current?.focus(); requestAnimationFrame(() => { if (taskList.current) taskList.current.scrollTop = taskList.current.scrollHeight; }); } else { taskInput.current?.setCustomValidity("Écris le titre de ta tâche."); taskInput.current?.reportValidity(); } }}><Plus size={17} aria-hidden="true" /><label htmlFor="start-task-input" className="sr-only">Ajouter une tâche pour aujourd’hui</label><input ref={taskInput} id="start-task-input" value={draft} onChange={event => { event.target.setCustomValidity(""); setDraft(event.target.value); }} placeholder="Ajouter une tâche…" maxLength={160} required autoComplete="off" /><button type="submit" aria-label="Ajouter la tâche"><ArrowRight size={17} /></button></form>
-          <footer className="start-panel-note">{saved ? "Enregistrées sur cet appareil · privées à ton compte" : "Conservées pour cette session"}</footer>
+          {agenda.status === "loading" ? <p role="status">Chargement des tâches…</p> : agenda.status === "error" ? pending() : todayTasks.length ? <ul ref={taskList} className="start-task-list">{todayTasks.map(task => <li key={task.id} className={task.completed ? "is-complete" : undefined}><label><input type="checkbox" checked={!!task.completed} disabled={!!taskBusy} aria-label={`${task.completed ? "Remettre à faire" : "Terminer"} : ${task.title}`} onChange={() => { void taskAction(task.id, () => writeHomeTask(`events/${task.id}`, "PATCH", { completed: !task.completed, updatedAt: task.updatedAt }), task.completed ? "Tâche remise à faire." : "Tâche terminée.", { completed: !task.completed, completedAt: task.completed ? null : new Date().toISOString() }); }} /><span className="start-task-check" aria-hidden="true"><Check size={14} /></span></label><button className="start-task-details" onClick={() => openEvent(task, task.deadline?.date || today)}><strong>{task.title}</strong><small>{task.deadline ? `${task.deadline.date < today && !task.completed ? "En retard · " : ""}${dateLabel(task.deadline.date, { day: "numeric", month: "short" })}${task.deadline.time ? ` · ${task.deadline.time}` : ""}` : "Sans échéance"}{task.context ? ` · ${task.context.name}` : ""}</small></button><button disabled={!!taskBusy} aria-label={`Supprimer la tâche : ${task.title}`} onClick={() => { void taskAction(task.id, () => writeHomeTask(`events/${task.id}`, "DELETE", { updatedAt: task.updatedAt }), "Tâche supprimée."); }}><Trash2 size={15} /></button></li>)}</ul> : <div className="start-task-empty"><span><CheckCheck size={25} /></span><h3>Fais de la place à l’essentiel.</h3><p>Ajoute les petites choses que tu veux accomplir.</p></div>}
+          {taskError && <p role="alert" className="start-task-error">{taskError}</p>}
+          <form className="start-task-form" onSubmit={event => { event.preventDefault(); if (!draft.trim() || taskOperation.current) return; const title = draft.trim(); if (newTaskRequest.current?.title !== title) newTaskRequest.current = { title, id: crypto.randomUUID() }; const requestId = newTaskRequest.current.id; void taskAction("new", () => writeHomeTask("events", "POST", { requestId, event: homeTaskInput(title, today) }), "Tâche ajoutée.").then(saved => { if (saved) { newTaskRequest.current = null; setDraft(""); requestAnimationFrame(() => taskInput.current?.focus()); } }); }}><Plus size={17} aria-hidden="true" /><label htmlFor="start-task-input" className="sr-only">Ajouter une tâche pour aujourd’hui</label><input ref={taskInput} id="start-task-input" value={draft} onChange={event => { event.target.setCustomValidity(""); setDraft(event.target.value); }} placeholder="Ajouter une tâche pour aujourd’hui…" maxLength={160} required autoComplete="off" disabled={!!taskBusy || agenda.status !== "ready"} /><button type="submit" aria-label="Ajouter la tâche" disabled={!!taskBusy || agenda.status !== "ready"}><ArrowRight size={17} /></button></form>
+          <footer className="start-panel-note"><label><input type="checkbox" checked={showCompleted} onChange={event => setShowCompleted(event.target.checked)} /> Voir les terminées</label><button className="start-text-button" onClick={() => onNavigate("calendar", { date: today, create: true })}>Créer avec le dialogue <ArrowUpRight size={13} /></button><span>Enregistrées dans Tempo · privées à ton compte</span></footer>
         </section>
 
         <section className="start-panel start-agenda" aria-labelledby="start-agenda-title"><header className="start-panel-heading"><div><p className="start-eyebrow">Ton temps, en un coup d’œil</p><h2 id="start-agenda-title">Le fil de la journée</h2></div><button className="start-round-button" aria-label="Voir la journée dans Tempo" onClick={() => onNavigate("calendar", { date: today, view: "day" })}><ArrowUpRight size={19} /></button></header>

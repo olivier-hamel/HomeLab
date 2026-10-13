@@ -5,16 +5,21 @@ import { bounded } from "../media/http.ts";
 import { MediaError } from "../media/core.ts";
 import { createHash } from "node:crypto";
 
-export const moodleTools = ["list_courses", "list_files", "read_file"] as const;
+export const moodleTools = ["list_courses", "list_files", "read_file", "list_events", "list_assignments"] as const;
 export type MoodleTool = typeof moodleTools[number];
 export type MoodleCourse = { id: number; shortname: string; fullname: string };
 export type MoodleFile = { id: string; filename: string; mimetype: string; filesize: number; section: string; module: string; modified?: number; contenthash?: string };
 export type MoodleText = { filename: string; course_id: number; text: string; truncated: boolean; characters_extracted: number; note: string };
+export type MoodleEvent = { id: number; name: string; course_id: number | null; start_at: string; duration_seconds: number; module: string | null; instance_id: number | null; event_type: string; url: string };
+export type MoodleAssignment = { id: number; name: string; course_id: number; due_at: string | null; effective_due_at: string | null; personal_deadline_checked: boolean; url: string; submitted: boolean };
+export type MoodleListing<T> = { items: T[]; warnings: unknown[] };
 export type MoodleSession = {
   tools: readonly MoodleTool[];
   courses(): Promise<MoodleCourse[]>;
   files(courseId: number): Promise<MoodleFile[]>;
   read(courseId: number, fileId: string): Promise<MoodleText>;
+  events?: (start: number, end: number) => Promise<MoodleListing<MoodleEvent>>;
+  assignments?: (courseId: number) => Promise<MoodleListing<MoodleAssignment>>;
   download?: (courseId: number, fileId: string) => Promise<{ filename: string; bytes: Uint8Array<ArrayBuffer> }>;
 };
 export type MoodleConnector = <T>(signal: AbortSignal, work: (session: MoodleSession) => Promise<T>) => Promise<T>;
@@ -73,6 +78,40 @@ function text(value: unknown, courseId: number): MoodleText {
   return { filename: row.filename, course_id: courseId, text: row.text, truncated: row.truncated, characters_extracted: Number(row.characters_extracted), note: row.note };
 }
 
+function listing(value: unknown, key: string) {
+  const result = object(value);
+  if (!Array.isArray(result[key]) || result[key].length > 20_000 || !Array.isArray(result.warnings)) throw invalidResult();
+  return { rows: result[key] as unknown[], warnings: result.warnings };
+}
+function iso(value: unknown): value is string { return typeof value === "string" && /T.*(?:Z|[+-]\d\d:\d\d)$/.test(value) && Number.isFinite(Date.parse(value)); }
+function remoteUrl(value: unknown): string {
+  if (typeof value !== "string" || value.length > 2048) throw invalidResult();
+  try { const url = new URL(value); if (url.protocol !== "https:" || url.hostname !== "moodle.polymtl.ca" || url.username || url.password) throw invalidResult(); } catch { throw invalidResult(); }
+  return value;
+}
+export function parseMoodleEvents(value: unknown): MoodleListing<MoodleEvent> {
+  const { rows, warnings } = listing(value, "events");
+  return { warnings, items: rows.map(item => {
+    const row = object(item);
+    if (!Number.isSafeInteger(row.id) || Number(row.id) <= 0 || typeof row.name !== "string" || !iso(row.start_at)
+      || !Number.isSafeInteger(row.duration_seconds) || Number(row.duration_seconds) < 0 || Number(row.duration_seconds) > 366 * 86400
+      || (row.course_id !== null && (!Number.isSafeInteger(row.course_id) || Number(row.course_id) < 0))
+      || typeof row.event_type !== "string" || (row.module !== null && typeof row.module !== "string")
+      || (row.instance_id !== null && (!Number.isSafeInteger(row.instance_id) || Number(row.instance_id) <= 0))) throw invalidResult();
+    return { id: Number(row.id), name: row.name, course_id: row.course_id as number | null, start_at: row.start_at, duration_seconds: Number(row.duration_seconds), module: row.module as string | null, instance_id: row.instance_id as number | null, event_type: row.event_type, url: remoteUrl(row.url) };
+  }) };
+}
+export function parseMoodleAssignments(value: unknown, courseId: number): MoodleListing<MoodleAssignment> {
+  const { rows, warnings } = listing(value, "assignments");
+  return { warnings, items: rows.map(item => {
+    const row = object(item);
+    if (!Number.isSafeInteger(row.id) || Number(row.id) <= 0 || row.course_id !== courseId || typeof row.name !== "string"
+      || (row.due_at !== null && !iso(row.due_at)) || (row.effective_due_at !== null && !iso(row.effective_due_at)) || typeof row.personal_deadline_checked !== "boolean") throw invalidResult();
+    return { id: Number(row.id), name: row.name, course_id: courseId, due_at: row.due_at as string | null, effective_due_at: row.effective_due_at as string | null,
+      personal_deadline_checked: row.personal_deadline_checked, url: remoteUrl(row.url), submitted: row.submission_status === "submitted" };
+  }) };
+}
+
 export function moodleEndpoint(): URL {
   let url: URL;
   try { url = new URL(process.env.MOODLE_MCP_URL || ""); } catch { throw new MediaError("moodle_config", "La connexion Moodle n’est pas configurée.", 503); }
@@ -106,14 +145,14 @@ export const withMoodle: MoodleConnector = async (signal, work) => {
         if (cursor) cursors.add(cursor);
         if (cursors.size > 100) throw invalidResult();
       } while (cursor);
-      for (const name of moodleTools) {
+      for (const name of moodleTools.slice(0, 3)) {
         const schema = discovered.get(name);
         if (!schema) throw new MediaError("moodle_tools", "Les outils Moodle attendus ne sont pas disponibles.", 502);
         const properties = object(schema.properties ?? {});
         if (name !== "list_courses" && (object(properties.course_id).type !== "integer" || !Array.isArray(schema.required) || !schema.required.includes("course_id"))) throw invalidResult();
         if (name === "read_file" && (object(properties.file_id).type !== "string" || !(schema.required as unknown[]).includes("file_id"))) throw invalidResult();
       }
-      const call = async (name: MoodleTool, args: Record<string, unknown>, list: boolean) => moodleResult(
+      const call = async (name: MoodleTool | "list_events" | "list_assignments", args: Record<string, unknown>, list: boolean) => moodleResult(
         CallToolResultSchema.parse(await client.callTool({ name, arguments: args }, CallToolResultSchema, { signal: connectionSignal, timeout: 45_000 })), list);
       const downloadSchema = discovered.get("download_file");
       let download: MoodleSession["download"];
@@ -123,7 +162,9 @@ export const withMoodle: MoodleConnector = async (signal, work) => {
         download = async (courseId, fileId) => downloadOriginal(async args => moodleResult(CallToolResultSchema.parse(
           await client.callTool({ name: "download_file", arguments: args }, CallToolResultSchema, { signal: connectionSignal, timeout: 45_000 })), false), courseId, fileId);
       }
-      return await work({ tools: moodleTools, ...(download ? { download } : {}),
+      return await work({ tools: moodleTools.filter(name => discovered.has(name)), ...(download ? { download } : {}),
+        ...(discovered.has("list_events") ? { events: async (start: number, end: number) => parseMoodleEvents(await call("list_events", { time_start: start, time_end: end }, false)) } : {}),
+        ...(discovered.has("list_assignments") ? { assignments: async (courseId: number) => parseMoodleAssignments(await call("list_assignments", { course_id: courseId, include_personal_deadlines: true }, false), courseId) } : {}),
         courses: async () => courses(await call("list_courses", {}, true)),
         files: async courseId => files(await call("list_files", { course_id: courseId }, true)),
         read: async (courseId, fileId) => text(await call("read_file", { course_id: courseId, file_id: fileId }, false), courseId),

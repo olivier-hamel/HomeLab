@@ -3,7 +3,36 @@ export type HomePreferences = { searchEngine: "google" | "duckduckgo"; timeForma
 export type CalendarEvent = {
   id: string; title: string; description: string; date: string; endDate: string;
   allDay: boolean; startTime: string; endTime: string; occurrenceDate?: string;
+  updatedAt: string; kind?: "event" | "task"; completed?: boolean; completedAt?: string | null;
+  deadline?: { date: string; time: string | null } | null; notes?: string; links?: string[]; documentIds?: string[];
+  context?: { kind: "course" | "project"; name: string; courseId?: number } | null;
 };
+export function plannerTasks(events: CalendarEvent[], today: string, includeCompleted = false) {
+  return events.filter(event => event.kind === "task" && (includeCompleted || !event.completed || event.completedAt && todayKey(new Date(event.completedAt)) === today))
+    .sort((a, b) => Number(a.completed) - Number(b.completed) || (a.deadline?.date || "9999-12-31").localeCompare(b.deadline?.date || "9999-12-31") || (a.deadline?.time || "").localeCompare(b.deadline?.time || "") || a.title.localeCompare(b.title));
+}
+export async function writeHomeTask(path: string, method: string, body: unknown): Promise<{ event: CalendarEvent }> {
+  const response = await fetch(`/api/calendar/${path}`, { method, credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(30_000),
+    headers: { "Content-Type": "application/json", "X-Calendar-Request": "1" }, body: JSON.stringify(body) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "La tâche n’a pas pu être enregistrée.");
+  return data;
+}
+export function homeTaskInput(title: string, date: string, completed = false) {
+  return { title: title.trim(), description: "", kind: "task", completed, deadline: { date, time: null }, date, endDate: date, allDay: true,
+    startTime: null, endTime: null, recurrence: null, typeId: "none", notes: "", links: [], documentIds: [], context: null };
+}
+export async function migrateHomeTasks(store: ReturnType<typeof createHomeStore>, username: string, today: string) {
+  const added: CalendarEvent[] = [];
+  for (const task of [...store.getSnapshot().tasks]) {
+    // Stable request IDs let an interrupted migration resume without copies.
+    const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`home-task:${username}:${task.id}`))), byte => byte.toString(16).padStart(2, "0")).join("");
+    const requestId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+    const result = await writeHomeTask("events", "POST", { requestId, event: homeTaskInput(task.title, task.completedDate || today, !!task.completedDate) });
+    added.push(result.event); store.remove(task.id);
+  }
+  return added;
+}
 export type CalendarModel = {
   eventsOnDate: (events: CalendarEvent[], date: string) => CalendarEvent[];
   eventsInRange: (events: CalendarEvent[], start: string, end: string) => CalendarEvent[];

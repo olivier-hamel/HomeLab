@@ -34,7 +34,7 @@ test('importance controls markers and cards in every view, including important f
     for (const view of ['month','week','day']) {
       const html = button(render([event], view), event.id);
       assert(html.includes(`importance-${importance}`));
-      assert.equal(html.includes('recurring-event-marker'), importance <= (view === 'month' ? 1 : 2));
+      assert.equal(html.includes('recurring-event-marker'), view !== 'week' && importance <= (view === 'month' ? 1 : 2));
       assert(html.includes(`importance ${['très faible','faible','normale','élevée','très élevée'][importance - 1]}`));
     }
   }
