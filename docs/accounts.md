@@ -2,7 +2,7 @@
 
 HomeLab affiche sa propre page de connexion en HTTPS avec les comptes Mémo
 disponibles. Sélectionner un compte, puis saisir son mot de passe habituel.
-La session ouvre le calendrier, les films et Mémo. Les comptes restent dans
+La session ouvre Tempo, les films et Mémo. Les comptes restent dans
 `accounts.sqlite3` du volume `memo_data` : aucune nouvelle base de comptes,
 migration MongoDB ou copie de mots de passe n'est nécessaire.
 
@@ -16,10 +16,10 @@ reviennent à HomeLab. Un lien direct vers `/memo/` ouvre la section Mémo du ta
 Le profil cinéma utilise par défaut le compte HomeLab connecté. Son sélecteur
 propose les mêmes comptes existants, sans demander leur mot de passe. Par
 exemple, connecté à Oli, on peut regarder les films avec le profil Max et
-revenir au calendrier ou à Mémo en restant Oli.
+revenir à Tempo ou à Mémo en restant Oli.
 
 Le choix cinéma est conservé par compte HomeLab dans le navigateur. Les
-préférences du calendrier sont également séparées par compte. Les profils
+préférences de Tempo sont également séparées par compte. Les profils
 cinéma utilisent toujours leurs identifiants `oli` et `max` dans MongoDB :
 conserver `MEDIA_USER_ID`, `MONGODB_DATABASE` et la configuration MongoDB
 existants pour retrouver leurs historiques. L'ancien profil générique `default`
@@ -43,7 +43,7 @@ existante est conservée puis son ancien cookie limité à `/memo` est retiré
 Compose configure le backend avec `MEMO_AUTH_URL=http://memo:8000`, sur le
 réseau interne. Le backend vérifie directement la session auprès de Mémo et
 refuse l'accès si ce service est indisponible ou si les comptes sont désactivés.
-Caddy utilise également Mémo pour vérifier l'accès au calendrier.
+Caddy utilise également Mémo pour vérifier l'accès à Tempo.
 
 Conserver les certificats et les paramètres HTTPS HomeLab déjà utilisés pour
 Mémo. Vérifier que `MEDIA_ALLOWED_ORIGINS` dans `backend/.env` contient les
@@ -69,7 +69,7 @@ docker compose exec memo python -m backend.accounts reset-password nouvel_utilis
 Vérifier après mise à jour :
 
 1. Sans connexion, HomeLab affiche les comptes existants et les API cinéma refusent l'accès.
-2. Se connecter à Oli, ouvrir le calendrier et Mémo sans seconde connexion.
+2. Se connecter à Oli, ouvrir Tempo et Mémo sans seconde connexion.
 3. Passer au profil cinéma Max sans mot de passe; le compte HomeLab reste Oli.
 4. Se déconnecter; les apps disparaissent et les nouvelles requêtes cinéma sont refusées.
 

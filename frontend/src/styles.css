@@ -468,7 +468,7 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) :is(.dashboard-sidebar-brand, .dashboard-sidebar-label) { display: none; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-mark { display: block; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-header { justify-content: center; padding-inline: .5rem; }
-  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-content { padding-inline: .5rem; }
+  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) :is(.dashboard-sidebar-content, .dashboard-sidebar-footer) { padding-inline: .5rem; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-link { justify-content: center; }
 }
 
@@ -517,11 +517,16 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
 .homelab-account-controls svg { width: 18px; height: 18px; flex-shrink: 0; }
 .homelab-account-controls button { display: grid; place-items: center; min-width: 38px; min-height: 38px; border: 1px solid #404040; border-radius: 8px; }
 .homelab-account-controls button:hover { color: #fb923c; }
+.dashboard-sidebar .homelab-account-controls { flex-wrap: nowrap; }
+.dashboard-sidebar .homelab-account-name > span,
+.dashboard-sidebar .homelab-account-name small { min-width: 0; overflow: hidden; overflow-wrap: normal; white-space: nowrap; text-overflow: ellipsis; }
+.dashboard-sidebar .homelab-account-controls button { flex-shrink: 0; }
 html[data-tv-mode="true"] .homelab-auth-panel { width: min(100%, 680px); }
 html[data-tv-mode="true"] .homelab-auth-panel button, html[data-tv-mode="true"] .homelab-auth-panel input:not(.sr-only) { min-height: 60px; font-size: 20px; }
 html[data-tv-mode="true"] .homelab-account-controls button { min-width: 48px; min-height: 48px; }
-@media (hover: hover) and (pointer: fine) and (min-width: 768px) {
+@media (hover: hover) and (min-width: 768px) {
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .homelab-account-controls { justify-content: center; }
+  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .homelab-account-name { flex: 0 0 auto; justify-content: center; gap: 0; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .homelab-account-name > span,
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .homelab-account-controls button { display: none; }
 }

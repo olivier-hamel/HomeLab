@@ -1,10 +1,11 @@
+import { geminiApiKey, geminiModel, DEFAULT_GEMINI_MODEL } from "../ai/gemini.ts";
 import { createHash } from "node:crypto";
 import { BoundedCache, envNumber, list, MediaError, record, string, type Fetcher } from "./core.ts";
 import { bounded, readLimited } from "./http.ts";
 import type { SearchContext, Source } from "./prowlarr.ts";
 import { queryTarget, sourceIdentity, type Identity, type SourceTarget } from "./source-identity.ts";
 
-export const ASSIST_MODEL = "gemini-3.5-flash-lite";
+export const ASSIST_MODEL = DEFAULT_GEMINI_MODEL;
 export const MIN_STREAMING_SEEDERS = 100;
 const REVIEW_LIMIT = 10;
 export type Assessment = { id: string; identity: Identity; verdict: "good" | "unsure" | "sketchy"; reason: string; review?: string; method: "gemini" | "heuristic" };
@@ -126,7 +127,7 @@ export class SourceAssist {
     const fallback = baselineAdvice(sources, context, target);
     const shortlist = ranked.filter(row => row.identity === "match").slice(0, REVIEW_LIMIT);
     if (!shortlist.length) return fallback;
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    const apiKey = geminiApiKey();
     if (!apiKey) return { ...fallback, warning: "AI assist needs a Gemini API key; showing basic recommendations." };
     // No download URLs, magnets, indexer configuration or credentials reach Gemini.
     const candidates = shortlist.map(({ source }) => ({ id: source.id, title: source.title, titleIds: source.titleIds, sizeBytes: source.size, seeders: source.seeders, leechers: source.leechers, quality: source.quality }));
@@ -136,7 +137,7 @@ export class SourceAssist {
     if (cached) return cached;
     try {
       const data = await bounded("Gemini source assist", envNumber("MEDIA_AI_TIMEOUT_MS", 20_000, 1000, 60_000), signal, async s => {
-        const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${ASSIST_MODEL}:generateContent`, {
+        const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
           method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, signal: s, cache: "no-store", redirect: "manual",
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: "user", parts: [{ text: input }] }],
@@ -182,7 +183,7 @@ export class SourceAssist {
       });
       // Stable sort preserves Gemini's order within each identity/quality tier.
       const ranking = [...reviewed, ...ranked.filter(row => !allowed.has(row.id))].sort((a, b) => a.tier - b.tier).map(publicAssessment);
-      const advice: SourceAdvice = { provider: "gemini", model: ASSIST_MODEL, warning: ranked.filter(row => row.identity === "match").length > REVIEW_LIMIT ? `Gemini reviewed the ${REVIEW_LIMIT} most promising matching listings; others use basic checks.` : null, reviewed: candidates.length, ranking };
+      const advice: SourceAdvice = { provider: "gemini", model: geminiModel(), warning: ranked.filter(row => row.identity === "match").length > REVIEW_LIMIT ? `Gemini reviewed the ${REVIEW_LIMIT} most promising matching listings; others use basic checks.` : null, reviewed: candidates.length, ranking };
       signal.throwIfAborted();
       return this.cache.set(cacheKey, advice);
     } catch (error) {

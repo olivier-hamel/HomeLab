@@ -12,7 +12,7 @@ import AccountControls from "./components/AccountControls";
 const buildTag = "2026.09.10-native-4";
 
 const sections = [
-  { id: "calendar", icon: CalendarDays, label: "Calendar", component: Calendar },
+  { id: "calendar", icon: CalendarDays, label: "Tempo", component: Calendar },
   { id: "tv", icon: Clapperboard, label: "TV & Movies", component: TV },
   { id: "memo", icon: BookOpen, label: "Mémo", component: Memo },
 ] as const;
@@ -67,14 +67,14 @@ export default function App() {
         Skip to dashboard
       </a>
       <aside
-        className={`dashboard-sidebar w-full shrink-0 border-b border-neutral-700 bg-neutral-900 transition-[width] duration-300 md:w-70 md:border-b-0 md:border-r ${fullscreenView ? "hidden" : ""}`}
+        className={`dashboard-sidebar w-full shrink-0 border-b border-neutral-700 bg-neutral-900 transition-[width] duration-300 md:w-70 md:flex-col md:border-b-0 md:border-r ${fullscreenView ? "hidden" : "md:flex"}`}
         data-keyboard-focus={sidebarKeyboardFocus}
         onFocusCapture={event => setSidebarKeyboardFocus(event.target.matches(":focus-visible"))}
         onBlurCapture={event => {
           if (!event.currentTarget.contains(event.relatedTarget)) setSidebarKeyboardFocus(false);
         }}
       >
-        <div className="dashboard-sidebar-header flex h-20 items-center justify-between gap-2 px-4">
+        <div className="dashboard-sidebar-header flex h-20 shrink-0 items-center justify-between gap-2 px-4">
           <span className="dashboard-sidebar-mark hidden text-lg font-bold tracking-wider text-orange-500" aria-hidden="true">HL</span>
           <div className="dashboard-sidebar-brand whitespace-nowrap">
             <p className="text-lg font-bold tracking-wider text-orange-500">HOMELAB</p>
@@ -94,8 +94,7 @@ export default function App() {
           </Button>
         </div>
 
-        <div className={`dashboard-sidebar-content ${mobileMenuOpen ? "block" : "hidden"} max-h-[60svh] overflow-y-auto px-4 pb-4 md:block md:max-h-none`}>
-          <AccountControls />
+        <div className={`dashboard-sidebar-content ${mobileMenuOpen ? "block" : "hidden"} min-h-0 max-h-[60svh] overflow-x-hidden overflow-y-auto px-4 pb-4 md:block md:max-h-none md:flex-1`}>
           <nav id="dashboard-navigation" aria-label="Dashboard sections" className="space-y-2">
             {sections.map((section) => (
               <button
@@ -131,6 +130,9 @@ export default function App() {
             <Maximize2 className="h-5 w-5 shrink-0" aria-hidden="true" />
             <span className="dashboard-sidebar-label whitespace-nowrap text-sm font-medium">Fullscreen view</span>
           </button>
+        </div>
+        <div className={`dashboard-sidebar-footer ${mobileMenuOpen ? "block" : "hidden"} shrink-0 px-4 pb-4 md:block`}>
+          <AccountControls />
         </div>
       </aside>
 

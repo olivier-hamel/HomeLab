@@ -172,7 +172,7 @@ try {
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), undefined, 'Normal desktop keeps its layout');
   assert.equal(await evaluate('getComputedStyle(document.documentElement).fontSize'), '16px');
   await focus('nav button'); await press('ArrowRight');
-  assert.equal(await active(), 'Calendar', 'TV spatial navigation is inactive on desktop');
+  assert.equal(await active(), 'Tempo', 'TV spatial navigation is inactive on desktop');
   await call('Page.navigate', { url: `${origin}/?tv=1` });
   await until('!!document.querySelector(".media-account-button")');
   await activate('.media-account-button');

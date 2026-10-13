@@ -1,7 +1,7 @@
+import { geminiApiKey, geminiModel } from "../ai/gemini.ts";
 import { createHash } from "node:crypto";
 import { BoundedCache, envNumber, list, record, string, type Fetcher } from "./core.ts";
 import { bounded, readLimited } from "./http.ts";
-import { ASSIST_MODEL } from "./source-assist.ts";
 import { Tmdb, type Catalogue, type CatalogueKind, type Title } from "./tmdb.ts";
 
 function words(value: string): string[] {
@@ -72,14 +72,14 @@ export class CatalogueSearch {
   }
 
   private async correct(kind: CatalogueKind, query: string, titles: Title[], signal: AbortSignal): Promise<string | null> {
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    const apiKey = geminiApiKey();
     if (!apiKey) return null;
     const cacheKey = createHash("sha256").update(apiKey).update(kind).update(query.toLowerCase()).digest("hex");
     const cached = this.corrections.get(cacheKey);
     if (cached !== undefined) return cached;
     try {
       const data = await bounded("Gemini catalogue correction", envNumber("MEDIA_AI_TIMEOUT_MS", 20_000, 1000, 60_000), signal, async boundedSignal => {
-        const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${ASSIST_MODEL}:generateContent`, {
+        const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
           method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, signal: boundedSignal, cache: "no-store", redirect: "manual",
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: correctionInstruction }] },

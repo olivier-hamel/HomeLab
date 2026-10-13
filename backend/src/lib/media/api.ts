@@ -1,3 +1,4 @@
+import { geminiApiKey } from "../ai/gemini.ts";
 import { randomBytes, randomUUID } from "node:crypto";
 import { BoundedCache, integer, kind, magnet, MediaError, query, record, string, type Fetcher } from "./core.ts";
 import { readLimited } from "./http.ts";
@@ -111,7 +112,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
         rate("session-start", 60);
         const { cookie } = startSession(request);
         // Configuration states are independent; connectivity is checked explicitly below.
-        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), discovery: !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, recommendations: ProgressStore.configured() && !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
+        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), discovery: !!geminiApiKey() && !!process.env.TMDB_READ_ACCESS_TOKEN, recommendations: ProgressStore.configured() && !!geminiApiKey() && !!process.env.TMDB_READ_ACCESS_TOKEN, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
       }
       const owner = `${account.user.username}:${requireSession(request)}`;
       const profile = mediaProfile(request, account);

@@ -1,6 +1,8 @@
+import {createEventController} from "./event-controller.js";
+import {eventsOnDate, eventCount} from "./events.js";
 import {createCalendarStore} from "./state.js";
 import {calendarAccount, escapeHtml} from "./account.js";
-import {dateKey, parseDate, addDays, fullDate, periodTitle, zoneOffset} from "./date.js";
+import {dateKey, parseDate, addDays, fullDate, periodTitle, zoneOffset, VIEW_LABELS} from "./date.js";
 import {renderSidebar} from "./components/sidebar.js";
 import {renderCalendar} from "./components/views.js";
 import {renderHome} from "./components/home.js";
@@ -21,6 +23,7 @@ let renderedPage = null;
 let renderedToday = null;
 
 app.innerHTML = renderShell();
+const eventController = createEventController(store, dialogRoot);
 
 function render(state, reason = "initial") {
   const active = document.activeElement;
@@ -48,11 +51,15 @@ function render(state, reason = "initial") {
   document.getElementById("workspace-breadcrumb").innerHTML = renderBreadcrumb(state);
   app.querySelector(".calendar-workspace").classList.toggle("is-home", isHome);
   app.querySelector(".calendar-toolbar").hidden = isHome;
+  const status = document.getElementById("events-status");
+  status.hidden = state.eventsStatus === "ready";
+  status.innerHTML = state.eventsStatus === "error" ? `<span>${escapeHtml(state.eventsError)}</span><button data-action="events-retry">Réessayer</button>` : "Chargement de tes événements…";
+  status.classList.toggle("has-error", state.eventsStatus === "error");
   const title = periodTitle(state);
   if (!isHome) {
     document.getElementById("period-title").innerHTML = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
-    app.querySelector('[data-action="prev"]').setAttribute("aria-label", `Previous ${state.view}`);
-    app.querySelector('[data-action="next"]').setAttribute("aria-label", `Next ${state.view}`);
+    app.querySelector('[data-action="prev"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "précédente" : "précédent"}`);
+    app.querySelector('[data-action="next"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "suivante" : "suivant"}`);
     for (const button of app.querySelectorAll(".view-switch button")) button.setAttribute("aria-pressed", String(button.dataset.action === state.view));
   }
   const monthKey = dateKey(state.date).slice(0, 7);
@@ -73,8 +80,8 @@ function render(state, reason = "initial") {
   renderedPeriod = monthKey;
   renderedView = state.view;
   renderedPage = state.page;
-  const hints = {month: "Click a date to see its week", week: "Click a day to see its schedule", day: "Your day, hour by hour"};
-  document.getElementById("view-hint").innerHTML = `<span class="hint-dot"></span>${isHome ? "Today, at a glance" : hints[state.view]}`;
+  const hints = {month: "Clique sur une date pour voir sa semaine", week: "Clique sur un jour pour voir son horaire", day: "Ta journée, heure par heure"};
+  document.getElementById("view-hint").innerHTML = `<span class="hint-dot"></span>${isHome ? "Ta journée en un coup d’œil" : hints[state.view]}`;
   document.getElementById("timezone-offset").textContent = zoneOffset(state.preferences.timezone, isHome ? state.today : state.date);
   if (previousPage !== state.page) content.scrollTop = 0;
   const scroll = app.querySelector(".time-scroll");
@@ -87,7 +94,7 @@ function render(state, reason = "initial") {
     else app.querySelector(`.mini-day[data-date="${focusDate}"]`)?.focus({preventScroll: true});
   }
   else if (focusAction && !document.contains(active)) app.querySelector(`[data-action="${focusAction}"]`)?.focus({preventScroll: true});
-  if (["navigate", "view", "today", "date", "keyboard-date", "drilldown", "home"].includes(reason)) document.getElementById("announcement").textContent = isHome ? `Home. Today is ${fullDate(state.today)}. No events scheduled today.` : `${title.primary} ${title.secondary}. ${state.view} view. Selected ${fullDate(state.date)}.`;
+  if (["navigate", "view", "today", "date", "keyboard-date", "drilldown", "home"].includes(reason)) document.getElementById("announcement").textContent = isHome ? `Accueil. Aujourd’hui, ${fullDate(state.today)}. ${state.eventsStatus === "ready" ? eventCount(eventsOnDate(state.events, state.today).length) + " aujourd’hui." : "Chargement du calendrier."}` : `${title.primary} ${title.secondary}. Vue ${VIEW_LABELS[state.view].toLowerCase()}. Date sélectionnée : ${fullDate(state.date)}.`;
 }
 
 function syncSidebarAccess(state = store.getState()) {
@@ -164,16 +171,17 @@ document.addEventListener("keydown", event => {
     store.selectDate(addDays(parseDate(dateButton.dataset.date), delta), "keyboard-date");
     return;
   }
-  const shortcuts = {h: actions.home, m: actions.month, w: actions.week, d: actions.day, t: actions.today, g: actions.jump, "?": actions.shortcuts, ArrowLeft: actions.prev, ArrowRight: actions.next};
+  const shortcuts = {n: eventController.openCreate, h: actions.home, m: actions.month, w: actions.week, d: actions.day, t: actions.today, g: actions.jump, "?": actions.shortcuts, ArrowLeft: actions.prev, ArrowRight: actions.next};
   const action = shortcuts[event.key.length === 1 ? event.key.toLowerCase() : event.key];
   if (action) {event.preventDefault(); action();}
 });
 store.subscribe(render);
 render(store.getState());
+void eventController.loadEvents();
 setInterval(() => {if (!document.hidden) store.refreshClock();}, 60_000);
 document.addEventListener("visibilitychange", () => {if (!document.hidden) store.refreshClock();});
 
 }
 void startCalendar().catch(error => {
-  document.getElementById("app").innerHTML = `<main style="padding:40px"><h1>Ton calendrier HomeLab</h1><p>${escapeHtml(error.message)}</p><a href="/?section=calendar">Ouvrir HomeLab</a></main>`;
+  document.getElementById("app").innerHTML = `<main style="padding:40px"><h1>Tempo</h1><p>${escapeHtml(error.message)}</p><a href="/?section=calendar">Ouvrir HomeLab</a></main>`;
 });

@@ -12,7 +12,7 @@ export function memoSessionCookie(request: Request) {
 export function createAccountVerifier(fetcher: Fetcher = fetch): AccountVerifier {
   return async request => {
     const cookie = memoSessionCookie(request);
-    if (!cookie) throw new MediaError("account_session", "Connecte-toi à HomeLab pour accéder aux films.", 401);
+    if (!cookie) throw new MediaError("account_session", "Connecte-toi à HomeLab pour continuer.", 401);
     const host = request.headers.get("host") ?? new URL(request.url).host;
     const origin = process.env.MEDIA_ALLOWED_ORIGINS?.split(",").map(value => value.trim()).find(value => {
       try { return new URL(value).host === host; } catch { return false; }

@@ -1,6 +1,8 @@
 // Calendar days are UTC civil dates. This keeps day arithmetic independent of DST.
-export const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export const MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+export const WEEKDAYS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+export const VIEW_LABELS = {month: "Mois", week: "Semaine", day: "Jour"};
+const LOCALE = "fr-CA";
 export const DEFAULT_TIMEZONE = "America/Toronto";
 
 export function civilDate(year, month, day = 1) {
@@ -10,7 +12,7 @@ export function civilDate(year, month, day = 1) {
   return date;
 }
 export function todayInZone(timeZone = DEFAULT_TIMEZONE, now = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {timeZone, year: "numeric", month: "numeric", day: "numeric"}).formatToParts(now);
+  const parts = new Intl.DateTimeFormat(LOCALE, {timeZone, year: "numeric", month: "numeric", day: "numeric"}).formatToParts(now);
   const part = name => Number(parts.find(item => item.type === name).value);
   return civilDate(part("year"), part("month") - 1, part("day"));
 }
@@ -45,28 +47,28 @@ export function monthDates(date, weekStart = 1, fixed = false) {
   return Array.from({length}, (_, index) => addDays(start, index));
 }
 export function formatDate(date, options = {}) {
-  return new Intl.DateTimeFormat("en-US", {timeZone: "UTC", ...options}).format(date);
+  return new Intl.DateTimeFormat(LOCALE, {timeZone: "UTC", ...options}).format(date);
 }
 export function fullDate(date) { return formatDate(date, {weekday: "long", month: "long", day: "numeric", year: "numeric"}); }
 export function periodTitle(state) {
   const date = state.date;
-  if (state.view === "day") return {primary: `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`, secondary: String(date.getUTCFullYear())};
+  if (state.view === "day") return {primary: formatDate(date, {day: "numeric", month: "long"}), secondary: String(date.getUTCFullYear())};
   if (state.view === "week") {
     const days = weekDates(date, state.preferences.weekStart);
     const first = days[0], last = days[6];
     const primary = sameMonth(first, last)
-      ? `${MONTHS[first.getUTCMonth()]} ${first.getUTCDate()}–${last.getUTCDate()}`
-      : `${MONTHS[first.getUTCMonth()].slice(0, 3)} ${first.getUTCDate()} – ${MONTHS[last.getUTCMonth()].slice(0, 3)} ${last.getUTCDate()}`;
+      ? `${first.getUTCDate()}–${last.getUTCDate()} ${MONTHS[first.getUTCMonth()]}`
+      : `${formatDate(first, {day: "numeric", month: "short"})} – ${formatDate(last, {day: "numeric", month: "short"})}`;
     const secondary = first.getUTCFullYear() === last.getUTCFullYear() ? String(last.getUTCFullYear()) : `${first.getUTCFullYear()}–${last.getUTCFullYear()}`;
     return {primary, secondary};
   }
   return {primary: MONTHS[date.getUTCMonth()], secondary: String(date.getUTCFullYear())};
 }
 export function hourLabel(hour, format = "12") {
-  return format === "24" ? `${String(hour).padStart(2, "0")}:00` : `${hour % 12 || 12} ${hour < 12 ? "AM" : "PM"}`;
+  return format === "24" ? `${hour} h` : `${hour % 12 || 12} ${hour < 12 ? "a.m." : "p.m."}`;
 }
 export function zoneOffset(timeZone = DEFAULT_TIMEZONE, now = new Date()) {
-  return new Intl.DateTimeFormat("en", {timeZone, timeZoneName: "shortOffset"}).formatToParts(now).find(part => part.type === "timeZoneName").value;
+  return new Intl.DateTimeFormat(LOCALE, {timeZone, timeZoneName: "shortOffset"}).formatToParts(now).find(part => part.type === "timeZoneName").value;
 }
 export function currentMinutes(timeZone = DEFAULT_TIMEZONE, now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-GB", {timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23"}).formatToParts(now);

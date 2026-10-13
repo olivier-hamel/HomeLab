@@ -1,7 +1,7 @@
+import { geminiApiKey, geminiModel } from "../ai/gemini.ts";
 import { randomInt, randomUUID } from "node:crypto";
 import { list, record, type Fetcher } from "./core.ts";
 import { bounded, readLimited } from "./http.ts";
-import { ASSIST_MODEL } from "./source-assist.ts";
 
 export type WelcomeCopy = { line1: string; line2: string };
 export const WELCOME_FALLBACK: WelcomeCopy = { line1: "Pick something great.", line2: "We'll take care of the rest." };
@@ -25,7 +25,7 @@ export class Welcome {
 
   async get(signal: AbortSignal): Promise<WelcomeCopy> {
     signal.throwIfAborted();
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    const apiKey = geminiApiKey();
     if (!apiKey) return WELCOME_FALLBACK;
     if (Date.now() >= this.expires && Date.now() >= this.retryAfter) {
       // Share one bounded generation across visits, even if one visitor leaves.
@@ -42,7 +42,7 @@ export class Welcome {
   private async generate(apiKey: string): Promise<void> {
     try {
       const data = await bounded("Gemini welcome", 8000, new AbortController().signal, async signal => {
-        const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${ASSIST_MODEL}:generateContent`, {
+        const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
           method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, signal, cache: "no-store", redirect: "manual",
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: `Write ${BATCH_SIZE} distinct two-line welcome headlines for HomeLab Cinema, a personal movie and TV browsing app.
