@@ -36,11 +36,24 @@ Les mises à jour courantes préservent la configuration et les volumes existant
 ## Événements
 
 Le bouton « Nouvel événement » ouvre la création en langage naturel ou la
-saisie manuelle. Gemini propose un objet avec le titre, la description, les
+saisie manuelle. GPT-6.1 Sol propose un objet avec le titre, la description, les
 dates et l’horaire; une étape de vérification permet de le corriger avant
 l’enregistrement. Un clic sur un événement ouvre la modification; la
 suppression demande une confirmation. Les vues mois, semaine et jour ainsi que
 l’app Accueil affichent les événements du compte connecté.
+
+Le bouton « Types » permet de créer et supprimer des types propres au compte.
+Chaque type a un nom et un niveau d’importance parmi Très faible, Faible, Normale,
+Élevée et Très élevée. Les types discrets prennent peu de place; les plus importants
+ont des cartes plus grandes et passent en premier dans la vue mois. Les vues
+horaires leur accordent davantage de largeur en cas de chevauchement, tout en
+conservant leurs heures exactes. Le champ de type est disponible pendant la
+création, la modification et la revue des propositions de documents.
+
+Le type système « aucun », caché, est utilisé par défaut et ne peut pas être
+supprimé. Supprimer un type conserve ses événements avec une importance normale.
+OpenAI reçoit la liste des types du compte et choisit celui qui correspond le
+mieux au titre en langage naturel. Gemini reçoit cette même liste lors des scans PDF et PowerPoint.
 
 Le backend utilise la connexion MongoDB commune à HomeLab : configure
 `MONGODB_URI` dans `backend/.env`, avec `MONGODB_DATABASE=homelab` ou ta base
@@ -53,15 +66,17 @@ mensuelle et annuelle, un intervalle réglable et une fin facultative (date
 incluse ou nombre d’occurrences). Une série reste un seul document MongoDB ;
 les vues calculent ses occurrences pour les dates affichées, à l’heure locale
 de Toronto. La modification et la suppression concernent toute la série.
-Gemini peut préparer ces mêmes règles depuis une description en langage naturel.
+GPT-6.1 Sol peut préparer ces mêmes règles depuis une description en langage naturel.
 
-La création assistée réutilise `GEMINI_API_KEY`, exclusivement côté serveur;
-`GEMINI_MODEL` est optionnel. Mémo conserve ses variables `MEMO_*` dans son
-service distinct. Il n’est pas nécessaire de créer une nouvelle clé ou un
-nouveau cluster si ceux utilisés par HomeLab conviennent déjà. Le compte
-MongoDB du backend doit avoir accès à la base configurée.
+La création assistée utilise `OPENAI_API_KEY`, exclusivement côté serveur.
+Ajoute la clé dans le fichier privé `backend/.env`, puis redémarre le backend.
+`OPENAI_MODEL` est optionnel et vaut `gpt-6.1-sol` par défaut. Le fichier `.env`
+à la racine sert uniquement aux réglages Compose. Les scans de documents
+conservent `GEMINI_API_KEY` et `GEMINI_MODEL`. Mémo conserve ses variables
+`MEMO_*` dans son service distinct. Le compte MongoDB du backend doit avoir
+accès à la base configurée.
 
-Voir le [contrat des événements et les vérifications](../apps/calendar/README.md#mongodb-et-gemini).
+Voir le [contrat des événements et les vérifications](../apps/calendar/README.md#mongodb-et-openai).
 
 ## Documents de Bibliothèque
 

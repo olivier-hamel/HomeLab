@@ -6,6 +6,7 @@ import { eventId, validateEvent } from "./events.ts";
 import { CalendarEventStore } from "./store.ts";
 import { analyseCalendarPdf } from "./pdf-analysis.ts";
 import { folderId } from "./folders.ts";
+import { assertEventType, resolveEventType } from "./event-types.ts";
 
 const rates = new BoundedCache<{ count: number; startedAt: number }>(1024, 60_000);
 
@@ -68,7 +69,7 @@ export async function handleDocumentRequest(request: Request, path: string[], us
     if (!token) return json({ document: await documents.get(username, id) });
     rates.set(key, { ...window, count: window.count + 1 });
     try {
-      const analysis = await analyseCalendarPdf({ name: row.name, pdf: new Uint8Array(row.pdf.value()), signal: request.signal, fetcher });
+      const analysis = await analyseCalendarPdf({ name: row.name, pdf: new Uint8Array(row.pdf.value()), signal: request.signal, fetcher, eventTypes: await events.types.list(username) });
       return json({ document: await documents.finishAnalysis(username, id, token, { ...analysis, analysisState: "ready", analysisError: "" }) });
     } catch (error) {
       await documents.finishAnalysis(username, id, token, { analysisState: "error", analysisError: error instanceof MediaError ? error.message : "L’analyse a été interrompue. Réessaie." }).catch(() => {});
@@ -80,13 +81,16 @@ export async function handleDocumentRequest(request: Request, path: string[], us
     if (document.analysisState !== "ready" || !Array.isArray(body.events) || !body.events.length || body.events.length > MAX_PROPOSALS) throw new MediaError("input", "Choisis les événements proposés par ce document.", 400);
     const proposals = new Map(document.proposals.map(proposal => [proposal.id, proposal]));
     const seen = new Set<string>();
+    const types = await events.types.list(username);
     // Validate the whole selection before the first write. Stable proposal IDs make partial retries safe.
     const selection = body.events.map(value => {
       const row = record(value);
       const proposal = proposals.get(eventId(row.proposalId));
       if (!proposal || seen.has(proposal.id)) throw new MediaError("input", "Cette proposition n’appartient pas au document ou est sélectionnée deux fois.", 400);
       seen.add(proposal.id);
-      return { proposal, input: validateEvent(row.event) };
+      const input = validateEvent(row.event);
+      input.typeId = input.typeId === proposal.event.typeId ? resolveEventType(input.typeId, types) : assertEventType(input.typeId, types);
+      return { proposal, input };
     });
     const added = [];
     for (const { proposal, input } of selection) added.push(await events.create(username, input, proposal.id, { documentId: id, documentName: document.name, proposalId: proposal.id, page: proposal.page }));

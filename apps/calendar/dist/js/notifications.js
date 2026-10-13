@@ -14,13 +14,8 @@ export function createNotificationController(store, dialogRoot, events) {
     try {
       const data = await api("/notifications"); if (id !== requestId) return;
       documents = data.documents.map(file => ({id: file.id, name: file.name, summary: file.tempoScan.summary, scanId: file.tempoScan.id, origin: "library", proposals: file.tempoScan.proposals.filter(row => row.decision === "pending")}));
-      store.setDocuments(data.files || [], {documentsStatus: "ready"});
       const count = documents.reduce((sum, file) => sum + file.proposals.length, 0);
-      const button = document.getElementById("tempo-notifications-button"), badge = document.getElementById("tempo-notifications-count"), banner = document.getElementById("tempo-library-notifications");
-      button.disabled = !count; button.setAttribute("aria-label", `${count} événement${count > 1 ? "s" : ""} à vérifier`);
-      badge.hidden = !count; badge.textContent = count;
-      banner.hidden = !count && !data.scanning && !data.failures.length;
-      banner.innerHTML = count ? `${icon("sparkles")}<div><strong>${count} événement${count > 1 ? "s" : ""} à vérifier</strong><span>Repérés dans Bibliothèque. Rien n’a été ajouté à ton calendrier.</span></div><button data-action="tempo-review">Vérifier les propositions ${icon("arrowRight")}</button>` : data.scanning ? `${icon("sparkles")}<div><strong>Recherche d’événements en cours</strong><span>${data.aiAvailable ? "Tempo analyse les nouveaux documents de Bibliothèque." : "Les nouveaux documents attendent la configuration de Gemini."}</span></div>` : `${icon("document")}<div><strong>Un scan nécessite une nouvelle tentative</strong><span>Relance-le depuis le document dans Bibliothèque.</span></div><a href="/?section=library" target="_top">Ouvrir Bibliothèque</a>`;
+      store.setDocuments(data.files || [], {documentsStatus: "ready", libraryNotifications: {count, scanning: data.scanning, failureCount: data.failures.length, aiAvailable: data.aiAvailable}});
     } catch { /* Keep the last persisted notifications visible during an outage. */ }
   }
   function close() { if (!busy) current?.dialog.close(); }
@@ -37,7 +32,7 @@ export function createNotificationController(store, dialogRoot, events) {
     dialog.querySelector(".event-dialog-eyebrow").innerHTML = `${icon("sparkles")}REPÉRÉS DANS BIBLIOTHÈQUE`;
     dialog.querySelector(".document-review-footer > p").innerHTML = "Les propositions non cochées seront ignorées.<br/><span>« Plus tard » conserve cette notification.</span>";
     dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
-    dialog.addEventListener("close", () => { current = null; dialogRoot.innerHTML = ""; opener?.isConnected && opener.focus(); void load(); }, {once: true});
+    dialog.addEventListener("close", () => { current = null; dialogRoot.innerHTML = ""; (opener?.isConnected ? opener : document.getElementById("tempo-notifications-button"))?.focus(); void load(); }, {once: true});
     dialog.showModal(); syncSelection();
   }
   async function decide() {
@@ -50,11 +45,11 @@ export function createNotificationController(store, dialogRoot, events) {
         const checkbox = row.querySelector(".proposal-checkbox");
         if (checkbox.disabled) continue;
         if (!checkbox.checked) { ignored.push(proposal.id); continue; }
-        const invalid = [...row.querySelectorAll("input:not(:disabled), textarea")].find(field => !field.checkValidity());
+        const invalid = [...row.querySelectorAll("input:not(:disabled), textarea, select")].find(field => !field.checkValidity());
         if (invalid) { row.querySelector("details").open = true; invalid.reportValidity(); return; }
         const value = name => row.querySelector(`[name="${name}"]`).value;
         const allDay = row.querySelector('[name="allDay"]').checked;
-        selected.push({proposalId: proposal.id, event: {...proposal.event, title: value("title"), description: value("description"), date: value("date"), endDate: value("endDate"), allDay, startTime: allDay ? null : value("startTime"), endTime: allDay ? null : value("endTime")}});
+        selected.push({proposalId: proposal.id, event: {...proposal.event, typeId: value("typeId"), title: value("title"), description: value("description"), date: value("date"), endDate: value("endDate"), allDay, startTime: allDay ? null : value("startTime"), endTime: allDay ? null : value("endTime")}});
       }
       if (selected.length || ignored.length) groups.push({file, selected, ignored});
     }

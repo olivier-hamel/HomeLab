@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
+import {eventTypeFixture} from '../backend/tests/helpers/calendar-types.mjs';
 const root=fileURLToPath(new URL('..',import.meta.url)),require=createRequire(resolve(root,'apps/memo/web-app/frontend/package.json'));
 const {chromium}=require('playwright'),{expect}=require('@playwright/test');
 const temporary=await mkdtemp(resolve(tmpdir(),'library-tempo-ui-'));
@@ -14,10 +15,11 @@ const {LibraryStore}=await import('../backend/src/lib/library/store.ts');
 const {TempoScans}=await import('../backend/src/lib/library/scans.ts');
 const {createLibraryApi}=await import('../backend/src/lib/library/api.ts');
 const store=new LibraryStore(),saved=new Map();let analyses=0,failSave=false;
-const event={title:'Examen final',description:'Salle 204',date:'2026-10-14',endDate:'2026-10-14',allDay:false,startTime:'09:00',endTime:'11:00',recurrence:null};
+const {types}=eventTypeFixture();const examType=await types.create("oli",randomUUID(),{name:"Examen",importance:5});
+const event={title:'Examen final',description:'Salle 204',date:'2026-10-14',endDate:'2026-10-14',allDay:false,startTime:'09:00',endTime:'11:00',recurrence:null,typeId:examType.id};
 const events={async create(username,input,id,source){if(failSave)throw new Error('Simulated outage');if(!saved.has(id))saved.set(id,{...input,id,source,createdAt:'2026-10-13T12:00:00Z',updatedAt:'2026-10-13T12:00:00Z'});return saved.get(id);}};
 class TestScans extends TempoScans {decide(user,id,scanId,selection,ignored){return super.decide(user,id,scanId,selection,ignored,events);}}
-const scans=new TestScans(store,async()=>{analyses++;return {summary:'Un examen et une remise.',proposals:[{id:randomUUID(),event,page:1,note:''},{id:randomUUID(),event:{...event,title:'Remise du travail',allDay:true,startTime:null,endTime:null},page:1,note:''}]};});
+const scans=new TestScans(store,async input=>{assert(input.eventTypes.some(type=>type.id===examType.id));analyses++;return {summary:'Un examen et une remise.',proposals:[{id:randomUUID(),event,page:1,note:''},{id:randomUUID(),event:{...event,title:'Remise du travail',allDay:true,startTime:null,endTime:null},page:1,note:''}]};},undefined,types);
 const pdf=Buffer.from('%PDF-1.4\nfixture');
 await store.upload('oli','old','Ancien cours.pdf',null,pdf,true);
 await scans.kick('oli');await scans.wait();assert.equal(analyses,0);
@@ -28,7 +30,7 @@ const browser=await chromium.launch({executablePath:process.env.CHROME_BIN||'/us
 const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'fr-CA'}),errors=[];
 context.on('page',page=>page.on('pageerror',error=>errors.push(error.message)));
 await context.route('**/memo/api/auth/**',route=>route.fulfill({json:account}));
-await context.route('**/api/calendar/events',route=>route.fulfill({json:{events:[...saved.values()],aiAvailable:true}}));
+await context.route('**/api/calendar/events',async route=>route.fulfill({json:{events:[...saved.values()],eventTypes:await types.list("oli"),aiAvailable:true}}));
 await context.route('**/api/library**',async route=>{
   const request=route.request(),headers={...request.headers()};if(request.method()!=='GET')headers.origin=new URL(request.url()).origin;
   const response=await api(new Request(request.url(),{method:request.method(),headers,...(request.method()==='GET'?{}:{body:request.postDataBuffer()})}));
@@ -36,7 +38,7 @@ await context.route('**/api/library**',async route=>{
   await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
 });
 const page=await context.newPage();
-const rescan=async()=>{const file=page.locator('.library-file-entry').filter({hasText:'Ancien cours.pdf'});await file.locator('summary').click();await file.getByRole('button',{name:/Scanner pour Tempo|Relancer le scan Tempo/}).click();};
+const rescan=async()=>{const file=page.locator('.library-file-entry').filter({hasText:'Ancien cours.pdf'});await file.getByRole('button',{name:/Scanner pour Tempo|Relancer le scan Tempo/}).click();};
 try{
   await page.goto('http://localhost:3000/?section=library');await expect(page.locator('.library-file-entry')).toHaveCount(1);assert.equal(analyses,0);
   await rescan();await expect(page.locator('.library-tempo-notification')).toContainText('2 événements',{timeout:15000});assert.equal(saved.size,0);
@@ -44,15 +46,26 @@ try{
   await page.getByRole('button',{name:'Vérifier les propositions',exact:true}).click();const dialog=page.locator('.library-tempo-review');
   await dialog.locator('.library-tempo-proposal-heading input').nth(1).uncheck();await dialog.getByText('Modifier les détails',{exact:true}).first().click();await dialog.getByLabel('Titre',{exact:true}).first().fill('Examen corrigé');
   failSave=true;await dialog.getByRole('button',{name:'Ajouter 1 événement',exact:true}).click();await expect(dialog.getByRole('alert')).toBeVisible();assert.equal(saved.size,0);await expect(dialog.getByLabel('Titre',{exact:true}).first()).toHaveValue('Examen corrigé');
-  failSave=false;await dialog.getByRole('button',{name:'Ajouter 1 événement',exact:true}).click();await expect(dialog).toHaveCount(0);await expect(page.locator('.library-tempo-notification')).toHaveCount(0);assert.equal(saved.size,1);assert.equal([...saved.values()][0].title,'Examen corrigé');
+  failSave=false;await dialog.getByRole('button',{name:'Ajouter 1 événement',exact:true}).click();await expect(dialog).toHaveCount(0);await expect(page.locator('.library-tempo-notification')).toHaveCount(0);assert.equal(saved.size,1);assert.equal([...saved.values()][0].title,'Examen corrigé');assert.equal([...saved.values()][0].typeId,examType.id);
   await rescan();await scans.wait();await page.getByRole('button',{name:'Actualiser la bibliothèque',exact:true}).click();await expect(page.locator('.library-tempo-notification')).toHaveCount(0);assert.equal(saved.size,1);
   await page.locator('.library-file-input').setInputFiles({name:'Nouveau cours.pdf',mimeType:'application/pdf',buffer:pdf});await expect(page.locator('.library-tempo-notification')).toContainText('2 événements',{timeout:15000});assert.equal(analyses,3);
   await page.screenshot({path:resolve(output,'tempo-notification-desktop.png'),animations:'disabled'});
   const tempo=await context.newPage();await tempo.goto('http://localhost:3000/calendar/');await expect(tempo.locator('#tempo-library-notifications')).toContainText('2 événements');await expect(tempo.locator('[data-action="go-documents"]')).toHaveCount(0);await expect(tempo.locator('#tempo-notifications-count')).toHaveText('2');
   await tempo.locator('[data-action="tempo-review"]').first().click();await expect(tempo.locator('.document-review-dialog')).toBeVisible();await expect(tempo.locator('.proposal-source a').first()).toHaveAttribute('href',/section=library&file=.+&page=1/);
+  await tempo.locator('.proposal-editor summary').first().click();await expect(tempo.locator('[name="typeId"]').first()).toHaveValue(examType.id);await expect(tempo.locator('.proposal-source').first()).toContainText('Examen');
   await tempo.getByRole('button',{name:'Plus tard',exact:true}).click();await tempo.reload();await expect(tempo.locator('#tempo-library-notifications')).toContainText('2 événements');
-  await tempo.setViewportSize({width:390,height:844});await tempo.locator('#tempo-notifications-button').click();assert(await tempo.locator('dialog').evaluate(node=>node.scrollWidth<=node.clientWidth+1),'Mobile review overflow');await tempo.screenshot({path:resolve(output,'tempo-review-mobile.png'),animations:'disabled'});
+  await tempo.setViewportSize({width:390,height:844});await tempo.locator('.menu-button').click();await tempo.locator('#tempo-notifications-button').click();assert(await tempo.locator('dialog').evaluate(node=>node.scrollWidth<=node.clientWidth+1),'Mobile review overflow');await tempo.screenshot({path:resolve(output,'tempo-review-mobile.png'),animations:'disabled'});
   await tempo.locator('#proposal-select-all').uncheck();await tempo.locator('#document-import-events').click();await expect(tempo.locator('dialog')).toHaveCount(0);await expect(tempo.locator('#tempo-library-notifications')).toBeHidden();assert.equal(saved.size,1);
   await tempo.reload();await expect(tempo.locator('#tempo-library-notifications')).toBeHidden();await page.reload();await expect(page.locator('.library-tempo-notification')).toHaveCount(0);
+  const chosen=await types.create('oli',randomUUID(),{name:'Rendez-vous',importance:3});
+  await page.locator('.library-file-input').setInputFiles({name:'Troisième cours.pdf',mimeType:'application/pdf',buffer:pdf});
+  await expect(page.locator('.library-tempo-notification')).toContainText('2 événements',{timeout:15000});
+  await tempo.reload();await expect(tempo.locator('#tempo-notifications-count')).toHaveText('2');
+  await tempo.locator('.menu-button').click();await tempo.locator('#tempo-notifications-button').click();
+  await tempo.locator('.proposal-checkbox').nth(1).uncheck();await tempo.locator('.proposal-editor summary').first().click();
+  await expect(tempo.locator('[name="typeId"]').first()).toHaveValue(examType.id);
+  await tempo.locator('[name="typeId"]').first().selectOption(chosen.id);
+  await tempo.locator('#document-import-events').click();await expect(tempo.locator('dialog')).toHaveCount(0);
+  assert.equal(saved.size,2);assert.equal([...saved.values()][1].typeId,chosen.id);
   assert.deepEqual(errors,[]);console.log('Library/Tempo UI passed: existing-file rescan, new-file automatic scan, persisted notifications, editable approval, failure retry, decline, source links and mobile layout.');
 }finally{await browser.close();await rm(temporary,{recursive:true,force:true});}

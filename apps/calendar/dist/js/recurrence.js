@@ -4,6 +4,10 @@ const DAY = 86_400_000;
 const dayNumber = date => Math.floor(date.getTime() / DAY);
 const mondayOffset = date => (date.getUTCDay() + 6) % 7;
 
+export function isFrequentRecurrence(rule) {
+  return Boolean(rule && ((rule.frequency === "daily" && rule.interval <= 21) || (rule.frequency === "weekly" && rule.interval <= 3)));
+}
+
 // Expand only the requested civil-date window. A series stays one stored event;
 // occurrence dates never depend on browser time zone or daylight saving time.
 export function occurrencesBetween(event, start, end) {

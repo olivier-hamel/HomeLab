@@ -1,22 +1,28 @@
 import { MediaError, record } from "../media/core.ts";
 
+export const DEFAULT_EVENT_TYPE_ID = "none";
+export function eventTypeId(value: unknown): string {
+  return value === undefined || value === DEFAULT_EVENT_TYPE_ID ? DEFAULT_EVENT_TYPE_ID : eventId(value);
+}
+
 export type Recurrence = {
   frequency: "daily" | "weekly" | "monthly" | "yearly";
   interval: number; weekdays: number[]; until: string | null; count: number | null;
 };
 export type EventInput = {
   title: string; description: string; date: string; endDate: string;
-  startTime: string | null; endTime: string | null; allDay: boolean; recurrence: Recurrence | null;
+  startTime: string | null; endTime: string | null; allDay: boolean; recurrence: Recurrence | null; typeId: string;
 };
 export type EventSource = { documentId: string; documentName: string; proposalId: string; page: number | null; origin?: "library" };
 export type CalendarEvent = EventInput & { id: string; createdAt: string; updatedAt: string; source?: EventSource };
 export const eventSchema = {
   type: "object", additionalProperties: false,
   properties: {
+    typeId: { type: "string", description: "ID of the most appropriate eventTypes entry, based on the event title. Use none only when no named type fits." },
     title: { type: "string", description: "Short title in the user's language, at most 160 characters." },
     description: { type: "string", description: "Only details supplied by the user; empty if none. At most 4000 characters." },
-    date: { type: "string", description: "Start date YYYY-MM-DD in America/Toronto." },
-    endDate: { type: "string", description: "End date YYYY-MM-DD, inclusive for all-day events." },
+    date: { type: "string", description: "Start date YYYY-MM-DD in America/Toronto of the first occurrence only. For weekly schedules, use the first selected weekday within the schedule's date range." },
+    endDate: { type: "string", description: "End date YYYY-MM-DD of the first occurrence only, inclusive for all-day events. Usually equal to date; advance for overnight or explicitly multi-day occurrences. Never use the semester or recurring series ending here; use recurrence.until." },
     startTime: { type: ["string", "null"], description: "HH:mm in America/Toronto; null for all-day events." },
     endTime: { type: ["string", "null"], description: "HH:mm in America/Toronto; null for all-day events." },
     allDay: { type: "boolean" },
@@ -26,12 +32,16 @@ export const eventSchema = {
         frequency: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
         interval: { type: "integer", minimum: 1, maximum: 99, description: "Repeat every N days/weeks/months/years; 2 for every other week." },
         weekdays: { type: "array", items: { type: "integer", minimum: 0, maximum: 6 }, maxItems: 7, description: "For weekly rules only: 0=Sunday through 6=Saturday. Otherwise empty." },
-        until: { type: ["string", "null"], description: "Inclusive last occurrence start date YYYY-MM-DD, or null." },
+        until: { type: ["string", "null"], description: "Inclusive cutoff YYYY-MM-DD for occurrence start dates, or null. Use the schedule or semester ending here, never in endDate." },
         count: { type: ["integer", "null"], minimum: 1, maximum: 1000, description: "Number of occurrences, including the first, or null. Never set both count and until." },
       }, required: ["frequency", "interval", "weekdays", "until", "count"],
     }] },
-  }, required: ["title", "description", "date", "endDate", "startTime", "endTime", "allDay", "recurrence"],
+  }, required: ["title", "description", "date", "endDate", "startTime", "endTime", "allDay", "recurrence", "typeId"],
 };
+
+export function eventSchemaForTypes(types: { id: string }[]) {
+  return { ...eventSchema, properties: { ...eventSchema.properties, typeId: { ...eventSchema.properties.typeId, enum: types.map(type => type.id) } } };
+}
 
 export function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value < "0001-01-01") return false;
@@ -67,5 +77,5 @@ export function validateEvent(value: unknown): EventInput {
     if (typeof row.startTime !== "string" || typeof row.endTime !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(row.startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(row.endTime)) throw new MediaError("input", "Ajoute une heure de début et de fin valides.", 400);
     if (`${row.endDate}T${row.endTime}` <= `${row.date}T${row.startTime}`) throw new MediaError("input", "La fin doit être après le début de l’événement.", 400);
   }
-  return { title: row.title.trim(), description: row.description.trim(), date: row.date, endDate: row.endDate, allDay: row.allDay, startTime: row.startTime as string | null, endTime: row.endTime as string | null, recurrence: validateRecurrence(row.recurrence, row.date) };
+  return { title: row.title.trim(), description: row.description.trim(), date: row.date, endDate: row.endDate, allDay: row.allDay, startTime: row.startTime as string | null, endTime: row.endTime as string | null, recurrence: validateRecurrence(row.recurrence, row.date), typeId: eventTypeId(row.typeId) };
 }

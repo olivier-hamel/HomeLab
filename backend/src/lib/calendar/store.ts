@@ -1,7 +1,8 @@
 import { type Collection } from "mongodb";
 import { database } from "../database.ts";
 import { MediaError } from "../media/core.ts";
-import { eventId, validateEvent, type CalendarEvent, type EventInput, type EventSource } from "./events.ts";
+import { DEFAULT_EVENT_TYPE_ID, eventId, validateEvent, type CalendarEvent, type EventInput, type EventSource } from "./events.ts";
+import { CalendarEventTypeStore, assertEventType, resolveEventType } from "./event-types.ts";
 
 export type StoredEvent = CalendarEvent & { username: string };
 let collectionPromise: Promise<Collection<StoredEvent>> | null = null;
@@ -23,13 +24,16 @@ function owner(username: string) {
 }
 export class CalendarEventStore {
   private collection: () => Promise<Collection<StoredEvent>>;
-  constructor(collection = eventCollection) { this.collection = collection; }
+  readonly types: CalendarEventTypeStore;
+  constructor(collection = eventCollection, types = new CalendarEventTypeStore()) { this.collection = collection; this.types = types; }
   async list(username: string): Promise<CalendarEvent[]> {
     const events = await (await this.collection()).find({ username: owner(username) }).sort({ date: 1, startTime: 1, id: 1 }).toArray();
-    return events.map(publicEvent);
+    const types = await this.types.list(username);
+    return events.map(event => ({ ...publicEvent(event), typeId: resolveEventType(event.typeId, types) }));
   }
   async create(username: string, input: EventInput, requestId: string, source?: EventSource) {
     const id = eventId(requestId);
+    input = { ...validateEvent(input), typeId: assertEventType(input.typeId, await this.types.list(username)) };
     const now = new Date().toISOString();
     const collection = await this.collection();
     const filter = { username: owner(username), id };
@@ -41,14 +45,22 @@ export class CalendarEventStore {
     }
     const event = await collection.findOne(filter);
     if (!event) throw new Error("Event was not saved");
-    return publicEvent(event);
+    return { ...publicEvent(event), typeId: resolveEventType(event.typeId, await this.types.list(username)) };
   }
   async update(username: string, id: string, input: EventInput, version: string) {
+    input = { ...validateEvent(input), typeId: assertEventType(input.typeId, await this.types.list(username)) };
     const collection = await this.collection();
     const updatedAt = new Date(Math.max(Date.now(), Date.parse(version) + 1)).toISOString();
     const event = await collection.findOneAndUpdate({ username: owner(username), id, updatedAt: version }, { $set: { ...input, updatedAt } }, { returnDocument: "after" });
     if (!event) await this.explainMissing(collection, username, id);
-    return publicEvent(event!);
+    return { ...publicEvent(event!), typeId: resolveEventType(event!.typeId, await this.types.list(username)) };
+  }
+  async clearType(username: string, id: string) {
+    const collection = await this.collection();
+    const filter = { username: owner(username), typeId: id };
+    const affected = await collection.find(filter).sort({ id: 1 }).toArray();
+    const updatedAt = new Date(affected.reduce((latest, event) => Math.max(latest, Date.parse(event.updatedAt) + 1), Date.now())).toISOString();
+    await collection.updateMany(filter, { $set: { typeId: DEFAULT_EVENT_TYPE_ID, updatedAt } });
   }
   async remove(username: string, id: string, version: string) {
     const collection = await this.collection();

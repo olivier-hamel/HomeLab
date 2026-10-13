@@ -47,7 +47,16 @@ export function validateAnalysis(value: unknown) {
     const proposal = record(value);
     if (proposal.page !== null && (!Number.isInteger(proposal.page) || (proposal.page as number) < 1 || (proposal.page as number) > 1000)) throw new Error("Invalid source page");
     if (typeof proposal.note !== "string" || proposal.note.length > 500) throw new Error("Invalid note");
-    return { id: randomUUID(), event: validateEvent(proposal.event), page: proposal.page as number | null, note: proposal.note.trim() };
+    const event = validateEvent(proposal.event);
+    // A first session spanning the entire bounded weekly series is ambiguous:
+    // Gemini likely put the semester ending in endDate. Do not import it or
+    // guess a duration. This check is specific to PDF extraction; manually
+    // entered events still support overlapping, multi-day occurrences.
+    if (event.recurrence?.frequency === "weekly" && event.endDate === event.recurrence.until &&
+      Date.parse(event.endDate) - Date.parse(event.date) >= event.recurrence.interval * 7 * 86_400_000) {
+      throw new MediaError("ai_output", "L’analyse confond la fin d’une séance avec la fin de sa répétition. Relance le scan du document.", 502);
+    }
+    return { id: randomUUID(), event, page: proposal.page as number | null, note: proposal.note.trim() };
   });
   return { summary: row.summary.trim(), proposals };
 }

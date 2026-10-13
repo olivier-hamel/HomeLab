@@ -1,3 +1,4 @@
+import {eventTypeFixture} from "./helpers/calendar-types.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -9,7 +10,7 @@ import {MediaError} from '../src/lib/media/core.ts';
 
 const origin='https://homelab.test';
 const pdf=Buffer.from('%PDF-1.4\nfixture\n%%EOF');
-const draft={title:'Examen',description:'Salle 204',date:'2026-10-20',endDate:'2026-10-20',startTime:'09:00',endTime:'11:00',allDay:false,recurrence:null};
+const draft={title:'Examen',description:'Salle 204',date:'2026-10-20',endDate:'2026-10-20',startTime:'09:00',endTime:'11:00',allDay:false,recurrence:null,typeId:"none"};
 function collectionFixture(library=false) {
  const rows=[];
  const matches=(row,filter)=>Object.entries(filter).every(([key,value])=>value&&typeof value==='object'&&'$in' in value?value.$in.includes(row[key]):row[key]===value);
@@ -25,7 +26,7 @@ function collectionFixture(library=false) {
 function fixture(fetcher=async()=>{throw new Error('unexpected provider request');}) {
  const df=collectionFixture(),ef=collectionFixture(),lf=collectionFixture(true);
  const folders=new CalendarFolderStore(async()=>lf.collection);
- const documents=new CalendarDocumentStore(async()=>df.collection,folders),events=new CalendarEventStore(async()=>ef.collection);
+ const documents=new CalendarDocumentStore(async()=>df.collection,folders),events=new CalendarEventStore(async()=>ef.collection, eventTypeFixture().types);
  const authenticate=async request=>{const username=request.headers.get('x-test-account');if(!username)throw new MediaError('account_session','Connexion requise',401);return{user:{username},accounts:[]};};
  const api=createCalendarApi(fetcher,events,authenticate,documents);
  const call=(path='',method='GET',body,username='oli',headers={})=>api(new Request(`${origin}/api/calendar/documents${path}`,{method,headers:{Origin:origin,'X-Test-Account':username,...(body!==undefined?{'X-Calendar-Request':'1','Content-Type':'application/json'}:{}),...headers},...(body!==undefined?{body:body instanceof Uint8Array?body:JSON.stringify(body)}:{})}));
