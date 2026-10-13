@@ -10,16 +10,17 @@ export function rtspInput(config: CameraConfig, quality: Quality) {
   return `rtsp://${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@${cameraHost()}:554/${quality === "hd" ? "stream1" : "stream2"}`;
 }
 export function streamArguments(input: string, directory: string) {
-  // The C200 can send backward audio timestamps. Arrival times and asynchronous
-  // resampling keep AAC monotonic. Preserve one common input clock, then shift
-  // it to zero: FFmpeg 5 otherwise produces different audio/video epoch offsets.
+  // Timestamp both decoded tracks against one relay clock. C200/FFmpeg 5 can
+  // retain different RTP epoch offsets even with input clock normalization.
+  // Resetting each track separately also loses sync while waiting for a keyframe.
+  const origin = (Date.now() / 1000).toFixed(3);
   return ["-hide_banner", "-loglevel", "error", "-nostdin", "-fflags", "+nobuffer+discardcorrupt", "-flags", "low_delay",
     "-analyzeduration", "200000", "-probesize", "32768", "-rtsp_transport", "tcp", "-reorder_queue_size", "0", "-use_wallclock_as_timestamps", "1", "-timeout", "10000000", "-copyts", "-start_at_zero", "-i", input,
     // Copying H.264 keeps the camera's roughly two-second keyframe interval.
     // A shared, bounded encoder produces independently decodable 600 ms chunks.
     "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-threads", "2",
-    "-vf", "fps=20", "-fps_mode", "passthrough", "-g", "12", "-keyint_min", "12", "-sc_threshold", "0", "-bf", "0", "-flags", "+cgop", "-crf", "23", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-af", "aresample=async=1000:first_pts=0", "-ar", "16000", "-b:a", "48k", "-max_interleave_delta", "100000", "-max_delay", "0", "-flush_packets", "1",
+    "-vf", `setpts=(time(0)-${origin})/TB,fps=20`, "-fps_mode", "passthrough", "-g", "12", "-keyint_min", "12", "-sc_threshold", "0", "-bf", "0", "-flags", "+cgop", "-crf", "23", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-af", `asetpts=(time(0)-${origin})/TB,aresample=async=1000:first_pts=0`, "-ar", "16000", "-b:a", "48k", "-max_interleave_delta", "100000", "-max_delay", "0", "-flush_packets", "1",
     "-f", "hls", "-hls_time", "0.6", "-hls_list_size", "6", "-hls_delete_threshold", "2", "-hls_flags", "delete_segments+omit_endlist+temp_file+independent_segments+program_date_time",
     "-hls_segment_filename", join(directory, "segment-%09d.ts"), join(directory, "index.m3u8")];
 }
@@ -31,9 +32,15 @@ export class TapoStreams implements CameraStreams {
   constructor(launch = spawn) { this.launch = launch; }
   private dispose(job: Job) {
     if (job.expired) return;
-    job.expired = true; clearInterval(job.timer); job.child.kill("SIGKILL");
-    job.child.once("close", () => { void rm(job.directory, { recursive: true, force: true }); });
-    if (job.child.exitCode !== null) void rm(job.directory, { recursive: true, force: true });
+    job.expired = true; clearInterval(job.timer);
+    if (job.child.exitCode !== null || job.child.signalCode !== null) {
+      void rm(job.directory, { recursive: true, force: true }); return;
+    }
+    // Let FFmpeg send RTSP TEARDOWN and release the C200's limited sessions.
+    const force = setTimeout(() => job.child.kill("SIGKILL"), 2000);
+    force.unref();
+    job.child.once("close", () => { clearTimeout(force); void rm(job.directory, { recursive: true, force: true }); });
+    job.child.kill("SIGTERM");
   }
   reset() {
     for (const job of this.jobs.values()) void job.then(value => this.dispose(value), () => {});
