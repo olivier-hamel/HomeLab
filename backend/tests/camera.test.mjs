@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtemp, readFile, stat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { CameraSettings, cameraHost } from '../src/lib/camera/config.ts';
 import { createCameraApi } from '../src/lib/camera/api.ts';
 import { TapoStreams, rtspInput, streamArguments } from '../src/lib/camera/stream.ts';
@@ -87,7 +87,9 @@ test('RTSP input escapes credentials and the relay bounds decoding, encoding and
   const args = streamArguments('rtsp://fixture', '/tmp/output');
   assert.ok(args.includes('delete_segments+omit_endlist+temp_file+independent_segments+program_date_time'));
   assert.equal(args[args.indexOf('-tune') + 1], 'zerolatency');
-  assert.equal(args[args.indexOf('-g') + 1], '12');
+  assert.equal(args[args.indexOf('-g') + 1], '10');
+  assert.equal(args[args.indexOf('-threads') + 1], '1', 'The decoder must not accumulate a queue of live frames');
+  assert.ok(args.indexOf('-threads') < args.indexOf('-i'), 'Decoder options must precede the RTSP input');
   assert.equal(args[args.indexOf('-max_interleave_delta') + 1], '100000');
   assert.equal(args[args.indexOf('-timeout') + 1], '10000000');
   const control = new TapoControl();
@@ -113,20 +115,40 @@ test('C200 movement omits unsupported optical zoom, uses its minimum one-second 
   await control.stop(config);
   assert.match(bodies[2], /<Stop\b/);
 });
+test('batched camera audio keeps its full sample duration instead of collapsing onto packet arrival times', async () => {
+  const args = streamArguments('rtsp://fixture', '/tmp/output');
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=8000:duration=3',
+      '-af', `asetnsamples=n=4000:p=0,${args[args.indexOf('-af') + 1]}`, '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 's16le', 'pipe:1']);
+    let bytes = 0; child.stdout.on('data', chunk => { bytes += chunk.length; }); child.stderr.resume();
+    child.once('error', reject); child.once('close', code => code ? reject(new Error('Audio clock regression failed')) : resolve(bytes / (16000 * 2)));
+  });
+  assert.ok(result >= 3 && result < 3.5, `Three seconds of batched samples must remain continuous audio, received ${result}s`);
+});
 test('a real FFmpeg relay shares one encoder and aligns absolute audio/video clocks in playable short segments', async () => {
   let starts = 0;
+  const fixture = await mkdtemp(join(tmpdir(), 'camera-input-'));
+  const input = join(fixture, 'camera.mkv');
+  // Exercise the decoder with interleaved compressed tracks, as RTSP does.
+  // A multi-output lavfi source does not obey -re pacing independently for audio.
+  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=20', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=8000',
+    '-t', '3', '-c:v', 'libx264', '-preset', 'ultrafast', '-g', '20', '-bf', '0', '-c:a', 'pcm_mulaw', input]);
   const streams = new TapoStreams((_binary, args, options) => {
     starts++;
-    const output = args.slice(args.indexOf('-map'));
-    const clock = args.slice(args.indexOf('-copyts'), args.indexOf('-i'));
-    return spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-use_wallclock_as_timestamps', '1', ...clock, '-re', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=20[out0];sine=frequency=440:sample_rate=8000[out1]', ...output], options);
+    const adjusted = [];
+    for (let index = 0; index < args.length; index++) {
+      if (['-rtsp_transport', '-reorder_queue_size', '-timeout'].includes(args[index])) { index++; continue; }
+      if (args[index] === '-i') { adjusted.push('-re', '-stream_loop', '-1', '-i', input); index++; }
+      else adjusted.push(args[index]);
+    }
+    return spawn('ffmpeg', adjusted, options);
   });
   try {
     const [first, second] = await Promise.all([streams.asset(config, 'hd', 'index.m3u8', AbortSignal.timeout(15_000)), streams.asset(config, 'hd', 'index.m3u8', AbortSignal.timeout(15_000))]);
     assert.equal(starts, 1);
     const manifest = new TextDecoder().decode(first); assert.match(manifest, /#EXTM3U/); assert.match(new TextDecoder().decode(second), /#EXTINF/);
     const durations = [...manifest.matchAll(/#EXTINF:([\d.]+)/g)].map(match => Number(match[1]));
-    assert.ok(durations.every(duration => duration <= 0.65), `Live segments must stay short: ${durations}`);
+    assert.ok(durations.every(duration => duration <= 0.55), `Live segments must stay short: ${durations}`);
     assert.match(manifest, /#EXT-X-PROGRAM-DATE-TIME:/);
     assert.match(manifest, /#EXT-X-INDEPENDENT-SEGMENTS/);
     const segment = manifest.match(/segment-\d{9}\.ts/)[0];
@@ -134,14 +156,15 @@ test('a real FFmpeg relay shares one encoder and aligns absolute audio/video clo
     const tracks = await new Promise((resolve, reject) => {
       const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,start_time,duration', '-of', 'json', 'pipe:0']);
       let result = ''; child.stdout.on('data', chunk => { result += chunk; }); child.stderr.resume();
-      child.on('error', reject); child.on('close', code => code ? reject(new Error('Segment probe failed')) : resolve(JSON.parse(result).streams)); child.stdin.end(bytes);
+      child.on('error', reject); child.stdin.on('error', reject); child.on('close', code => code ? reject(new Error('Segment probe failed')) : resolve(JSON.parse(result).streams)); child.stdin.end(bytes);
     });
     assert.ok(tracks.some(track => track.codec_name === 'h264'));
     assert.ok(tracks.some(track => track.codec_name === 'aac'), 'The initial short segment must include audio so the player creates both buffers');
     const video = tracks.find(track => track.codec_type === 'video');
     const audio = tracks.find(track => track.codec_type === 'audio');
+    assert.ok(Number(video.start_time) < 2, 'The probed keyframe must be decoded without waiting for the next GOP (including the MPEG-TS offset)');
     assert.ok(Number(video.start_time) < 10 && Number(audio.start_time) < 10, 'Absolute input clocks must be rebased before MPEG-TS timestamp rollover');
     assert.ok(Math.abs(Number(video.start_time) - Number(audio.start_time)) < 0.25, 'Audio and video must share the same playback clock');
     await assert.rejects(streams.asset(config, 'hd', '../account.json', AbortSignal.timeout(1000)), error => error.status === 404);
-  } finally { streams.reset(); }
+  } finally { streams.reset(); await rm(fixture, { recursive: true, force: true }); }
 });

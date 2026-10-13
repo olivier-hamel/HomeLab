@@ -10,18 +10,24 @@ export function rtspInput(config: CameraConfig, quality: Quality) {
   return `rtsp://${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@${cameraHost()}:554/${quality === "hd" ? "stream1" : "stream2"}`;
 }
 export function streamArguments(input: string, directory: string) {
-  // Timestamp both decoded tracks against one relay clock. C200/FFmpeg 5 can
-  // retain different RTP epoch offsets even with input clock normalization.
-  // Resetting each track separately also loses sync while waiting for a keyframe.
+  // C200/FFmpeg 5 can retain different RTP epochs. Anchor both decoded tracks
+  // to one clock, then advance audio by sample count instead of packet delivery
+  // time: batched RTSP packets must not create holes in the browser audio buffer.
   const origin = (Date.now() / 1000).toFixed(3);
-  return ["-hide_banner", "-loglevel", "error", "-nostdin", "-fflags", "+nobuffer+discardcorrupt", "-flags", "low_delay",
-    "-analyzeduration", "200000", "-probesize", "32768", "-rtsp_transport", "tcp", "-reorder_queue_size", "0", "-use_wallclock_as_timestamps", "1", "-timeout", "10000000", "-copyts", "-start_at_zero", "-i", input,
+  const audioClock = `asetpts='(N/SR+st(0,if(eq(N,0),time(0)-${origin},ld(0))))/TB'`;
+  // Keep the packets consumed during the short probe. +nobuffer discards the
+  // first camera keyframe, delaying video until the next GOP while audio starts.
+  return ["-hide_banner", "-loglevel", "error", "-nostdin", "-fflags", "+discardcorrupt", "-flags", "low_delay",
+    // Input threads belong before -i. Limiting only the encoder leaves FFmpeg's
+    // automatic frame-threaded decoder free to queue many live camera frames.
+    "-threads", "1", "-filter_threads", "1", "-analyzeduration", "200000", "-probesize", "32768", "-fpsprobesize", "0", "-rtsp_transport", "tcp", "-reorder_queue_size", "0", "-use_wallclock_as_timestamps", "1", "-timeout", "10000000", "-copyts", "-start_at_zero", "-i", input,
     // Copying H.264 keeps the camera's roughly two-second keyframe interval.
-    // A shared, bounded encoder produces independently decodable 600 ms chunks.
+    // A shared, bounded encoder produces independently decodable 500 ms chunks.
     "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-threads", "2",
-    "-vf", `setpts=(time(0)-${origin})/TB,fps=20`, "-fps_mode", "passthrough", "-g", "12", "-keyint_min", "12", "-sc_threshold", "0", "-bf", "0", "-flags", "+cgop", "-crf", "23", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-af", `asetpts=(time(0)-${origin})/TB,aresample=async=1000:first_pts=0`, "-ar", "16000", "-b:a", "48k", "-max_interleave_delta", "100000", "-max_delay", "0", "-flush_packets", "1",
-    "-f", "hls", "-hls_time", "0.6", "-hls_list_size", "6", "-hls_delete_threshold", "2", "-hls_flags", "delete_segments+omit_endlist+temp_file+independent_segments+program_date_time",
+    "-vf", `setpts=(time(0)-${origin})/TB,fps=20`, "-fps_mode", "passthrough", "-g", "10", "-keyint_min", "10", "-sc_threshold", "0", "-bf", "0", "-flags", "+cgop", "-crf", "23", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-af", `${audioClock},aresample=async=1`, "-ar", "16000", "-b:a", "48k", "-max_interleave_delta", "100000", "-max_delay", "0", "-flush_packets", "1",
+    // Retention protects in-flight requests; it does not set playback latency.
+    "-f", "hls", "-hls_time", "0.5", "-hls_list_size", "12", "-hls_delete_threshold", "6", "-hls_flags", "delete_segments+omit_endlist+temp_file+independent_segments+program_date_time",
     "-hls_segment_filename", join(directory, "segment-%09d.ts"), join(directory, "index.m3u8")];
 }
 type Job = { directory: string; child: ChildProcess; touched: number; failed: boolean; expired: boolean; timer: ReturnType<typeof setInterval> };
