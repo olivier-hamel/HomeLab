@@ -83,7 +83,19 @@ function render(state, reason = "initial") {
       cell.setAttribute("aria-selected", String(selected));
       button.tabIndex = selected ? 0 : -1;
     }
-  } else content.innerHTML = renderCalendar(state);
+  } else {
+    const previousScroll = content.querySelector(".time-body")?.scrollTop;
+    const previousHorizontalScroll = content.querySelector(".week-view")?.scrollLeft;
+    const sameTimeView = renderedView === state.view;
+    content.innerHTML = renderCalendar(state);
+    const timeBody = content.querySelector(".time-body");
+    if (timeBody) {
+      const timeView = content.querySelector(".time-view");
+      timeView.style.setProperty("--time-scrollbar-width", `${timeBody.offsetWidth - timeBody.clientWidth}px`);
+      timeBody.scrollTop = sameTimeView && previousScroll !== undefined ? previousScroll : 8 * 64;
+      if (sameTimeView && previousHorizontalScroll !== undefined) timeView.scrollLeft = previousHorizontalScroll;
+    }
+  }
   renderedPeriod = monthKey;
   renderedView = state.view;
   renderedPage = state.page;
