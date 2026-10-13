@@ -6,6 +6,18 @@ export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 export function geminiApiKey() { return process.env.GEMINI_API_KEY?.trim() || ""; }
 export function geminiModel() { return process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL; }
 
+export class GeminiProviderError extends MediaError {
+  upstreamStatus: number;
+  upstreamCode: string;
+  model: string;
+  constructor(code: string, message: string, status: number, upstreamStatus: number, upstreamCode: string, model: string) {
+    super(code, message, status);
+    this.upstreamStatus = upstreamStatus;
+    this.upstreamCode = upstreamCode;
+    this.model = model;
+  }
+}
+
 export async function generateGeminiObject(options: {
   instruction: string; input: unknown; schema: object; signal: AbortSignal;
   fetcher?: Fetcher; timeout?: number;
@@ -13,8 +25,9 @@ export async function generateGeminiObject(options: {
 }): Promise<unknown> {
   const key = geminiApiKey();
   if (!key) throw new MediaError("ai_setup", "La création assistée est indisponible. Tu peux remplir les détails manuellement.", 503);
+  const model = geminiModel();
   return bounded("Gemini", options.timeout ?? 20_000, options.signal, async signal => {
-    const response = await (options.fetcher ?? fetch)(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
+    const response = await (options.fetcher ?? fetch)(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       signal, cache: "no-store", redirect: "error",
       body: JSON.stringify({
@@ -24,8 +37,15 @@ export async function generateGeminiObject(options: {
       }),
     });
     if (!response.ok) {
-      await response.body?.cancel();
-      throw new MediaError("ai_unavailable", response.status === 429 ? "Gemini est occupé. Réessaie dans un instant ou saisis les détails manuellement." : "Gemini n’a pas pu préparer l’événement. Réessaie ou saisis les détails manuellement.", response.status === 429 ? 429 : 502);
+      const envelope = await readLimited(response, 16 * 1024).then(bytes => record(JSON.parse(new TextDecoder().decode(bytes)))).catch(() => ({}));
+      const reported = record(record(envelope).error).status;
+      const upstreamCode = typeof reported === "string" && ["INVALID_ARGUMENT", "UNAUTHENTICATED", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "NOT_FOUND", "UNAVAILABLE", "INTERNAL", "DEADLINE_EXCEEDED"].includes(reported) ? reported : "UNKNOWN";
+      const [code, message] = response.status === 400 ? ["ai_request", "Gemini a refusé la requête d’analyse (HTTP 400). Vérifie sa compatibilité avec le modèle configuré."]
+        : [401, 403].includes(response.status) ? ["ai_credentials", "Gemini refuse la clé API ou ses autorisations. Vérifie la configuration du serveur."]
+        : response.status === 404 ? ["ai_model", "Le modèle Gemini configuré n’est pas disponible. Vérifie GEMINI_MODEL sur le serveur."]
+        : ["ai_unavailable", response.status === 429 ? "Gemini est occupé. Réessaie dans un instant ou saisis les détails manuellement." : "Gemini n’a pas pu préparer l’événement. Réessaie ou saisis les détails manuellement."];
+      // Do not expose upstream messages, request bodies, PDF data or credentials.
+      throw new GeminiProviderError(code, message, response.status === 429 ? 429 : 502, response.status, upstreamCode, model);
     }
     try {
       const limit = options.maxResponseBytes ?? 32 * 1024;
