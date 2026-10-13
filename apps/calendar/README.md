@@ -187,6 +187,11 @@ l’action de l’utilisateur. Les dates relatives suivent la date actuelle
 
 ## Documents PDF
 
+Le backend propose aussi une [connexion Moodle personnelle en lecture seule](../../docs/moodle.md),
+protégée par la session HomeLab et une liste de comptes autorisés. Ce connecteur
+fournit les cours, fichiers et textes via l’API; il n’ajoute pas encore de
+parcours d’import Moodle à la bibliothèque Tempo.
+
 Pour tester avec la **vraie API Gemini** avant de déployer, configure
 `GEMINI_API_KEY` dans `backend/.env`, puis lance `npm run test:pdf` depuis
 `backend/`, ou `npm run test:pdf -- "/chemin/document.pdf"`. Ce test réutilise

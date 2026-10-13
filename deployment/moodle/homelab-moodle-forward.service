@@ -1,0 +1,28 @@
+[Unit]
+Description=Private read-only Moodle MCP SSH forward for HomeLab
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# The wrapper needs root only to enter Docker's network namespace. It drops to
+# homelab-moodle before running SSH; the private key belongs to that account.
+Environment=MOODLE_FORWARD_MODE=docker
+Environment=MOODLE_BACKEND_CONTAINER=homelab-backend-1
+EnvironmentFile=-/etc/default/homelab-moodle-forward
+ExecStart=/usr/local/libexec/homelab-moodle-forward
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/var/lib/homelab-moodle
+
+[Install]
+WantedBy=multi-user.target
