@@ -1,8 +1,9 @@
 # Tempo
 
 Tempo est le calendrier de HomeLab, entièrement en français. Son nom évoque le
-rythme des journées et accompagne Mémo. L’accueil présente la journée et la
-semaine en cours, avec des vues par mois, semaine et jour. Les événements
+rythme des journées et accompagne Mémo. L’accueil sert de point de départ :
+recherche Web, tâches du jour, agenda et événements des 14 prochains jours,
+avec des vues par mois, semaine et jour. Les événements
 sont enregistrés dans MongoDB pour chaque compte HomeLab. Tu peux les créer
 en langage naturel avec Gemini, vérifier les détails avant l’ajout, puis
 les modifier ou les supprimer. Aucun événement de démonstration n’est inclus.
@@ -49,7 +50,7 @@ commit → push → pull → mise à jour.
 - `scripts/prepare-pdf.mjs` : préparation des ressources PDF.js, exécutée par le serveur de développement et le build Docker.
 - `dist/js/account.js` : compte HomeLab et protection des textes affichés.
 - `dist/js/components/` : menu, vues du calendrier, fenêtres et icônes.
-- `dist/js/components/home.js` : accueil, aperçu de la semaine et raccourcis.
+- `dist/js/components/home.js` : recherche Web, tâches, agenda et prochains événements.
 - `dist/js/components/shell.js` : interface commune et fil d’Ariane.
 - `dist/js/app.js` : assemblage des vues, interactions et raccourcis clavier.
 - `dist/styles/` : thème, styles des composants et mises en page adaptatives.
@@ -62,14 +63,43 @@ n’est nécessaire. Les modules JavaScript natifs séparent les composants.
 Les données passent par `/api/calendar/*` dans le backend HomeLab. La connexion
 MongoDB commune se trouve dans `backend/src/lib/database.ts`, la configuration
 Gemini dans `backend/src/lib/ai/gemini.ts` et le dépôt des événements dans
-`backend/src/lib/calendar/`. Les préférences seules restent dans le navigateur.
+`backend/src/lib/calendar/`. Les préférences et les tâches restent dans le navigateur.
+
+## Accueil et recherche
+
+La recherche centrale propose Google ou DuckDuckGo. Le moteur choisi est
+enregistré sur cet appareil, séparément pour chaque compte; les préférences
+permettent aussi de le changer. Entrée lance la recherche dans l’onglet courant,
+y compris lorsque Tempo est intégré à HomeLab. Le raccourci `/` ramène à
+l’accueil et place le curseur dans la recherche. Sur ordinateur, la recherche
+reçoit le focus à l’ouverture. Sur mobile, le clavier reste fermé au chargement.
+
+« À faire » permet d’ajouter, cocher et supprimer les tâches. Elles sont
+enregistrées dans le navigateur pour chaque compte, sans synchronisation entre
+appareils. Les onglets Tempo du même navigateur se mettent à jour entre eux.
+Les tâches inachevées restent visibles le lendemain; les tâches
+terminées restent affichées le jour où elles ont été cochées. Si le navigateur
+refuse l’enregistrement, la liste fonctionne pour la session et l’indique.
+
+L’agenda met en évidence le rendez-vous en cours ou le prochain rendez-vous.
+L’aperçu « À venir » présente les trois premiers événements des 14 prochains
+jours, avec le nombre total et un accès au calendrier. Il inclut les répétitions
+et les événements qui se poursuivent, même si la semaine courante se termine.
+La bande de dates ouvre les sept prochaines journées. Les textes saisis et
+la position du curseur restent intacts lors des rafraîchissements de l’accueil.
+
+`node scripts/test-calendar-home-ui.mjs`, depuis la racine, vérifie la recherche,
+les tâches, les préférences, les dates, la navigation depuis une iframe et le
+rendu à six tailles d’écran, avec des API simulées. Les captures sont dans
+`artifacts/calendar-home/`.
 
 ## Navigation
 
-L’accueil affiche toujours la journée et la semaine actuelles à Toronto,
-même après avoir consulté d’autres dates. « Voir aujourd’hui » ouvre l’horaire
-du jour, les dates de l’aperçu ouvrent chaque journée et « Voir cette semaine »
-ouvre la vue semaine. « Ouvrir le calendrier » ouvre la vue mois.
+L’accueil affiche toujours la journée actuelle à Toronto et les jours à venir,
+même après avoir consulté d’autres dates. La flèche de la carte « Aujourd’hui »
+ouvre l’horaire du jour, les dates de l’aperçu ouvrent chaque journée et
+la flèche de la carte « À venir » ouvre la vue semaine. « Voir le calendrier »
+et le raccourci « Calendrier » ouvrent la vue mois.
 
 Clique sur une date du mois ou du mini calendrier pour ouvrir sa semaine,
 puis sur un jour pour voir son horaire. Le fil d’Ariane permet de revenir à

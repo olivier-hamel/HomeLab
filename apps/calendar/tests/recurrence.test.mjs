@@ -62,7 +62,7 @@ test('series stop at the maximum supported date and work at year 1',()=>{
 test('home counts actual occurrences and editing clearly targets the whole series',()=>{
   const store=createCalendarStore();store.setEvents([base],{eventsStatus:'ready'});
   const html=renderHome({...store.getState(),today:civilDate(2026,10,1)});
-  assert(html.includes('1 événement cette semaine'));assert(!html.includes('Une semaine tranquille'));
+  assert(html.includes('1 événement dans les 14 prochains jours'));assert(!html.includes('Aucun événement dans les 14 prochains jours'));
   assert(html.includes('data-event-id="series-one"'));
   const dialog=eventDialog({event:base,date:base.date,aiAvailable:true});
   assert(dialog.includes('Tu modifies toute la série'));assert(dialog.includes('Supprimer toute la série?'));assert(dialog.includes('Toutes les 2 semaines'));
