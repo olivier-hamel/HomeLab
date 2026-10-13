@@ -1,4 +1,17 @@
 /* Event controls follow Tempo's palette, spacing and typography. */
+.calendar-task { flex-direction:row; align-items:center; gap:6px; border-left-color:#7f83bd; background:#f0eff8; }
+.calendar-task.is-complete { opacity:.65; }
+.calendar-task.is-complete .event-chip-title { text-decoration:line-through; }
+.calendar-task-check { flex-shrink:0; display:grid; place-items:center; width:19px; height:19px; border:1px solid #979ac1; border-radius:5px; padding:0; color:#5d608c; }
+.calendar-task-check .icon { width:13px; height:13px; }
+.calendar-task-open { display:flex; align-items:center; gap:5px; min-width:0; flex:1; text-align:left; color:inherit; padding:0; }
+.all-day-row .calendar-task .event-chip-time { display:inline; }
+.time-event.calendar-task { flex-direction:row; padding:2px 5px; }
+.time-events > .calendar-task { pointer-events:auto; }
+.task-document-list { max-height:180px; overflow:auto; border:1px solid var(--line); border-radius:8px; padding:12px; }
+#task-details-fields { display:flex; flex-direction:column; gap:17px; }
+#task-details-fields[hidden] { display:none; }
+.task-resource-link { display:inline-flex; align-items:center; gap:4px; color:var(--accent); font-size:12px; margin:8px 12px 0 0; }
 textarea { font: inherit; }
 textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 button:disabled { cursor: wait; opacity: .65; }
@@ -8,10 +21,7 @@ button:disabled { cursor: wait; opacity: .65; }
 .events-status.has-error { background:#fff8f2; color:#875331; border-color:#efdfcf; }
 .events-status button { padding:6px 9px; font-weight:600; white-space:nowrap; text-decoration:underline; text-underline-offset:3px; }
 .month-cell { min-height:0; display:flex; flex-direction:column; cursor:pointer; }
-.month-view { overflow-y:auto; scrollbar-width:thin; }
-.month-weekdays { position:sticky; top:0; background:white; z-index:5; }
-.month-weeks { min-height:calc(var(--week-count) * 110px); }
-.month-weeks:has(.recurring-event-markers) { min-height:calc(var(--week-count) * 132px); }
+.month-view { overflow:hidden; }
 .month-date { height:43px; flex-shrink:0; padding-top:9px; padding-bottom:6px; }
 .month-events { display:flex; flex-direction:column; gap:3px; padding:0 7px 5px; overflow:hidden; min-height:0; }
 .event-chip { display:flex; align-items:center; gap:5px; flex-shrink:0; width:100%; min-width:0; padding:5px 6px; border-radius:5px; background:#edf3ee; color:#355a47; border-left:2px solid #729a82; text-align:left; font-size:10px; line-height:1.25; }
@@ -21,6 +31,8 @@ button:disabled { cursor: wait; opacity: .65; }
 .event-chip-time { white-space:nowrap; color:#587964; font-size:9px; flex-shrink:0; }
 .event-chip-time:empty { display:none; }
 .event-chip-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; font-weight:550; }
+.recurring-event-card { background:#f2f6f0; border-color:#a0b39a; color:#536d4d; }
+.recurring-event-card:hover { background:#e4ede0; border-color:#729a82; }
 .recurring-event-markers { display:flex; flex-wrap:wrap; gap:0 4px; flex-shrink:0; }
 .recurring-event-marker { position:relative; flex:1 1 0; max-width:24px; min-width:8px; height:12px; padding:0; border-radius:4px; color:#729a82; }
 .recurring-event-marker::after { content:""; position:absolute; left:2px; right:2px; top:5px; height:3px; border-radius:2px; background:currentColor; }
@@ -42,6 +54,8 @@ button:disabled { cursor: wait; opacity: .65; }
 .time-event .event-chip-title { order:-1; width:100%; font-size:12px; white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
 .time-event .event-chip-time { font-size:10px; }
 .time-event:hover { background:#d6e8d9; border-color:#7a9c82; }
+.time-event.recurring-event-card { background:#f2f6f0; border-color:#a0b39a; color:#536d4d; }
+.time-event.recurring-event-card:hover { background:#e4ede0; border-color:#729a82; }
 .time-event.short-event { flex-direction:row; align-items:center; gap:7px; padding-top:2px; padding-bottom:2px; }
 .time-event.short-event .event-chip-title { font-size:10px; white-space:nowrap; }
 .time-events { position:absolute; inset:0; pointer-events:none; }
@@ -94,6 +108,9 @@ button:disabled { cursor: wait; opacity: .65; }
 .recurrence-ending { margin-top:17px; grid-template-columns:minmax(0, 1.3fr) minmax(0, 1fr); }
 .recurrence-ending:has(#event-until-field[hidden]):has(#event-count-field[hidden]) { grid-template-columns:1fr; }
 .recurrence-summary { color:var(--muted); font-size:11px; line-height:1.6; margin:12px 0 0; }
+.recurrence-end-suggestion { margin-top:12px; padding-top:12px; border-top:1px solid var(--line-strong); }
+.recurrence-end-suggestion p { color:var(--muted); font-size:11px; line-height:1.6; margin:0 0 8px; }
+.recurrence-end-suggestion button { font-size:11px; text-align:left; }
 .optional-label { font-weight:400; font-size:10px; color:var(--muted); margin-left:6px; }
 .event-zone { display:flex; align-items:center; gap:6px; margin:-5px 0 0; font-size:10px; color:var(--muted); }
 .event-zone .icon { width:12px; height:12px; }
@@ -141,12 +158,9 @@ button:disabled { cursor: wait; opacity: .65; }
   .workspace-actions { gap:5px; } .create-event-button { padding:9px 10px; font-size:11px; gap:5px; min-height:36px; }
   .create-event-button span { font-size:0; } .create-event-button span::after { content:"Créer"; font-size:11px; }
   .month-date { height:35px; padding:6px 0; } .month-events { gap:2px; padding:0 2px 3px; } .event-chip { padding:4px 3px; font-size:8px; border-left-width:2px; } .more-events { font-size:8px; padding:2px 1px; }
-  .month-weeks:has(.recurring-event-markers) { min-height:calc(var(--week-count) * 110px); }
   .month-add-event { display:none; }
-  .week-view { overflow-x:auto; }
-  .week-view .time-heading, .week-view .all-day-row, .week-view .time-scroll { min-width:660px; }
-  .week-view .time-event { padding:5px; }
-  .week-view .time-event .event-chip-title { font-size:11px; }
+  .week-view .time-event { padding:2px; border-left-width:2px; }
+  .week-view .time-event .event-chip-title { font-size:9px; }
   .event-dialog { padding:23px 20px; max-height:calc(100dvh - 24px); max-width:calc(100vw - 24px); } .event-dialog .dialog-heading h2 { font-size:22px; } .event-tabs { margin-bottom:21px; } .event-tabs button { font-size:11px; gap:5px; } .event-datetime { gap:9px; } .event-dialog input[type="date"], .event-dialog input[type="time"] { font-size:13px; padding-left:8px; padding-right:8px; } .event-zone { font-size:9px; flex-wrap:wrap; }
   .event-save-actions { flex-wrap:wrap; } .event-save-actions .danger-link { flex-basis:100%; margin-bottom:5px; } .event-confirm > div { flex-wrap:wrap; } .event-confirm button { flex:1; white-space:nowrap; font-size:11px; } .event-toast { width:max-content; font-size:11px; bottom:14px; gap:10px; }
   .home-event-list { padding-left:19px; padding-right:19px; } .home-event-row { gap:10px; } .home-event-time { width:91px; font-size:10px; } .home-event-row strong { font-size:12px; } .home-event-row > span > span { max-width:170px; }
@@ -163,7 +177,6 @@ button:disabled { cursor: wait; opacity: .65; }
 .event-chip.importance-4 .event-chip-title, .event-chip.importance-5 .event-chip-title { white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .event-chip.importance-5 .event-chip-time { color:#e1ebdd; }
 .event-chip.importance-5:hover { background:#284b35; }
-.month-weeks:has(.event-chip.importance-4), .month-weeks:has(.event-chip.importance-5) { min-height:calc(var(--week-count) * 155px); }
 .recurring-event-marker.importance-1 { color:#a1ad9a; max-width:14px; }
 .recurring-event-marker.importance-1::after { height:2px; }
 .recurring-event-marker.importance-2 { color:#7c9174; }
@@ -198,4 +211,32 @@ button:disabled { cursor: wait; opacity: .65; }
   .event-chip.importance-5 { min-height:38px; padding:6px 3px; font-size:10px; }
   .time-event.importance-4 .event-chip-title { font-size:12px; }
   .time-event.importance-5 .event-chip-title { font-size:13px; }
+}
+@container (max-height: 500px) {
+  .month-date { height:28px; padding-top:1px; padding-bottom:1px; }
+  .month-events { gap:1px; padding-bottom:1px; }
+  .month-events .event-chip { min-height:0; padding:3px 4px; font-size:9px; line-height:1.15; }
+  .month-events .event-chip-title { display:block; white-space:nowrap; }
+  .month-events .event-chip-time { font-size:8px; }
+  .month-events .more-events { padding-top:1px; padding-bottom:1px; }
+  .month-events .recurring-event-marker { height:9px; }
+  .month-events .recurring-event-marker::after { top:3px; }
+  .month-events .calendar-task { padding:1px 4px; }
+  .month-events .calendar-task-check { width:14px; height:14px; }
+  .time-event, .time-event.importance-4, .time-event.importance-5 { padding:2px 4px; gap:1px; }
+  .time-event .event-chip-title, .time-event.importance-4 .event-chip-title, .time-event.importance-5 .event-chip-title { font-size:10px; line-height:1.2; }
+  .time-event .event-chip-time { display:none; }
+  .half-hour { display:none; }
+}
+@container (max-height: 300px) {
+  .hour-label:nth-child(even) { visibility:hidden; }
+}
+@container (max-height: 450px) {
+  .month-date { height:22px; padding-top:1px; padding-bottom:1px; }
+  .month-date .date-number { width:20px; height:20px; font-size:10px; }
+  .month-events .event-chip { padding:1px 3px; font-size:8px; }
+  .month-events .calendar-task-check { width:12px; height:12px; }
+  .month-events .recurring-event-marker { height:6px; }
+  .month-events .recurring-event-marker::after { top:2px; }
+  .month-events .more-events { font-size:8px; line-height:1; padding:1px; }
 }

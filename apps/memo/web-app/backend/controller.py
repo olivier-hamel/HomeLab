@@ -212,7 +212,7 @@ class WebStudy:
         elif kind == "reset":
             self.session = StudySession(self.raw_cards, self.session.config)
             self.history, self.index, self.context = [], -1, None
-            self.notice = "Une nouvelle session commence. À ton rythme."
+            self.notice = "Une nouvelle session commence."
             self.load_next()
         elif kind == "refresh":
             if self.session.mode == "REVIEW" and view is None:

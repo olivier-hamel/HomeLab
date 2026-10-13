@@ -5,11 +5,11 @@ import {eventImportance} from "./event-types.js";
 export const eventCount = count => `${count} événement${count > 1 ? "s" : ""}`;
 export function eventsOnDate(events = [], date) {
   const key = typeof date === "string" ? date : dateKey(date);
-  return events.flatMap(event => occurrencesBetween(event, key, key))
+  return events.flatMap(event => event.kind === "task" ? event.deadline?.date === key ? [event] : [] : occurrencesBetween(event, key, key))
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || (a.startTime || "").localeCompare(b.startTime || "") || a.title.localeCompare(b.title));
 }
 export function eventsInRange(events = [], start, end) {
-  return events.flatMap(event => occurrencesBetween(event, start, end))
+  return events.flatMap(event => event.kind === "task" ? event.deadline?.date >= start && event.deadline?.date <= end ? [event] : [] : occurrencesBetween(event, start, end))
     .sort((a, b) => a.date.localeCompare(b.date) || Number(b.allDay) - Number(a.allDay) || (a.startTime || "").localeCompare(b.startTime || "") || a.title.localeCompare(b.title));
 }
 export function timeLabel(time, format = "24") {
@@ -18,6 +18,7 @@ export function timeLabel(time, format = "24") {
   return format === "24" ? `${hour} h${minute ? ` ${String(minute).padStart(2, "0")}` : ""}` : `${hour % 12 || 12}${minute ? `:${String(minute).padStart(2, "0")}` : ""} ${hour < 12 ? "a.m." : "p.m."}`;
 }
 export function eventTime(event, format = "24") {
+  if (event.kind === "task") return event.deadline ? `Échéance${event.deadline.time ? ` à ${timeLabel(event.deadline.time, format)}` : " dans la journée"}` : "Sans échéance";
   return event.allDay ? "Toute la journée" : `${timeLabel(event.startTime, format)} – ${timeLabel(event.endTime, format)}`;
 }
 const minutes = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
@@ -25,7 +26,7 @@ export function layoutTimedEvents(events, date, types = []) {
   const key = dateKey(date);
   const rows = eventsOnDate(events, key).filter(event => !event.allDay).map(event => ({event,
     start: event.date === key ? minutes(event.startTime) : 0,
-    end: event.endDate === key ? minutes(event.endTime) : 1440,
+    end: event.kind === "task" ? Math.min(1440, minutes(event.startTime) + 15) : event.endDate === key ? minutes(event.endTime) : 1440,
   })).sort((a, b) => a.start - b.start || b.end - a.end);
   // Assign lanes to intersecting groups so no event obscures another event.
   let group = [], groupEnd = -1;
@@ -78,6 +79,8 @@ export function createEventRepository(fetcher = fetch) {
     interpret: (text, selectedDate, signal) => request("interpret", "POST", {text, selectedDate}, signal),
     addEvent: (event, requestId, signal) => request("events", "POST", {event, requestId}, signal),
     updateEvent: (event, input, signal) => request(`events/${event.id}`, "PATCH", {event: input, updatedAt: event.updatedAt}, signal),
+    completeTask: (event, completed, signal) => request(`events/${event.id}`, "PATCH", {completed, updatedAt: event.updatedAt}, signal),
+    syncMoodle: signal => request("moodle-sync", "POST", {}, signal),
     deleteEvent: (event, signal) => request(`events/${event.id}`, "DELETE", {updatedAt: event.updatedAt}, signal),
   };
 }

@@ -132,11 +132,11 @@ try {
  await expect(page.locator('.month-events .more-events')).toBeVisible();
  await page.screenshot({animations:'disabled',path:resolve(output,'month-mobile.png')});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
- // Seven readable day columns scroll together in the mobile week view.
+ // All seven days fit the mobile week without scrolling.
  await page.locator('.more-events').click();await page.locator('.view-switch [data-action="week"]').click();
  const week=page.locator('.week-view');
- assert.equal(await week.evaluate(panel=>panel.scrollWidth>panel.clientWidth),true);
- assert.equal(await page.locator('.time-day-heading').first().evaluate(day=>day.getBoundingClientRect().width>=80),true);
+ assert.equal(await week.evaluate(panel=>panel.scrollWidth<=panel.clientWidth+1),true);
+ await expect(page.locator('.time-day-heading')).toHaveCount(7);
  await page.screenshot({animations:'disabled',path:resolve(output,'week-mobile.png')});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  // Create a biweekly Sunday series manually, retaining one stored event.
@@ -179,7 +179,7 @@ try {
  assert.equal(await page.locator('dialog').evaluate(d=>d.scrollWidth<=d.clientWidth+1),true);
  // Validate weekday selection, change frequency and save the reviewed series.
  await page.getByRole('checkbox',{name:'dimanche',exact:true}).uncheck();await page.locator('#event-save-form button[type="submit"]').click();
- await expect(page.locator('#event-error')).toContainText('jour de la date de début');assert.equal(events.length,0);
+ await expect(page.locator('#event-error')).toContainText('au moins un jour');assert.equal(events.length,0);
  await page.getByRole('checkbox',{name:'dimanche',exact:true}).check();
  await page.locator('#event-save-form button[type="submit"]').click();await expect(page.locator('dialog')).toHaveCount(0);assert.equal(events.length,1);
  assert.deepEqual(events[0].recurrence,aiDraft.recurrence);
@@ -223,16 +223,15 @@ try {
  await expect(page.locator('#event-dialog-description')).toContainText('toute la série');await closeClean();
  await page.screenshot({animations:'disabled',path:resolve(output,'recurrence-month-desktop.png')});
  await page.locator('.view-switch [data-action="week"]').click();
- await expect(page.locator('.time-recurring-events .recurring-event-marker')).toHaveCount(3);
- await expect(page.locator('.all-day-row .recurring-event-marker')).toHaveCount(1);
- await expect(page.locator('.time-event')).toHaveCount(4);
+ await expect(page.locator('.time-recurring-events')).toHaveCount(0);
+ await expect(page.locator('.all-day-row .recurring-event-card')).toHaveCount(1);
+ await expect(page.locator('.time-event')).toHaveCount(7);
+ await expect(page.locator('.time-event[data-event-id="routine-weekly"] .event-chip-title')).toHaveText('Rencontre polyorbite');
+ const routine=await page.locator('.time-event[data-event-id="routine-weekly"]').boundingBox();
+ const otherRoutine=await page.locator('.time-event[data-event-id="routine-three-weeks"]').boundingBox();
  const regular=await page.locator('.time-event[data-event-id="appointment"]').boundingBox();
- const marker=await page.locator('.is-timed[data-event-id="routine-weekly"]').boundingBox();
- const otherMarker=await page.locator('.is-timed[data-event-id="routine-three-weeks"]').boundingBox();
- assert(regular.x+regular.width<=marker.x,'Recurring markers do not cover appointments');
- assert(marker.x+marker.width<=otherMarker.x,'Overlapping routines keep separate markers');
- const line=await page.locator('.is-timed[data-event-id="routine-weekly"]').evaluate(element=>({text:element.textContent,width:getComputedStyle(element,'::after').width}));
- assert.deepEqual(line,{text:'',width:'3px'});
+ assert(routine.x+routine.width<=otherRoutine.x+1,'Overlapping routines keep separate lanes');
+ assert(otherRoutine.x+otherRoutine.width<=regular.x+1,'Recurring cards do not cover appointments');
  await page.screenshot({animations:'disabled',path:resolve(output,'recurrence-week-desktop.png')});
  await page.setViewportSize({width:390,height:667});
  await page.screenshot({animations:'disabled',path:resolve(output,'recurrence-week-mobile.png')});

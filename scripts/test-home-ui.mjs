@@ -24,12 +24,23 @@ let events = [
   { ...base, id: 'tomorrow', title: 'Travail d’équipe', date: '2026-10-13', endDate: '2026-10-13' },
   { ...base, id: 'ongoing', title: 'Projet de session', date: '2026-10-11', endDate: '2026-10-14', allDay: true, startTime: '', endTime: '' },
 ];
+const accountTasks = new Map();
 const json = (route, data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
 await context.route('**/*', async route => {
-  const url = new URL(route.request().url());
+  const req = route.request(), url = new URL(req.url());
+  const tasks = accountTasks.get(user.username) || [];
   if (['www.google.com', 'duckduckgo.com'].includes(url.hostname)) return route.fulfill({ contentType: 'text/html', body: '<title>Recherche simulée</title>Recherche' });
   if (url.pathname.startsWith('/memo/api/auth/')) return json(route, { enabled: true, user, accounts: [{ username: 'oli', display_name: 'Oli' }, { username: 'max', display_name: 'Max' }] });
-  if (url.pathname === '/api/calendar/events') return failEvents ? json(route, { error: 'Indisponible' }, 503) : json(route, { events, aiAvailable: true });
+  if (url.pathname === '/api/calendar/events' && req.method() === 'GET') return failEvents ? json(route, { error: 'Indisponible' }, 503) : json(route, { events: [...events, ...tasks], aiAvailable: true });
+  if (url.pathname.startsWith('/api/calendar/events') && req.method() !== 'GET') {
+    const body = req.postDataJSON(), id = url.pathname.split('/')[4] || body.requestId;
+    if (req.method() === 'DELETE') { accountTasks.set(user.username, tasks.filter(task => task.id !== id)); return json(route, { removed: true }); }
+    const previous = tasks.find(task => task.id === id);
+    const event = { ...previous, ...body.event, id, updatedAt: new Date().toISOString() };
+    if (body.completed !== undefined) event.completed = body.completed;
+    event.completedAt = event.completed ? '2026-10-12T15:15:00Z' : null;
+    accountTasks.set(user.username, [...tasks.filter(task => task.id !== id), event]); return json(route, { event });
+  }
   if (url.pathname === '/api/calendar/documents') return json(route, { documents: [], folders: [] });
   if (url.pathname.startsWith('/api/')) return json(route, { error: 'API non utilisée par cette vérification.' }, 503);
   if (url.pathname === '/memo/healthz') return route.fulfill({ body: 'ok' });
@@ -41,9 +52,15 @@ await context.route('**/*', async route => {
     try { return route.fulfill({ contentType: ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' })[extname(file)], body: await readFile(file) }); }
     catch { return route.fulfill({ status: 404, body: 'Not found' }); }
   }
+  if (process.env.HOMELAB_UI_STATIC === '1') {
+    const file = resolve(root, 'frontend/dist', url.pathname.slice(1) || 'index.html');
+    if (!file.startsWith(resolve(root, 'frontend/dist') + '/')) return route.abort();
+    try { return route.fulfill({ contentType: ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' })[extname(file)], body: await readFile(file) }); }
+    catch { return route.fulfill({ status: 404, body: 'Not found' }); }
+  }
   return route.continue();
 });
-const url = process.env.HOMELAB_UI_URL || 'http://localhost:3000';
+const url = process.env.HOMELAB_UI_STATIC === '1' ? 'https://home.test' : process.env.HOMELAB_UI_URL || 'http://localhost:3000';
 const shot = name => page.screenshot({ animations: 'disabled', path: resolve(output, `${name}.png`) });
 const ready = () => expect(page.locator('.start-agenda-event')).toHaveCount(4);
 const home = async () => { await page.goto(`${url}/?section=home`); await ready(); };
@@ -81,18 +98,19 @@ try {
   const task = page.locator('.start-task-list li').filter({ hasText: 'Une nouvelle tâche' });
   await task.getByRole('checkbox').check(); await expect(task).toHaveClass('is-complete');
   await page.reload(); await ready(); await expect(task.getByRole('checkbox')).toBeChecked();
-  await task.getByRole('checkbox').uncheck(); await task.getByRole('button').click();
+  await task.getByRole('checkbox').uncheck(); await task.getByRole('button', { name: /Supprimer la tâche/ }).click();
   await expect(page.locator('.start-task-list li')).toHaveCount(3);
   await input.fill('Brouillon conservé');
   await expect(input).toHaveValue('Brouillon conservé');
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await expect(input).toHaveValue('Brouillon conservé'); await expect(input).toBeFocused();
 
-  // Cross-tab task changes use the original per-account key.
+  // Other tabs see shared account tasks on the next refresh.
   const other = await context.newPage(); await other.goto(`${url}/?section=home`);
   await other.getByLabel('Ajouter une tâche pour aujourd’hui').fill('Depuis un autre onglet');
   await other.getByLabel('Ajouter une tâche pour aujourd’hui').press('Enter');
-  await expect(page.locator('.start-task-list')).toContainText('Depuis un autre onglet'); await other.close();
+  await other.close(); await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.locator('.start-task-list')).toContainText('Depuis un autre onglet');
 
   await page.locator('.start-agenda-event').filter({ hasText: 'Cours de mécanique' }).click();
   await expect(page).toHaveURL(/section=calendar.*date=2026-10-12.*event=next/);
@@ -135,8 +153,7 @@ try {
 
   failEvents = true; await page.reload();
   await expect(page.locator('.start-agenda')).toContainText('momentanément indisponible');
-  await input.fill('Même sans agenda'); await input.press('Enter');
-  await expect(page.locator('.start-task-list')).toContainText('Même sans agenda');
+  await expect(input).toBeDisabled();
   failEvents = false; await page.locator('.start-agenda').getByRole('button', { name: 'Réessayer' }).click(); await ready();
   events = []; await page.reload();
   await expect(page.locator('.start-agenda')).toContainText('Aucun événement prévu aujourd’hui');

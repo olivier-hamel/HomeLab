@@ -88,11 +88,26 @@ un souper un dimanche sur deux. Tu peux sélectionner plusieurs jours de la
 semaine et terminer la série à une date (incluse) ou après 1 à 1 000 occurrences.
 Sans fin, les occurrences continuent lors de la navigation vers les dates futures.
 
-Dans les vues mois et semaine, les événements sans type qui se répètent toutes les trois
+La date « À partir du » peut précéder le premier jour choisi : un départ le mardi
+avec une répétition le mercredi crée la première occurrence le mercredi suivant.
+Le formulaire affiche cette première date et conserve les jours sélectionnés
+quand la date de départ change. Pour une récurrence toute la journée, la date de
+fin d’une occurrence apparaît seulement si « Chaque occurrence dure plusieurs
+jours » est coché. La fin de la série se règle dans « Fin de la répétition ».
+Si une date de fin sur plusieurs jours a été saisie avec une série sans fin,
+une action permet d’utiliser cette date comme fin de série et de ramener
+l’occurrence à une journée (ou à une nuit pour un horaire qui traverse minuit).
+
+Le calendrier adapte sa hauteur à l’espace disponible pour afficher le mois ou
+les 24 heures de la semaine et de la journée sans défilement de la grille.
+La vue semaine conserve ses sept jours visibles sur les petits écrans.
+
+Dans la vue mois, les événements sans type qui se répètent toutes les trois
 semaines ou plus souvent sont représentés par de petits traits colorés. Ils ne
 prennent pas les places réservées aux rendez-vous ponctuels dans le mois. Survole
 un trait pour voir ses détails ou clique dessus pour modifier la série. La vue
-jour conserve leur affichage complet, y compris pour les événements toute la journée.
+semaine affiche leur titre dans des cartes discrètes, y compris pour les
+événements toute la journée. La vue jour conserve leur affichage complet.
 
 Le bouton « Types » en haut du calendrier (ou « Types d’événement » dans le menu)
 permet de créer un type avec un nom et une importance obligatoire : Très faible,

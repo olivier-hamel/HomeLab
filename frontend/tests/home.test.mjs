@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createHomeStore, dayAfter, todayKey, visibleTasks } from '../src/lib/home.ts';
+import { createHomeStore, dayAfter, todayKey, visibleTasks, plannerTasks, homeTaskInput, migrateHomeTasks } from '../src/lib/home.ts';
 import { calendarFrameUrl, sectionUrl } from '../src/lib/navigation.ts';
 
 function memoryStorage() {
@@ -81,4 +81,25 @@ test('Calendar handoff preserves a selected occurrence and removes stale targets
     assert.equal(sectionUrl('home').search, '?section=home');
     assert.equal(sectionUrl('calendar', { date: '2026-10-18', view: 'day', event: 'series-id' }).search, '?section=calendar&date=2026-10-18&view=day&event=series-id');
   } finally { globalThis.location = previous; }
+});
+
+test('shared tasks sort unfinished deadlines first, retain overdue and undated work and optionally show old completed work', () => {
+  const input = homeTaskInput(' Projet ', '2026-10-13');
+  assert.equal(input.kind, 'task'); assert.equal(input.title, 'Projet'); assert.equal(input.deadline.date, '2026-10-13');
+  const events = [{ ...input, id: 'due' }, { ...input, id: 'overdue', deadline: { date: '2026-10-12', time: null } }, { ...input, id: 'undated', deadline: null }, { ...input, id: 'old', completed: true, completedAt: '2026-10-12T12:00:00Z' }, { ...input, id: 'today', completed: true, completedAt: '2026-10-13T12:00:00Z' }, { ...input, id: 'appointment', kind: 'event' }];
+  assert.deepEqual(plannerTasks(events, '2026-10-13').map(row => row.id), ['overdue', 'due', 'undated', 'today']);
+  assert.equal(plannerTasks(events, '2026-10-13', true).length, 5);
+});
+
+test('legacy task migration resumes after an interrupted write with the same request ID and removes local tasks only after saving', async () => {
+  const store = createHomeStore('oli', memoryStorage()); store.add('Ancienne tâche');
+  const original = globalThis.fetch; const calls = [];
+  try {
+    globalThis.fetch = async (_url, init) => { calls.push(JSON.parse(init.body)); throw new Error('Interrupted'); };
+    await assert.rejects(migrateHomeTasks(store, 'oli', '2026-10-13'));
+    assert.equal(store.getSnapshot().tasks.length, 1);
+    globalThis.fetch = async (_url, init) => { const body = JSON.parse(init.body); calls.push(body); return Response.json({ event: { ...body.event, id: body.requestId } }); };
+    assert.equal((await migrateHomeTasks(store, 'oli', '2026-10-13')).length, 1);
+    assert.equal(calls[0].requestId, calls[1].requestId); assert.equal(store.getSnapshot().tasks.length, 0);
+  } finally { globalThis.fetch = original; }
 });

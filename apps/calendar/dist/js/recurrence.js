@@ -8,6 +8,17 @@ export function isFrequentRecurrence(rule) {
   return Boolean(rule && ((rule.frequency === "daily" && rule.interval <= 21) || (rule.frequency === "weekly" && rule.interval <= 3)));
 }
 
+export function firstOccurrenceDate(value, rule) {
+  let date = parseDate(value);
+  if (!date) return null;
+  if (rule?.frequency === "weekly") {
+    if (!rule.weekdays.length) return null;
+    const offset = Math.min(...rule.weekdays.map(day => (day - date.getUTCDay() + 7) % 7));
+    date = addDays(date, offset);
+  }
+  return date.getUTCFullYear() <= 9999 ? date : null;
+}
+
 // Expand only the requested civil-date window. A series stays one stored event;
 // occurrence dates never depend on browser time zone or daylight saving time.
 export function occurrencesBetween(event, start, end) {
