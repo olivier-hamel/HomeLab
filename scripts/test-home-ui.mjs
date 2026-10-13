@@ -81,7 +81,13 @@ try {
   await task.getByRole('checkbox').uncheck(); await task.getByRole('button').click();
   await expect(page.locator('.start-task-list li')).toHaveCount(3);
   await input.fill('Brouillon conservé');
-  await page.clock.runFor(61_000); await expect(input).toHaveValue('Brouillon conservé'); await expect(input).toBeFocused();
+  // Let each session response complete before advancing to its timeout.
+  for (let cycle = 0; cycle < 2; cycle++) {
+    const refreshed = page.waitForResponse(response => response.url().endsWith('/memo/api/auth/me'));
+    await page.clock.runFor(30_000);
+    await (await refreshed).finished();
+  }
+  await page.clock.runFor(1_000); await expect(input).toHaveValue('Brouillon conservé'); await expect(input).toBeFocused();
 
   // Cross-tab task changes use the original per-account key.
   const other = await context.newPage(); await other.goto(`${url}/?section=home`);
@@ -94,7 +100,7 @@ try {
   const frame = page.frameLocator('iframe[title="Tempo — calendrier"]');
   await expect(frame.locator('#event-title')).toHaveValue('Cours de mécanique');
   await expect(frame.locator('.home-page')).toHaveCount(0);
-  await frame.locator('[data-action="close-event-dialog"]').click();
+  await frame.getByRole('button', { name: 'Fermer la fenêtre', exact: true }).click();
   await page.goBack(); await ready();
   await page.locator('.start-upcoming-list button').filter({ hasText: 'Révision hebdomadaire' }).click();
   await expect(page).toHaveURL(/date=2026-10-19.*event=series/);
@@ -134,7 +140,7 @@ try {
   await page.getByRole('button', { name: 'Prévoir un moment' }).click();
   await expect(frame.locator('#event-prompt')).toBeFocused();
   await page.goto(`${url}/?section=calendar`);
-  await expect(frame.locator('.month-grid')).toBeVisible();
+  await expect(frame.locator('.month-view')).toBeVisible();
   await expect(frame.locator('[data-action="home"]')).toHaveCount(0);
 
   // A second account gets its own tasks and preferences.
