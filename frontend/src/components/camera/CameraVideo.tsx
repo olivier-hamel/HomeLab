@@ -34,10 +34,17 @@ export default function CameraVideo({ videoRef, quality, muted, zoom, attempt, o
       // Chromium can report native HLS support but reject the C200's DTS ordering.
       // HLS.js remuxes the stream and normalizes timestamps before browser decode.
       if (Hls.isSupported()) {
-        const hls = new Hls(cameraLiveConfig);
+        const hls = new Hls({ ...cameraLiveConfig, fragLoadPolicy: { default: {
+          ...Hls.DefaultConfig.fragLoadPolicy.default,
+          maxTimeToFirstByteMs: 2000, maxLoadTimeMs: 4000,
+          timeoutRetry: { maxNumRetry: 1, retryDelayMs: 250, maxRetryDelayMs: 1000 },
+          errorRetry: { maxNumRetry: 2, retryDelayMs: 250, maxRetryDelayMs: 1000 },
+        } } });
+        let recoveries = 0;
+        let recovery: ReturnType<typeof setTimeout> | undefined;
         const followLive = (force = false) => {
-          if (disposed || document.hidden || video.paused || !hls.latestLevelDetails?.live) return;
-          const target = cameraLiveSeekPosition(video.currentTime, hls.liveSyncPosition, force);
+          if (disposed || document.hidden || video.paused || video.seeking || !hls.latestLevelDetails?.live) return;
+          const target = cameraLiveSeekPosition(video.currentTime, hls.liveSyncPosition, video.buffered, force);
           if (target !== null) video.currentTime = target;
         };
         const returnLive = () => followLive(true);
@@ -47,14 +54,29 @@ export default function CameraVideo({ videoRef, quality, muted, zoom, attempt, o
         video.addEventListener("camera:return-live", returnLive);
         hls.on(Hls.Events.LEVEL_UPDATED, () => followLive());
         cleanup = () => {
-          clearInterval(liveTimer); document.removeEventListener("visibilitychange", visible);
+          clearInterval(liveTimer); clearTimeout(recovery); document.removeEventListener("visibilitychange", visible);
           video.removeEventListener("camera:return-live", returnLive); hls.destroy();
         };
-        hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { hls.stopLoad(); failed(); } });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data.fatal || disposed) return;
+          hls.stopLoad();
+          // Re-read the live playlist after a lost/expired fragment instead of
+          // repeatedly downloading an old segment or requiring a manual retry.
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && recoveries++ < 2) {
+            emit("buffering");
+            recovery = setTimeout(() => { if (!disposed) hls.loadSource(source); }, 250);
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && recoveries++ < 2) {
+            hls.recoverMediaError();
+          } else failed();
+        });
         hls.on(Hls.Events.MANIFEST_PARSED, () => { void video.play().catch(() => emit("error", "La lecture automatique a été bloquée. Appuie sur Relancer le direct.")); });
         hls.loadSource(source); hls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        const returnLive = () => { if (video.seekable.length) video.currentTime = Math.max(0, video.seekable.end(video.seekable.length - 1) - 1.2); };
+        const returnLive = () => {
+          if (!video.seekable.length || video.seeking) return;
+          const target = cameraLiveSeekPosition(video.currentTime, video.seekable.end(video.seekable.length - 1) - 1, video.buffered, true);
+          if (target !== null) video.currentTime = target;
+        };
         video.addEventListener("camera:return-live", returnLive);
         cleanup = () => video.removeEventListener("camera:return-live", returnLive);
         video.src = source; void video.play().catch(() => emit("error", "La lecture automatique a été bloquée. Appuie sur Relancer le direct."));

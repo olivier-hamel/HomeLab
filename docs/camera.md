@@ -48,24 +48,31 @@ FFmpeg input arguments contain the RTSP credential, so server process access
 should be limited to trusted administrators. Diagnostics are not logged.
 
 H.264 video is encoded with FFmpeg's ultrafast, zero-latency preset at 20 fps,
-with independently decodable 600 ms segments. Camera audio timestamps are
-normalized at decoder output against the same relay startup clock, and optional
-audio is converted to AAC. This is required with FFmpeg 5 in the Debian backend
-image: input timestamp normalization alone can still place audio and video many
-hours apart and prevent browser playback. This uses more server CPU
-than copying the original stream; each quality shares one encoder limited to
-two threads. The relay stops after 45 seconds without video
+with independently decodable 500 ms segments. The decoder is limited to one
+thread before the RTSP input, avoiding FFmpeg's automatic frame queue. The short
+probe keeps its packets so the first keyframe is available to the decoder. The
+encoder uses two threads and filters use one. Camera audio starts on the same
+relay clock as video, then advances by sample count so batched packet arrivals
+cannot collapse the audio timeline. Optional audio is converted to AAC. Output
+normalization is required with FFmpeg 5 in the Debian backend image: input
+normalization alone can place audio and video many hours apart. Each quality
+shares one encoder. The playlist keeps 12 segments, with six additional expired
+segments retained for requests already in flight; retention does not set the
+player's delay. The relay stops after 45 seconds without video
 requests, releases its RTSP session with a graceful FFmpeg shutdown, and deletes
 its temporary files. Every playlist and segment request
 requires a valid HomeLab session. Browsers with Media Source support use locally
 bundled HLS.js, which normalizes the C200's timestamps; native HLS is a fallback.
 Chromium's native player can report HLS support while rejecting the camera's DTS
-ordering, so the app prefers HLS.js. The player targets 1.2 seconds behind the
-published live edge, bounds its buffer and automatically catches up when delayed
-or when returning to the tab. The refresh icon becomes **Revenir au direct** while
+ordering, so the app prefers HLS.js. The player targets one second behind the
+published live edge and bounds its buffer. Catch-up seeks only use downloaded
+audio/video, leaving 400 ms of playable media after the target. Transient fragment
+failures have bounded retries; a fatal network error reloads the current playlist
+up to twice instead of repeatedly requesting an expired segment. The refresh
+icon becomes **Revenir au direct** while
 video is playing. The full image delay also includes camera and transport time.
-On the supplied C200, a physical movement became visible in Firefox in about
-2 seconds after these changes. This measurement is specific to the tested LAN.
+The one-second target is relative to published media, not a guarantee of
+subsecond camera-to-screen delay. Camera capture, encoding and transport add to it.
 Each pan/tilt click sends only the supported PanTilt fields,
 uses the C200's minimum one-second camera timeout, then sends Stop after 350 ms.
 The camera timeout limits movement if the server cannot send the earlier Stop;
@@ -92,6 +99,7 @@ cd frontend
 npm run build
 cd ..
 node scripts/test-camera-ui.mjs
+node scripts/test-camera-live.mjs
 ```
 
 To check the running development server instead of the production build, set
@@ -103,7 +111,11 @@ dependency cache so it cannot invalidate an active development server.
 
 The UI check uses synthetic HLS and simulated camera APIs, covering setup,
 offline recovery, movement, preset errors, HD/SD playback, sound, zoom, snapshots,
-gallery downloads and responsive layouts at desktop, 390 px and 320 px. Real
+gallery downloads and responsive layouts at desktop, 390 px and 320 px. The live
+regression uses a rolling synthetic playlist with audio, two-hour MPEG-TS
+timestamps, 350 ms request delays and an expired fragment. It checks sustained
+frame decoding, automatic recovery, buffered return to live and HD/SD playback.
+Use `CAMERA_UI_BROWSER=firefox` for this regression as well. Real
 camera authentication, firmware capabilities and movement require the camera
 account and a server that can reach the camera. The supplied C200 was verified
 with read-only ONVIF, both RTSP streams (1280×720 HD and 640×360 SD), the FFmpeg
