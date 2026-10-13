@@ -17,6 +17,7 @@ const page=await browser.newPage({viewport:{width:1440,height:1000},locale:'fr-C
 page.on('pageerror',error => errors.push(error.message));
 const date='2026-10-12';
 const draft={title:'Souper avec Camille',description:'Au restaurant du quartier',date,endDate:date,startTime:'19:00',endTime:'21:00',allDay:false};
+let aiDraft=draft;
 const json=(route,data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
 await page.route('**/*',async route=>{
  const req=route.request(); const url=new URL(req.url()); const path=url.pathname;
@@ -24,7 +25,7 @@ await page.route('**/*',async route=>{
  if(path==='/api/calendar/events' && req.method()==='GET') return json(route,{events,aiAvailable});
  if(path==='/api/calendar/interpret') {
   interpreted++; if(failAi) return json(route,{error:'Gemini est occupé. Réessaie ou saisis les détails manuellement.'},429);
-  return json(route,{event:draft,clarification:null});
+  return json(route,{event:aiDraft,clarification:null});
  }
  if(path==='/api/calendar/events' && req.method()==='POST') {
   saved++; if(failSave) return json(route,{error:'La connexion a été interrompue. Réessaie; tes détails sont conservés.'},503);
@@ -47,6 +48,7 @@ await page.route('**/*',async route=>{
 });
 async function closeClean(){await page.locator('[data-action="close-event-dialog"]').first().click();await expect(page.locator('dialog')).toHaveCount(0);}
 async function discard(){await page.locator('[data-action="close-event-dialog"]').first().click();await page.locator('[data-action="event-discard-confirm"]').click();await expect(page.locator('dialog')).toHaveCount(0);}
+async function jump(date){await page.locator('[data-action="jump"]').click();await page.locator('#jump-date').fill(date);await page.locator('#jump-form button[type="submit"]').click();await expect(page.locator('dialog')).toHaveCount(0);}
 try {
  await page.goto('https://tempo.test/calendar/');
  await expect(page.locator('#events-status')).toBeHidden();
@@ -125,6 +127,55 @@ try {
  assert.equal(await page.locator('.time-day-heading').first().evaluate(day=>day.getBoundingClientRect().width>=80),true);
  await page.screenshot({animations:'disabled',path:resolve(output,'week-mobile.png')});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
- assert.deepEqual(errors,[]);assert.equal(interpreted,3);
- console.log(JSON.stringify({result:'passed',checks:['natural-language preview before save','duplicate-click prevention','edit','delete confirmation','AI error/manual fallback','save error/retry','all-day events','mobile overflow','keyboard/focus','unsaved drafts','missing Gemini configuration'],screenshots:output}));
+ // Create a biweekly Sunday series manually, retaining one stored event.
+ events=[]; aiAvailable=true;await page.setViewportSize({width:1440,height:1000});await page.reload();
+ await expect(page.locator('#events-status')).toBeHidden();await page.locator('[data-action="create-event"]').first().click();
+ await page.locator('[data-action="event-manual"]').click();await page.locator('#event-title').fill('Souper du dimanche');
+ await page.locator('#event-date').fill('2026-10-18');await page.locator('#event-end-date').fill('2026-10-18');
+ await page.locator('#event-start').fill('19:00');await page.locator('#event-end').fill('21:00');
+ await page.locator('#event-frequency').selectOption('weekly');await page.locator('#event-interval').fill('2');
+ await expect(page.getByRole('checkbox',{name:'dimanche',exact:true})).toBeChecked();
+ await expect(page.locator('#event-recurrence-summary')).toContainText('Toutes les 2 semaines');
+ await page.locator('#event-recurrence-end').selectOption('until');await page.locator('#event-until').fill('2026-11-29');
+ await page.screenshot({animations:'disabled',path:resolve(output,'recurrence-desktop.png')});
+ await page.locator('#event-save-form button[type="submit"]').click();await expect(page.locator('dialog')).toHaveCount(0);
+ assert.equal(events.length,1);assert.deepEqual(events[0].recurrence,{frequency:'weekly',interval:2,weekdays:[0],until:'2026-11-29',count:null});
+ await page.locator('#event-toast button').click();await expect(page.locator('.time-event')).toHaveCount(1);
+ await jump('2026-10-25');await expect(page.locator('.time-event')).toHaveCount(0);
+ await jump('2026-11-01');await expect(page.locator('.time-event')).toHaveCount(1);
+ await page.reload();await expect(page.locator('#events-status')).toBeHidden();await page.locator('.browse-calendar').click();
+ await jump('2026-11-01');await expect(page.locator('.month-events [data-event-id]')).toHaveCount(3);
+ // Future occurrences edit the first occurrence and clearly target the series.
+ await page.locator('.month-events [data-event-id]').first().click();await expect(page.locator('#event-dialog-description')).toContainText('toute la série');
+ await expect(page.locator('#event-date')).toHaveValue('2026-10-18');await expect(page.locator('#event-interval')).toHaveValue('2');
+ await page.locator('#event-recurrence-end').selectOption('count');await page.locator('#event-count').fill('2');
+ await page.locator('#event-save-form button[type="submit"]').click();await expect(page.locator('dialog')).toHaveCount(0);
+ await expect(page.locator('.month-events [data-event-id]')).toHaveCount(1);
+ await page.locator('.month-events [data-event-id]').click();await page.locator('[data-action="event-delete"]').click();
+ await expect(page.locator('#event-delete-confirm')).toContainText('Supprimer toute la série');
+ await page.locator('[data-action="event-delete-confirm"]').click();await expect(page.locator('dialog')).toHaveCount(0);assert.equal(events.length,0);
+ // Gemini populates the recurrence editor for review; mobile controls fit.
+ aiDraft={...draft,date:'2026-10-18',endDate:'2026-10-18',recurrence:{frequency:'weekly',interval:2,weekdays:[0],until:null,count:6}};
+ await page.setViewportSize({width:390,height:844});await page.locator('[data-action="create-event"]').first().click();
+ await page.locator('#event-prompt').fill('Souper un dimanche sur deux à 19 h pendant deux heures, six fois');
+ const savesBeforePreview=saved;
+ await page.locator('#event-interpret-form button[type="submit"]').click();await expect(page.locator('#event-review')).toBeVisible();
+ assert.equal(saved,savesBeforePreview);await expect(page.locator('#event-frequency')).toHaveValue('weekly');await expect(page.locator('#event-interval')).toHaveValue('2');
+ await expect(page.getByRole('checkbox',{name:'dimanche',exact:true})).toBeChecked();await expect(page.locator('#event-count')).toHaveValue('6');
+ await page.locator('#event-recurrence-summary').scrollIntoViewIfNeeded();
+ await page.screenshot({animations:'disabled',path:resolve(output,'recurrence-mobile.png')});
+ assert.equal(await page.locator('dialog').evaluate(d=>d.scrollWidth<=d.clientWidth+1),true);
+ // Validate weekday selection, change frequency and save the reviewed series.
+ await page.getByRole('checkbox',{name:'dimanche',exact:true}).uncheck();await page.locator('#event-save-form button[type="submit"]').click();
+ await expect(page.locator('#event-error')).toContainText('jour de la date de début');assert.equal(events.length,0);
+ await page.getByRole('checkbox',{name:'dimanche',exact:true}).check();
+ await page.locator('#event-save-form button[type="submit"]').click();await expect(page.locator('dialog')).toHaveCount(0);assert.equal(events.length,1);
+ assert.deepEqual(events[0].recurrence,aiDraft.recurrence);
+ // Turning recurrence off removes all future instances; hidden fields do not block saving.
+ await page.locator('#event-toast button').click();await page.locator('.time-event').click();
+ await page.locator('#event-frequency').selectOption('none');await expect(page.locator('#event-recurrence-options')).toBeHidden();
+ await page.locator('#event-save-form button[type="submit"]').click();await expect(page.locator('dialog')).toHaveCount(0);assert.equal(events[0].recurrence,null);
+ await jump('2026-11-01');await expect(page.locator('.time-event')).toHaveCount(0);
+ assert.deepEqual(errors,[]);assert.equal(interpreted,4);
+ console.log(JSON.stringify({result:'passed',checks:['natural-language preview before save','duplicate-click prevention','edit','delete confirmation','AI error/manual fallback','save error/retry','all-day events','mobile overflow','keyboard/focus','unsaved drafts','missing Gemini configuration','biweekly Sundays','recurrence reload and future navigation','series edit and delete','Gemini recurrence preview','mobile recurrence controls','remove recurrence'],screenshots:output}));
 } finally {await browser.close();}

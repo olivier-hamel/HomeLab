@@ -6,7 +6,7 @@ import {createCalendarApi} from '../src/lib/calendar/api.ts';
 import {validateEvent} from '../src/lib/calendar/events.ts';
 import {MediaError} from '../src/lib/media/core.ts';
 
-const draft = {title:'Dentiste', description:'Apporter les documents', date:'2026-10-13', endDate:'2026-10-13', startTime:'14:00', endTime:'14:45', allDay:false};
+const draft = {title:'Dentiste', description:'Apporter les documents', date:'2026-10-13', endDate:'2026-10-13', startTime:'14:00', endTime:'14:45', allDay:false, recurrence:null};
 function collectionFixture() {
   const rows = [];
   const match = (row, filter) => Object.entries(filter).every(([key, value]) => row[key] === value);
@@ -123,5 +123,57 @@ test('AI failure and clarification keep the calendar unchanged and provider erro
     delete process.env.GEMINI_API_KEY;
     assert.equal((await f.call('interpret','POST',{text:'Dentiste',selectedDate:draft.date})).status,503);
     assert.equal((await f.call('events','POST',{event:draft,requestId:randomUUID()})).status,201);
+  } finally {if(previous===undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY=previous;}
+});
+
+const weekly = {frequency:'weekly',interval:2,weekdays:[2,0],until:null,count:null};
+test('recurrence validation accepts bounded series and preserves legacy events', () => {
+  const legacy={...draft}; delete legacy.recurrence;
+  assert.equal(validateEvent(legacy).recurrence,null);
+  assert.deepEqual(validateEvent({...draft,recurrence:weekly}).recurrence,{...weekly,weekdays:[0,2]});
+  for (const frequency of ['daily','monthly','yearly']) assert.equal(validateEvent({...draft,recurrence:{...weekly,frequency,weekdays:[],count:5}}).recurrence.count,5);
+  assert.equal(validateEvent({...draft,recurrence:{...weekly,until:draft.date}}).recurrence.until,draft.date);
+  for (const patch of [{frequency:'fortnightly'},{interval:0},{interval:100},{interval:1.5},{weekdays:[]},{weekdays:[1]},{weekdays:[2,2]},{weekdays:[2,7]},{weekdays:['2']},{until:'2026-10-12'},{until:'2026-02-30'},{count:0},{count:1001},{count:1.5},{count:5,until:'2026-11-01'},{frequency:'daily'}]) {
+    assert.throws(()=>validateEvent({...draft,recurrence:{...weekly,...patch}}),error=>error.status===400);
+  }
+});
+
+test('API stores one series, edits its recurrence, removes it and rejects invalid rules', async () => {
+  const f=fixture();
+  const response=await f.call('events','POST',{event:{...draft,recurrence:weekly},requestId:randomUUID()});
+  assert.equal(response.status,201);
+  const {event}=await response.json();
+  assert.equal(f.rows.length,1);
+  assert.deepEqual((await (await f.call('events','GET')).json()).events[0].recurrence,event.recurrence);
+  assert.deepEqual((await (await f.call('events','GET',null,'max')).json()).events,[]);
+  const invalid=await f.call(`events/${event.id}`,'PATCH',{event:{...draft,recurrence:{...weekly,interval:-1}},updatedAt:event.updatedAt});
+  assert.equal(invalid.status,400); assert.equal(f.rows[0].recurrence.interval,2);
+  const updated=await f.call(`events/${event.id}`,'PATCH',{event:{...draft,recurrence:{...weekly,interval:1,count:10}},updatedAt:event.updatedAt});
+  assert.equal(updated.status,200);
+  const latest=(await updated.json()).event;
+  assert.equal(latest.recurrence.interval,1); assert.equal(latest.recurrence.count,10);
+  const single=await f.call(`events/${event.id}`,'PATCH',{event:draft,updatedAt:latest.updatedAt});
+  assert.equal((await single.clone().json()).event.recurrence,null);
+  await f.call(`events/${event.id}`,'DELETE',{updatedAt:(await single.json()).event.updatedAt});
+  assert.equal(f.rows.length,0);
+});
+
+test('Gemini can draft biweekly Sundays, including a validated ending, without saving', async () => {
+  const previous=process.env.GEMINI_API_KEY; process.env.GEMINI_API_KEY='recurrence-test-canary';
+  const event={...draft,title:'Souper du dimanche',date:'2026-10-18',endDate:'2026-10-18',startTime:'19:00',endTime:'21:00',recurrence:{...weekly,weekdays:[0],count:6}};
+  try {
+    const f=fixture(async (url,init)=>{
+      const prompt=JSON.parse(init.body);
+      assert.match(prompt.systemInstruction.parts[0].text,/every other week = weekly, interval=2/);
+      const schema=prompt.generationConfig.responseJsonSchema.properties.event.anyOf[0];
+      assert(schema.required.includes('recurrence'));
+      assert.deepEqual(schema.properties.recurrence.anyOf[1].properties.frequency.enum,['daily','weekly','monthly','yearly']);
+      return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({event,clarification:null})}]}}]});
+    });
+    const response=await f.call('interpret','POST',{text:'Souper un dimanche sur deux à 19 h pendant 2 h, 6 fois',selectedDate:'2030-01-02'});
+    assert.equal(response.status,200); assert.deepEqual((await response.json()).event,event); assert.equal(f.rows.length,0);
+    const malformed=fixture(async ()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({event:{...event,recurrence:{...event.recurrence,interval:0}},clarification:null})}]}}]}));
+    assert.equal((await malformed.call('interpret','POST',{text:'Chaque dimanche',selectedDate:draft.date})).status,502);
+    assert.equal(malformed.rows.length,0);
   } finally {if(previous===undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY=previous;}
 });

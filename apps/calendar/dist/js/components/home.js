@@ -1,4 +1,4 @@
-import {eventsOnDate, eventCount, eventTime} from "../events.js";
+import {eventsOnDate, eventsInRange, eventCount, eventTime} from "../events.js";
 import {WEEKDAYS, dateKey, weekDates, sameDay, formatDate, fullDate, periodTitle, currentMinutes} from "../date.js";
 import {icon} from "./icons.js";
 import {escapeHtml} from "../account.js";
@@ -11,7 +11,7 @@ export function renderHome(state, now = new Date()) {
   const baseGreeting = hour < 12 ? "Bonjour" : hour < 17 ? "Bon après-midi" : "Bonsoir";
   const greeting = state.account ? `${baseGreeting}, ${escapeHtml(state.account.display_name)}.` : `${baseGreeting}.`;
   const days = weekDates(today, state.preferences.weekStart);
-  const weekEvents = (state.events || []).filter(event => event.date <= dateKey(days[6]) && event.endDate >= dateKey(days[0]));
+  const weekEvents = eventsInRange(state.events, dateKey(days[0]), dateKey(days[6]));
   const week = periodTitle({...state, date: today, view: "week"});
   return `<div class="home-page">
     <section class="home-intro" aria-labelledby="home-title"><div><p class="home-eyebrow">TA JOURNÉE EN UN COUP D’ŒIL</p><h1 id="home-title" tabindex="-1">${greeting}</h1><p class="home-subtitle">${formatDate(today, {weekday: "long", month: "long", day: "numeric"})}<span>·</span>Un peu de temps pour souffler.</p></div><button class="home-today-button" data-action="today-day">Voir aujourd’hui ${icon("arrowRight")}</button></section>

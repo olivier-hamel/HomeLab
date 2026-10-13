@@ -1,10 +1,15 @@
 import {dateKey} from "./date.js";
+import {occurrencesBetween} from "./recurrence.js";
 
 export const eventCount = count => `${count} événement${count > 1 ? "s" : ""}`;
 export function eventsOnDate(events = [], date) {
   const key = typeof date === "string" ? date : dateKey(date);
-  return events.filter(event => event.date <= key && event.endDate >= key && (event.allDay || event.endDate !== key || event.endTime !== "00:00"))
+  return events.flatMap(event => occurrencesBetween(event, key, key))
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || (a.startTime || "").localeCompare(b.startTime || "") || a.title.localeCompare(b.title));
+}
+export function eventsInRange(events = [], start, end) {
+  return events.flatMap(event => occurrencesBetween(event, start, end))
+    .sort((a, b) => a.date.localeCompare(b.date) || Number(b.allDay) - Number(a.allDay) || (a.startTime || "").localeCompare(b.startTime || "") || a.title.localeCompare(b.title));
 }
 export function timeLabel(time, format = "24") {
   if (!time) return "Toute la journée";

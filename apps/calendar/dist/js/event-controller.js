@@ -1,11 +1,55 @@
 import {dateKey, parseDate, addDays} from "./date.js";
 import {createEventRepository} from "./events.js";
 import {eventDialog} from "./components/event-dialog.js";
-import {icon} from "./components/icons.js";
+import {recurrenceLabel} from "./recurrence.js";
 
 export function createEventController(store, dialogRoot) {
   const repository = createEventRepository();
   let current = null, loadId = 0, toastTimer;
+  function recurrenceInput(form) {
+    const frequency = form.elements.recurrenceFrequency.value;
+    if (frequency === "none") return null;
+    const ending = form.elements.recurrenceEnd.value;
+    return {frequency, interval: Number(form.elements.recurrenceInterval.value),
+      weekdays: frequency === "weekly" ? [...form.querySelectorAll('[name="recurrenceWeekdays"]:checked')].map(input => Number(input.value)).sort((a, b) => a - b) : [],
+      until: ending === "until" ? form.elements.recurrenceUntil.value : null,
+      count: ending === "count" ? Number(form.elements.recurrenceCount.value) : null};
+  }
+  function syncRecurrence(form) {
+    const frequency = form.elements.recurrenceFrequency.value;
+    const enabled = frequency !== "none";
+    const ending = form.elements.recurrenceEnd.value;
+    form.querySelector("#event-recurrence-options").hidden = !enabled;
+    form.elements.recurrenceInterval.disabled = !enabled;
+    form.elements.recurrenceInterval.required = enabled;
+    form.elements.recurrenceEnd.disabled = !enabled;
+    form.querySelector("#event-interval-prefix").textContent = frequency === "weekly" ? "Toutes les" : "Tous les";
+    form.querySelector("#event-interval-unit").textContent = ({daily: "jours", weekly: "semaines", monthly: "mois", yearly: "ans"})[frequency] || "semaines";
+    form.querySelector("#event-weekdays").hidden = frequency !== "weekly";
+    for (const input of form.querySelectorAll('[name="recurrenceWeekdays"]')) input.disabled = frequency !== "weekly";
+    for (const name of ["until", "count"]) {
+      form.querySelector(`#event-${name}-field`).hidden = ending !== name;
+      const input = form.elements[name === "until" ? "recurrenceUntil" : "recurrenceCount"];
+      input.disabled = !enabled || ending !== name;
+      input.required = enabled && ending === name;
+    }
+    form.elements.recurrenceUntil.min = form.elements.date.value;
+    form.querySelector("#event-recurrence-summary").textContent = recurrenceLabel(recurrenceInput(form));
+    const date = parseDate(form.elements.date.value);
+    const note = form.querySelector("#event-recurrence-date-note");
+    note.textContent = frequency === "monthly" && date?.getUTCDate() > 28 ? "Les mois sans ce jour seront sautés." : frequency === "yearly" && date?.getUTCMonth() === 1 && date.getUTCDate() === 29 ? "Le 29 février se répète seulement les années bissextiles." : "";
+    note.hidden = !note.textContent;
+  }
+  function fillRecurrence(form, rule) {
+    form.elements.recurrenceFrequency.value = rule?.frequency || "none";
+    form.elements.recurrenceInterval.value = rule?.interval || 1;
+    form.elements.recurrenceEnd.value = rule?.until ? "until" : rule?.count ? "count" : "never";
+    form.elements.recurrenceUntil.value = rule?.until || form.elements.date.value;
+    form.elements.recurrenceCount.value = rule?.count || 10;
+    const days = rule?.weekdays || [parseDate(form.elements.date.value).getUTCDay()];
+    for (const input of form.querySelectorAll('[name="recurrenceWeekdays"]')) input.checked = days.includes(Number(input.value));
+    syncRecurrence(form);
+  }
   async function loadEvents() {
     const id = ++loadId;
     try {
@@ -84,7 +128,9 @@ export function createEventController(store, dialogRoot) {
       const rect = dialog.getBoundingClientRect();
       if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) requestClose();
     });
-    dialog.addEventListener("input", () => {context.dirty = true; error("");});
+    syncRecurrence(dialog.querySelector("#event-save-form"));
+    context.previousWeekday = parseDate(dialog.querySelector('[name="date"]').value).getUTCDay();
+    dialog.addEventListener("input", () => {context.dirty = true; error(""); syncRecurrence(dialog.querySelector("#event-save-form"));});
     dialog.addEventListener("change", e => {
       const form = dialog.querySelector("#event-save-form");
       if (e.target.name === "allDay") {
@@ -93,7 +139,20 @@ export function createEventController(store, dialogRoot) {
       if (e.target.name === "date") {
         form.elements.endDate.min = form.elements.date.value;
         if (form.elements.endDate.value < form.elements.date.value) form.elements.endDate.value = form.elements.date.value;
+        const weekday = parseDate(form.elements.date.value)?.getUTCDay();
+        if (weekday !== undefined) {
+          const selected = form.querySelectorAll('[name="recurrenceWeekdays"]:checked');
+          if (selected.length === 1 && Number(selected[0].value) === context.previousWeekday) selected[0].checked = false;
+          form.querySelector(`[name="recurrenceWeekdays"][value="${weekday}"]`).checked = true;
+        }
+        if (weekday !== undefined) context.previousWeekday = weekday;
+        if (form.elements.recurrenceUntil.value < form.elements.date.value) form.elements.recurrenceUntil.value = form.elements.date.value;
       }
+      if (e.target.name === "recurrenceFrequency" && e.target.value === "weekly") {
+        const weekday = parseDate(form.elements.date.value)?.getUTCDay();
+        if (weekday !== undefined) form.querySelector(`[name="recurrenceWeekdays"][value="${weekday}"]`).checked = true;
+      }
+      syncRecurrence(form);
     });
     dialog.addEventListener("keydown", e => {
       if (e.target.matches('[role="tab"]') && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
@@ -125,6 +184,8 @@ export function createEventController(store, dialogRoot) {
         const input = editor.elements.namedItem(name);
         if (name === "allDay") input.checked = value; else input.value = value ?? "";
       }
+      fillRecurrence(editor, result.event.recurrence);
+      context.previousWeekday = parseDate(editor.elements.date.value).getUTCDay();
       editor.elements.allDay.dispatchEvent(new Event("change", {bubbles: true}));
       editor.elements.endDate.min = editor.elements.date.value;
       context.dialog.querySelector("#event-review").hidden = false;
@@ -138,9 +199,10 @@ export function createEventController(store, dialogRoot) {
     if (!context || context.busy) return;
     const fields = new FormData(form);
     const allDay = fields.get("allDay") === "on";
-    const input = {title: fields.get("title").trim(), description: fields.get("description").trim(), date: fields.get("date"), endDate: fields.get("endDate"), startTime: allDay ? null : fields.get("startTime"), endTime: allDay ? null : fields.get("endTime"), allDay};
+    const input = {title: fields.get("title").trim(), description: fields.get("description").trim(), date: fields.get("date"), endDate: fields.get("endDate"), startTime: allDay ? null : fields.get("startTime"), endTime: allDay ? null : fields.get("endTime"), allDay, recurrence: recurrenceInput(form)};
     if (!input.title) {error("Ajoute un titre à cet événement."); return;}
     if (input.endDate < input.date || (!allDay && `${input.endDate}T${input.endTime}` <= `${input.date}T${input.startTime}`)) {error("La fin doit être après le début de l’événement."); return;}
+    if (input.recurrence?.frequency === "weekly" && !input.recurrence.weekdays.includes(parseDate(input.date).getUTCDay())) {error("Sélectionne au moins le jour de la date de début pour répéter l’événement chaque semaine."); return;}
     error(""); busy("save");
     try {
       const result = context.event ? await repository.updateEvent(context.event, input, context.controller.signal) : await repository.addEvent(input, context.requestId, context.controller.signal);
@@ -148,7 +210,7 @@ export function createEventController(store, dialogRoot) {
       const events = store.getState().events.filter(event => event.id !== result.event.id);
       store.setEvents([...events, result.event], {eventsStatus: "ready", eventsError: ""});
       context.dirty = false; context.dialog.close();
-      toast(context.event ? "Modifications enregistrées." : "Événement ajouté à ton calendrier.", result.event.date);
+      toast(context.event ? "Modifications enregistrées." : result.event.recurrence ? "Série ajoutée à ton calendrier." : "Événement ajouté à ton calendrier.", result.event.date);
     } catch (err) {if (current === context) {error(err.message); busy(null); if (["conflict", "not_found"].includes(err.code)) void loadEvents();}}
   }
   async function remove() {
@@ -159,7 +221,7 @@ export function createEventController(store, dialogRoot) {
       await repository.deleteEvent(context.event, context.controller.signal);
       ++loadId;
       store.setEvents(store.getState().events.filter(event => event.id !== context.event.id), {eventsStatus: "ready", eventsError: ""});
-      context.dirty = false; context.dialog.close(); toast("Événement supprimé.");
+      context.dirty = false; context.dialog.close(); toast(context.event.recurrence ? "Série supprimée." : "Événement supprimé.");
     } catch (err) {if (current === context) {error(err.message); busy(null); if (["conflict", "not_found"].includes(err.code)) void loadEvents();}}
   }
   const actions = {
