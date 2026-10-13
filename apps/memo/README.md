@@ -1,3 +1,6 @@
+This folder is part of the unified HomeLab repository. Use the root
+[SERVER-UPDATE.md](../../SERVER-UPDATE.md) for server updates.
+
 Run the app with `python3 flashcard_learn.py` (Python 3.10+ with Tkinter). No third-party packages are needed.
 
 The French React/FastAPI web app lives in [web-app](web-app/README.md).

@@ -79,7 +79,7 @@ services:
 
   calendar:
     build:
-      context: "${CALENDAR_SOURCE_DIR:-../calendar}"
+      context: ./apps/calendar
     image: calendar-app:local
     restart: unless-stopped
     init: true
@@ -104,7 +104,7 @@ services:
 
   memo:
     build:
-      context: "${MEMO_SOURCE_DIR:-../memo}/web-app"
+      context: ./apps/memo/web-app
     image: memo-app:local
     env_file:
       - path: "${MEMO_MONGODB_ENV_FILE:-./.env.memo-mongodb}"

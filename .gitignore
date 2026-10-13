@@ -11,6 +11,12 @@ frontend/android/build/
 next-env.d.ts
 *.tsbuildinfo
 coverage/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+test-results/
+playwright-report/
 
 # Local configuration and logs
 .env*
@@ -37,6 +43,16 @@ secrets/
 data/
 volumes/
 backups/
+deployment-private/
+.worktrees/
+.local-data/
+.gemini-api-key
+flashcard_progress.json
+**/users/
+
+# Calendar dist is authored source, not generated output.
+!/apps/calendar/dist/
+!/apps/calendar/dist/**
 
 # Operating system files
 .DS_Store

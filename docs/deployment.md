@@ -72,18 +72,18 @@ sudo docker compose version
 
 ## 3. Clone the repository
 
-Keep `compose.yml`, `frontend/`, and `backend/` directly inside
+Keep `compose.yml`, `frontend/`, `backend/`, and `apps/` directly inside
 `/opt/stacks/homelab`. 
 
 For a new checkout, create a directory owned by the account you are using:
 
 ```sh
 sudo install -d -m 0750 -o "$(id -un)" -g "$(id -gn)" /opt/stacks/homelab
-git clone https://github.com/olivier-hamel/HomeLab.git /opt/stacks/homelab
+git clone --branch feat/memo-integration https://github.com/olivier-hamel/HomeLab.git /opt/stacks/homelab
 cd /opt/stacks/homelab
 git branch --show-current
 git status --short
-ls compose.yml frontend/Dockerfile backend/Dockerfile
+ls compose.yml frontend/Dockerfile backend/Dockerfile apps/calendar/Dockerfile apps/memo/web-app/Dockerfile
 ```
 
 ## 4. Configure your instance
@@ -150,7 +150,7 @@ docker compose up -d --wait --wait-timeout 180
 docker compose ps
 ```
 
-Both services should become `healthy`. The first build downloads base images
+All four services should become `healthy`. The first build downloads base images
 and npm packages, so it needs internet access and can take several minutes.
 `config --quiet` validates configuration without printing resolved environment
 values. If a command fails, resolve that error before proceeding to the next one.
@@ -169,6 +169,8 @@ builds exhaust the VM's memory, build sequentially:
 ```sh
 docker compose build --pull backend
 docker compose build --pull frontend
+docker compose build --pull calendar
+docker compose build --pull memo
 ```
 
 ### How the services communicate
@@ -179,6 +181,8 @@ requests in this order:
 | Request | Result |
 | --- | --- |
 | `/healthz` | Lightweight Caddy health response |
+| `/calendar/*` | Proxy to `calendar:4173`, stripping `/calendar` |
+| `/memo/*` | HTTPS-only proxy to `memo:8000`, stripping `/memo` |
 | `/api/media/stream/*`, `/api/media/external/*` | Private media streaming proxy with separate timeouts and disconnect cancellation |
 | `/api` or `/api/*` | Proxy to `backend:3001`, preserving the `/api` prefix |
 | `/assets`, `/assets/*`, or a path with a dotted component | Serve a real file or return a file-server error |
@@ -191,10 +195,10 @@ network permits backend outbound traffic, subject to your VM's network policy.
 Access through a separate subnet router does not prove the backend container
 can reach a media VM's Tailscale IP. Run the container check in [TV setup](tv-media.md#6-verify-from-the-backend-container).
 
-Both services run as UID/GID `10001:10001`, with capabilities dropped and
+The frontend and movie backend run as UID/GID `10001:10001`, with capabilities dropped and
 privilege escalation disabled. Caddy's low-port binary capability is removed,
 and its runtime directories are writable by that user. HTTP is served on 8080;
-automatic HTTPS and the Caddy admin API are disabled in this stack.
+private HTTPS listeners use the persistent Caddy authority; the admin API is disabled.
 
 Compose provides an init process and a 30-second shutdown grace period. Caddy
 allows up to 10 seconds for requests to drain. Logs use `json-file`, capped at
@@ -309,6 +313,10 @@ git diff --cached --stat
 git branch -vv
 ```
 
+Use the root [SERVER-UPDATE.md](../SERVER-UPDATE.md) for the single-repository
+commit, push, pull, build, and rollout commands. All app sources are included
+in this checkout. Routine updates create no backups.
+
 ## 9. Restart, recreate, and stop
 
 | Change or task | Command |
@@ -326,6 +334,6 @@ configuration, and any future frontend build-setting changes require an image
 rebuild followed by `docker compose up -d --wait`.
 
 `docker compose down` without `--volumes` preserves named volumes. Do not add
-`-v` or run volume-pruning commands as a shutdown step. This app has no persistent
-application data yet; when you add it, define explicit named volumes and a backup
-and restore procedure. Keep a private backup of your configuration too.
+`-v` or run volume-pruning commands as a shutdown step. Keep the existing
+`memo_data`, `caddy_data`, and `caddy_config` volumes and private environment
+files. Routine updates create no backups.
