@@ -1,0 +1,163 @@
+/* Shared sidebar geometry across the library and study screens. */
+:root { --sidebar-width: 226px; }
+.sidebar, .collection-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: var(--sidebar-width);
+  padding: 36px 24px 24px;
+  background: #172a25;
+  color: #f0f3e8;
+  display: flex;
+  flex-direction: column;
+  z-index: 12;
+  overflow-y: auto;
+}
+.sidebar > *, .collection-sidebar > * { flex-shrink: 0; }
+.workspace, .collection-workspace {
+  margin-left: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+  min-width: 0;
+}
+.brand, .collection-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 34px;
+  padding: 0 0 0 8px;
+  border: 0;
+  background: transparent;
+  color: #e9efdf;
+  text-align: left;
+  text-decoration: none;
+}
+.brand > svg, .collection-brand > svg { color: var(--lime); width: 29px; height: 29px; }
+.brand > span, .collection-brand > span { font-size: 34px; font-weight: 600; letter-spacing: -2px; line-height: 1; }
+.brand-dot, .collection-brand > span > span { color: var(--lime); }
+.sidebar-caption, .collection-sidebar-caption {
+  display: block;
+  color: #95a498;
+  font-size: 8px;
+  line-height: 1.5;
+  letter-spacing: 2px;
+  margin: 16px 0 46px 9px;
+}
+.main-nav, .collection-sidebar nav { display: flex; flex-direction: column; gap: 7px; }
+.nav-label, .collection-nav-label {
+  display: block;
+  font-size: 9px;
+  line-height: 1.5;
+  font-weight: 500;
+  color: #84988b;
+  letter-spacing: 1.6px;
+  margin: 0 12px 12px;
+}
+.nav-item, .collection-nav-item {
+  width: 100%;
+  min-height: 47px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: transparent;
+  border: 0;
+  padding: 13px 12px;
+  border-radius: 7px;
+  color: #aebbb0;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.nav-item > span:first-of-type, .collection-nav-item > span:first-of-type { flex: 1; }
+.nav-item.active, .collection-nav-item.active { background: var(--lime); color: #22352a; font-weight: 600; }
+.nav-item:hover:not(:disabled):not(.active), .collection-nav-item:hover:not(:disabled):not(.active) { background: #243a31; color: #e8eddf; }
+.nav-item:disabled { opacity: 1; }
+.sidebar-bottom, .collection-sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 57px;
+  padding: 22px 0 0;
+  margin-top: auto;
+  border-top: 1px solid #304139;
+}
+.user-avatar, .collection-sidebar-footer .collection-avatar {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #34463c;
+  color: #cbdbb9;
+  font-size: 12px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+.sidebar-bottom > div:nth-child(2), .collection-sidebar-footer > div { flex: 1; min-width: 0; }
+.sidebar-bottom strong, .collection-sidebar-footer strong { display: block; font-size: 10px; line-height: 1.5; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-bottom > div > span, .collection-sidebar-footer > div > span { display: block; color: #8a9c8e; font-size: 9px; line-height: 1.5; margin-top: 4px; }
+.sidebar-bottom > svg, .collection-sidebar-footer > svg { color: #8ca37d; }
+@media (max-width: 700px) {
+  .sidebar, .collection-sidebar { position: relative; inset: auto; width: 100%; padding: 15px 20px; flex-direction: row; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; }
+  .workspace, .collection-workspace { margin-left: 0; width: 100%; }
+  .brand, .collection-brand { padding: 0; gap: 8px; height: 29px; }
+  .brand > span, .collection-brand > span { font-size: 27px; }
+  .brand > svg, .collection-brand > svg { width: 23px; height: 23px; }
+  .sidebar-caption, .collection-sidebar-caption, .sidebar-deck, .collection-sidebar-note, .sidebar-bottom, .collection-sidebar-footer, .main-nav .nav-label, .collection-nav-label { display: none; }
+  .main-nav, .collection-sidebar nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 7px; }
+  .nav-item, .collection-nav-item { padding: 10px 11px; font-size: 11px; gap: 7px; }
+  .nav-item > svg, .collection-nav-item > svg { width: 15px; height: 15px; }
+  .nav-item > svg:last-child { display: none; }
+  .nav-item > svg:first-child { display: block; }
+}
+@media (max-width: 380px) {
+  .sidebar, .collection-sidebar { padding: 14px; gap: 8px; }
+  .brand, .collection-brand { gap: 6px; }
+  .brand > span, .collection-brand > span { font-size: 24px; }
+  .brand > svg, .collection-brand > svg { width: 20px; height: 20px; }
+  .main-nav, .collection-sidebar nav { gap: 5px; }
+  .nav-item, .collection-nav-item { padding: 9px 8px; font-size: 10px; gap: 5px; }
+}
+
+/* Give the editor and course more room while a reference document is open. */
+@media (min-width: 701px) {
+  .collection-shell:has(.reader-is-open .reference-document-choice) { --sidebar-width: 72px; }
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-sidebar { padding: 30px 12px 24px; }
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-brand { justify-content: center; padding: 0; }
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-brand > span,
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-nav-label,
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-nav-item > span,
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-sidebar-footer > div,
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-sidebar-footer > svg { display: none; }
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-nav-item { justify-content: center; padding: 13px 0; gap: 0; }
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-nav-item > svg { flex-shrink: 0; }
+  .collection-shell:has(.reader-is-open .reference-document-choice) .collection-sidebar-footer { justify-content: center; }
+}
+
+.validation-sidebar { margin-top: 28px; width: 100%; }
+.validation-sidebar-label { display: block; margin: 0 10px 10px; color: #a8b7a9; font-size: 9px; letter-spacing: 1.5px; }
+.validation-job { display: flex; align-items: center; gap: 9px; width: 100%; padding: 11px 9px; border: 1px solid #526958; border-radius: 9px; color: #e6eede; background: #ffffff08; text-align: left; margin-top: 7px; }
+.validation-job:hover { background: #ffffff14; }
+.validation-job > svg { flex-shrink: 0; color: #c3d7b4; }
+.validation-job > span { flex: 1; min-width: 0; }
+.validation-job strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 500; }
+.validation-job small { display: block; font-size: 10px; line-height: 1.5; color: #b4c5b7; margin-top: 4px; }
+.validation-job i { width: 6px; height: 6px; border-radius: 50%; background: #d6e5ad; flex-shrink: 0; }
+.validation-toast { position: fixed; bottom: 24px; right: 24px; z-index: 90; display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); padding: 16px; background: #fbfbf4; color: #34563d; border: 1px solid #d4dfcd; border-radius: 13px; box-shadow: 0 8px 35px #1b332425; }
+.validation-toast > svg { flex-shrink: 0; }
+.validation-toast > div { min-width: 0; }
+.validation-toast strong { display: block; font-size: 13px; }
+.validation-toast span { display: block; font-size: 11px; margin-top: 4px; overflow-wrap: anywhere; }
+.validation-toast .secondary-button { flex-shrink: 0; font-size: 11px; padding: 8px 10px; }
+.validation-snapshot-note { font-size: 11px; line-height: 1.7; color: #68745f; margin-bottom: 16px; }
+.validation-open-target { padding: 14px; margin: 15px 0; background: #eef1e7; border-radius: 9px; }
+.validation-open-target p { font-size: 12px; margin-bottom: 10px; }
+@media (max-width: 900px) { .validation-sidebar { margin-top: 0; } }
+@media (max-width: 520px) {
+  .validation-toast { bottom: 12px; right: 12px; left: 12px; gap: 8px; flex-wrap: wrap; }
+  .validation-toast > div { flex: 1; }
+}
+@media (min-width: 901px) {
+  .collection-shell:has(.reader-is-open .reference-document-choice) .validation-sidebar-label,
+  .collection-shell:has(.reader-is-open .reference-document-choice) .validation-job > span,
+  .collection-shell:has(.reader-is-open .reference-document-choice) .validation-job i { display: none; }
+  .collection-shell:has(.reader-is-open .reference-document-choice) .validation-job { justify-content: center; }
+}
