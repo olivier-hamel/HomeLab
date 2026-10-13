@@ -49,7 +49,10 @@ should be limited to trusted administrators. Diagnostics are not logged.
 
 H.264 video is encoded with FFmpeg's ultrafast, zero-latency preset at 20 fps,
 with independently decodable 600 ms segments. Camera audio timestamps are
-normalized and optional audio is converted to AAC. This uses more server CPU
+normalized with a shared input clock (`-copyts -start_at_zero`), and optional
+audio is converted to AAC. This is required with FFmpeg 5 in the Debian backend
+image: unrebased arrival timestamps can place the audio and video many hours
+apart after MPEG-TS timestamp rollover and prevent browser playback. This uses more server CPU
 than copying the original stream; each quality shares one encoder limited to
 two threads. The relay stops after 45 seconds without video
 requests and deletes its temporary files. Every playlist and segment request

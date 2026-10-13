@@ -11,9 +11,10 @@ export function rtspInput(config: CameraConfig, quality: Quality) {
 }
 export function streamArguments(input: string, directory: string) {
   // The C200 can send backward audio timestamps. Arrival times and asynchronous
-  // resampling keep AAC monotonic, including in the first short segment.
+  // resampling keep AAC monotonic. Preserve one common input clock, then shift
+  // it to zero: FFmpeg 5 otherwise produces different audio/video epoch offsets.
   return ["-hide_banner", "-loglevel", "error", "-nostdin", "-fflags", "+nobuffer+discardcorrupt", "-flags", "low_delay",
-    "-analyzeduration", "200000", "-probesize", "32768", "-rtsp_transport", "tcp", "-reorder_queue_size", "0", "-use_wallclock_as_timestamps", "1", "-timeout", "10000000", "-i", input,
+    "-analyzeduration", "200000", "-probesize", "32768", "-rtsp_transport", "tcp", "-reorder_queue_size", "0", "-use_wallclock_as_timestamps", "1", "-timeout", "10000000", "-copyts", "-start_at_zero", "-i", input,
     // Copying H.264 keeps the camera's roughly two-second keyframe interval.
     // A shared, bounded encoder produces independently decodable 600 ms chunks.
     "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-threads", "2",
