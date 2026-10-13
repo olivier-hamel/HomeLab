@@ -7,8 +7,8 @@ You can also use an existing Ubuntu server without Proxmox.
 
 The repository supplies the dashboard and its deployment files. Your hypervisor,
 other guests, storage, backups, and remote-access service are separate parts of
-your lab. The Proxmox sections show sample data and the dashboard has no login
-system. Start with access from your home network. The optional TV & Movies
+your lab. The dashboard contains Calendar, TV & Movies, and Mémo; Mémo has its
+own login system. Start with access from your home network. The optional TV & Movies
 integration has its own [setup and verification guide](tv-media.md), including
 backend-to-media Tailscale connectivity, credentials and private-access controls.
 
@@ -222,7 +222,7 @@ APP_URL=http://192.168.1.50:3000
 curl -fsS "$APP_URL/healthz"
 curl -fsS "$APP_URL/api/health"
 curl -I "$APP_URL/"
-curl -I "$APP_URL/guests"
+curl -I "$APP_URL/?section=tv"
 curl -i "$APP_URL/api"
 curl -i "$APP_URL/api/does-not-exist"
 curl -i "$APP_URL/api/missing.js"
@@ -232,8 +232,9 @@ curl -i "$APP_URL/missing.css"
 ```
 
 Expect `ok` from `/healthz` and `{"status":"ok"}` from `/api/health`.
-`/` and `/guests` return HTML with status 200. The current dashboard selects its
-view through component state, so a fallback URL loads the default view.
+`/` and `/?section=tv` return HTML with status 200. The dashboard opens Calendar
+by default; `?section=tv` and `?section=memo` select the other apps. Unknown
+section names, including removed pages, fall back to Calendar.
 All missing API and asset paths listed above should return 404. A Next.js 404
 may contain HTML, but it must not be the dashboard's index page or a 200 response.
 Future extensionless assets outside `/assets` need their own reserved prefix
@@ -251,8 +252,8 @@ console.log(response.status, response.headers.get('content-type'), await respons
 
 Expect status 200, a JSON content type, and `{status: 'ok'}`. The Network tab
 should show a request to the frontend's origin on port 3000. This proves browser
-to Caddy to Next.js connectivity. Live Proxmox metrics and other integrations
-still require application work; they are not enabled by this test.
+to Caddy to Next.js connectivity. See the TV & Movies guide to verify the media
+integrations themselves.
 
 Verify container identities, health, and backend isolation on the VM:
 

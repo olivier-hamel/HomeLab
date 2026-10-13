@@ -10,8 +10,10 @@ accounts. Clone the [Memo repository](https://github.com/olivier-hamel/Memo)
 beside this checkout as `memo`, or set `MEMO_SOURCE_DIR` in your private `.env`.
 See [Memo setup](docs/memo.md) for accounts, private HTTPS, and persistent data.
 
-**Current status:** the Proxmox sections use temporary sample data and their
-service actions remain disabled. **TV & Movies** adds an optional TMDB catalogue,
+The browser dashboard contains only Calendar, TV & Movies, and Mémo. The apps
+fill the content area; fullscreen is available from the sidebar.
+
+**TV & Movies** adds an optional TMDB catalogue,
 Prowlarr search and TorrServer playback through backend APIs. It requires private
 network configuration and your own credentials. Follow the
 [TV & Movies setup and verification guide](docs/tv-media.md). Live media services

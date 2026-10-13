@@ -1,7 +1,9 @@
 # Calendar
 
 Calendar is the default browser dashboard section. Explicit `?section=...`
-links still select their requested section, and TV mode still starts with TV & Movies.
+links select Calendar, TV & Movies, or Mémo, and TV mode still starts with TV & Movies.
+Removed or unknown section names fall back to Calendar. There is no dashboard
+top bar; the sidebar contains app navigation and the fullscreen control.
 The Calendar navigation item embeds `/calendar/` in a same-origin frame, including
 the dashboard's fullscreen view and Escape handling. It works on HTTP and HTTPS.
 
