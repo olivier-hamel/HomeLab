@@ -168,7 +168,7 @@ test('failed event preparation logs only provider status, code and model', async
   const f=fixture(async()=>Response.json({error:{code:'rate_limit_exceeded',message:'private-provider-canary calendar-log-secret-canary'}},{status:429,headers:{'Retry-After':'120'}}));
   try {
     const response=await f.call('interpret','POST',{text:'private-input-canary',selectedDate:draft.date},'log-test');
-    assert.equal(response.status,429);assert.match((await response.json()).error,/quota/);
+    assert.equal(response.status,429);assert.match((await response.json()).error,/limite de requêtes/);
     assert.equal(warnings.length,1);assert.deepEqual(Object.keys(warnings[0][1]).sort(),['code','model','status']);
     assert.equal(warnings[0][1].status,429);assert.equal(warnings[0][1].code,'rate_limit_exceeded');
     assert(!JSON.stringify(warnings).includes('canary'));assert.equal(f.rows.length,0);

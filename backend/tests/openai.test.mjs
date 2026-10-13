@@ -98,11 +98,13 @@ test('temporary failures retry with the same body and permanent failures and lon
     }}), error => error instanceof OpenAIProviderError && error.upstreamStatus === status);
     assert.equal(attempts, 1);
   }
-  let attempts = 0;
-  await assert.rejects(generateOpenAIObject({...input, retries:2, fetcher:async () => {
-    attempts++; return Response.json({error:{code:'insufficient_quota'}}, {status:429});
-  }}), error => error.upstreamCode === 'insufficient_quota');
-  assert.equal(attempts, 1);
+  for (const code of ['insufficient_quota', 'credit_balance_exhausted']) {
+    let attempts = 0;
+    await assert.rejects(generateOpenAIObject({...input, retries:2, fetcher:async () => {
+      attempts++; return Response.json({error:{code,type:'insufficient_quota'}}, {status:429});
+    }}), error => error.upstreamCode === code);
+    assert.equal(attempts, 1);
+  }
 }));
 
 test('cancelling during backoff and the total timeout stop all retries', async () => withKey(async () => {

@@ -194,6 +194,18 @@ test('analysis leases prevent simultaneous extraction and recover an interrupted
  await assert.rejects(f.documents.finishAnalysis('oli',document.id,first.token,{analysisState:'ready'}),error=>error.status===404);
  await f.documents.finishAnalysis('oli',document.id,next.token,{analysisState:'ready',summary:'Aucun événement',proposals:[]});assert.equal((await f.documents.get('oli',document.id)).analysisState,'ready');
 });
+
+test('exhausted analysis credit preserves the PDF and explains billing without retrying or naming the provider',async()=>withKey(async()=>{
+ let calls=0;
+ const f=fixture(async()=>{calls++;return Response.json({error:{code:'credit_balance_exhausted',type:'insufficient_quota',message:'private-provider-canary'}},{status:429});});
+ const {document}=await(await f.upload(pdf,'Examen.pdf','billing-test')).json();
+ const response=await f.call(`/${document.id}/analyze`,'POST',{},'billing-test');
+ assert.equal(response.status,429);assert.equal(calls,1);
+ const result=await response.json();assert.match(result.error,/facturation/);
+ assert(!/gemini|openai|gpt-|private-provider|patiente/i.test(result.error));
+ assert.equal(f.df.rows.length,1);assert.equal(f.ef.rows.length,0);
+ assert.equal((await f.documents.get('billing-test',document.id)).analysisState,'error');
+}));
 test('retrying a partially written selection creates the missing events without duplicating saved entries',async()=>withKey(async()=>{
  const f=fixture(async()=>provider([{event:draft,page:1,note:''},{event:{...draft,title:'Atelier'},page:1,note:''}]));
  const uploaded=(await(await f.upload(pdf,'Horaire.pdf','partial')).json()).document;
