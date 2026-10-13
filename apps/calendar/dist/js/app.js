@@ -1,7 +1,5 @@
 import {createEventController} from "./event-controller.js";
-import {createDocumentController} from "./document-controller.js";
-import {renderDocuments} from "./components/documents.js";
-import {renderPdfPreview} from "./pdf-preview.js";
+import {createNotificationController} from "./notifications.js";
 import {createCalendarStore} from "./state.js";
 import {calendarAccount, escapeHtml} from "./account.js";
 import {dateKey, parseDate, addDays, fullDate, periodTitle, zoneOffset, VIEW_LABELS} from "./date.js";
@@ -29,7 +27,7 @@ let renderedToday = null;
 
 app.innerHTML = renderShell();
 const eventController = createEventController(store, dialogRoot);
-const documentController = createDocumentController(store, dialogRoot, eventController);
+const notificationController = createNotificationController(store, dialogRoot, eventController);
 
 function render(state, reason = "initial") {
   const active = document.activeElement;
@@ -37,9 +35,6 @@ function render(state, reason = "initial") {
   const focusDate = active?.dataset.date;
   const focusWasMonth = active?.classList.contains("month-date");
   const focusWasMini = active?.classList.contains("mini-day");
-  const focusDocumentId = active?.closest("[data-document-id]")?.dataset.documentId;
-  const searchFocused = active?.id === "document-search";
-  const searchSelection = searchFocused ? [active.selectionStart, active.selectionEnd] : null;
   const content = document.getElementById("calendar-content");
   const oldScroll = document.querySelector(".time-scroll")?.scrollTop;
   const previousPage = renderedPage;
@@ -56,26 +51,19 @@ function render(state, reason = "initial") {
     if (focusAction) app.querySelector(`[data-action="${focusAction}"]`)?.focus({preventScroll: true});
     return;
   }
-  const isDocuments = state.page === "documents";
   document.getElementById("workspace-breadcrumb").innerHTML = renderBreadcrumb(state);
-  app.querySelector(".calendar-workspace").classList.toggle("is-documents", isDocuments);
-  app.querySelector(".calendar-toolbar").hidden = isDocuments;
-  app.querySelector('.jump-button').hidden = isDocuments;
   const status = document.getElementById("events-status");
-  status.hidden = isDocuments || state.eventsStatus === "ready";
+  status.hidden = state.eventsStatus === "ready";
   status.innerHTML = state.eventsStatus === "error" ? `<span>${escapeHtml(state.eventsError)}</span><button data-action="events-retry">Réessayer</button>` : "Chargement de tes événements…";
   status.classList.toggle("has-error", state.eventsStatus === "error");
   const title = periodTitle(state);
-  if (!isDocuments) {
-    document.getElementById("period-title").innerHTML = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
-    app.querySelector('[data-action="prev"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "précédente" : "précédent"}`);
-    app.querySelector('[data-action="next"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "suivante" : "suivant"}`);
-    for (const button of app.querySelectorAll(".view-switch button")) button.setAttribute("aria-pressed", String(button.dataset.action === state.view));
-  }
+  document.getElementById("period-title").innerHTML = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
+  app.querySelector('[data-action="prev"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "précédente" : "précédent"}`);
+  app.querySelector('[data-action="next"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "suivante" : "suivant"}`);
+  for (const button of app.querySelectorAll(".view-switch button")) button.setAttribute("aria-pressed", String(button.dataset.action === state.view));
   const monthKey = dateKey(state.date).slice(0, 7);
   const retainMonth = renderedPage === "calendar" && state.view === "month" && renderedView === "month" && renderedPeriod === monthKey && ["date", "keyboard-date"].includes(reason);
-  if (isDocuments) {content.innerHTML = renderDocuments(state); void renderPdfPreview(content);}
-  else if (retainMonth) {
+  if (retainMonth) {
     for (const cell of app.querySelectorAll(".month-cell")) {
       const button = cell.querySelector(".month-date");
       const selected = button.dataset.date === dateKey(state.date);
@@ -88,18 +76,12 @@ function render(state, reason = "initial") {
   renderedView = state.view;
   renderedPage = state.page;
   const hints = {month: "Clique sur une date pour voir sa semaine", week: "Clique sur un jour pour voir son horaire", day: "Ta journée, heure par heure"};
-  document.getElementById("view-hint").innerHTML = `<span class="hint-dot"></span>${isDocuments ? "Tes documents, liés à ton calendrier" : hints[state.view]}`;
+  document.getElementById("view-hint").innerHTML = `<span class="hint-dot"></span>${hints[state.view]}`;
   document.getElementById("timezone-offset").textContent = zoneOffset(state.preferences.timezone, state.date);
   if (previousPage !== state.page) content.scrollTop = 0;
   const scroll = app.querySelector(".time-scroll");
   if (scroll) scroll.scrollTop = oldScroll !== undefined && !["view", "drilldown"].includes(reason) ? oldScroll : 7 * 64 - 16;
-  if (isDocuments && searchFocused) {const input = document.getElementById("document-search"); input?.focus({preventScroll: true}); if (input && searchSelection) input.setSelectionRange(...searchSelection);}
-  else if (reason === "documents-open") document.getElementById("documents-title")?.focus({preventScroll: true});
-  else if (isDocuments && reason === "folder-open") {content.scrollTop = 0; document.getElementById("document-location-title")?.focus({preventScroll: true}); document.getElementById("announcement").textContent = `Dossier ${state.documentFolders.find(folder => folder.id === state.currentFolderId)?.name || "Documents"}.`;}
-  else if (isDocuments && reason === "document-select" && state.documentDetailsOpen) {content.scrollTop = 0; app.querySelector('.inspector-back')?.focus({preventScroll: true});}
-  else if (isDocuments && reason === "document-back") app.querySelector(`[data-action="document-select"][data-document-id="${state.selectedDocumentId}"]`)?.focus();
-  else if (isDocuments && focusDocumentId && !document.contains(active)) app.querySelector(`[data-action="${focusAction}"][data-document-id="${focusDocumentId}"]`)?.focus({preventScroll: true});
-  else if (reason === "drilldown" || reason === "view") (app.querySelector(`.time-day-heading[data-date="${dateKey(state.date)}"]`) || app.querySelector(".month-date[tabindex='0']") || content)?.focus({preventScroll: true});
+  if (reason === "drilldown" || reason === "view") (app.querySelector(`.time-day-heading[data-date="${dateKey(state.date)}"]`) || app.querySelector(".month-date[tabindex='0']") || content)?.focus({preventScroll: true});
   else if ((focusWasMonth || reason === "keyboard-date") && state.view === "month") app.querySelector(`.month-date[data-date="${dateKey(state.date)}"]`)?.focus({preventScroll: true});
   else if (focusWasMini) {
     if (window.matchMedia("(max-width: 760px)").matches) (app.querySelector(".month-date[tabindex='0']") || document.getElementById("calendar-content"))?.focus({preventScroll: true});
@@ -145,8 +127,6 @@ const actions = {
   "mini-prev": () => store.navigateMini(-1), "mini-next": () => store.navigateMini(1),
   "open-week": element => store.openDate(parseDate(element.dataset.date), "week"),
   "open-day": element => store.openDate(parseDate(element.dataset.date), "day"),
-  "today-day": () => store.openDate(store.getState().today, "day"),
-  "today-week": () => store.openDate(store.getState().today, "week"),
   jump: () => openDialog("jump"), settings: () => openDialog("settings"), shortcuts: () => openDialog("shortcuts"),
   "close-dialog": closeDialog, "jump-today": () => {closeDialog(); store.goToday();},
   "toggle-sidebar": () => store.toggleSidebar(), "close-sidebar": () => store.closeSidebar(),
@@ -194,7 +174,7 @@ void eventController.loadEvents().then(() => {
   if (initialParams.get("create") === "1") eventController.openCreate();
   else if (eventId) eventController.openEvent(eventId);
 });
-void documentController.loadDocuments();
+void notificationController.load();
 setInterval(() => {if (!document.hidden) store.refreshClock();}, 60_000);
 document.addEventListener("visibilitychange", () => {if (!document.hidden) store.refreshClock();});
 

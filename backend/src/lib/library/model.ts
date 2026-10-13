@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { MediaError } from "../media/core.ts";
 import type { MoodleCourse, MoodleFile } from "../moodle/client.ts";
 import type { EventInput } from "../calendar/events.ts";
@@ -20,14 +20,14 @@ export type TempoScan = { id: string; state: "queued" | "scanning" | "ready" | "
   requestedAt: string; completedAt: string | null; retryAt: string; token: string; leaseUntil: string;
   blobId: string | null; summary: string; error: string; proposals: TempoProposal[] };
 export function queuedScan(automatic: boolean): TempoScan {
-  return { id: stableId(`scan:${Date.now()}:${Math.random()}`), state: "queued", automatic, requestedAt: new Date().toISOString(),
+  return { id: randomUUID(), state: "queued", automatic, requestedAt: new Date().toISOString(),
     completedAt: null, retryAt: "", token: "", leaseUntil: "", blobId: null, summary: "", error: "", proposals: [] };
 }
 export type SyncState = {
   status: "idle" | "running" | "warning" | "error"; lastAttempt: string | null; lastSuccess: string | null;
   message: string; saved: number; total: number; token: string; leaseUntil: string;
 };
-export type Library = { username: string; folders: LibraryFolder[]; files: LibraryFile[]; sync: SyncState; version: number };
+export type Library = { username: string; folders: LibraryFolder[]; files: LibraryFile[]; sync: SyncState; version: number; tempoArchiveIds?: string[] };
 export const emptySync = (): SyncState => ({ status: "idle", lastAttempt: null, lastSuccess: null, message: "", saved: 0, total: 0, token: "", leaseUntil: "" });
 export function emptyLibrary(username: string): Library {
   return { username, version: 0, folders: [{ id: MOODLE_FOLDER, name: "Moodle", parentId: null, managed: true, createdAt: new Date().toISOString() }], files: [], sync: emptySync() };
@@ -88,14 +88,19 @@ export function semesterCourses(courses: MoodleCourse[], semester = "A26") {
   return courses.filter(course => pattern.test(`${course.shortname} ${course.fullname}`));
 }
 export function stableId(value: string) { return createHash("sha256").update(value).digest("hex").slice(0, 32); }
+export function proposalId(fileId: string, event: EventInput) {
+  const title = event.title.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const hex = createHash("sha256").update(JSON.stringify([fileId, title, event.date, event.endDate, event.startTime, event.endTime, event.allDay, event.recurrence])).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 export function sourceFingerprint(file: MoodleFile) { return stableId(JSON.stringify([file.filename, file.filesize, file.modified ?? null, file.contenthash ?? null])); }
 export function fileMime(file: Pick<LibraryFile, "kind" | "name">) { return file.kind === "pdf" ? "application/pdf" : /\.pptx$/i.test(file.name) ? "application/vnd.openxmlformats-officedocument.presentationml.presentation" : "application/vnd.ms-powerpoint"; }
 export function publicLibrary(library: Library, allowed: boolean) {
   const folders = library.folders.filter(folder => allowed || !folder.managed || folder.id === MOODLE_FOLDER);
-  const files = library.files.filter(file => allowed || !file.source).map(({ blobId, previewId, tempoScan, ...file }) => ({ ...file, ready: !!blobId, hasPreview: !!previewId || file.kind === "pdf" && !!blobId,
+  const files = library.files.filter(file => allowed || !file.source).map(({ blobId, previewId, tempoScan, tempoDecisions, ...file }) => ({ ...file, ready: !!blobId, hasPreview: !!previewId || file.kind === "pdf" && !!blobId,
     tempoScan: tempoScan ? { id: tempoScan.id, state: tempoScan.state, automatic: tempoScan.automatic, requestedAt: tempoScan.requestedAt, completedAt: tempoScan.completedAt,
       summary: tempoScan.summary, error: tempoScan.error, changed: !!tempoScan.blobId && tempoScan.blobId !== blobId,
-      proposals: tempoScan.proposals.map(proposal => ({ ...proposal, decision: file.tempoDecisions?.[proposal.id] ?? proposal.decision })) } : null }));
+      proposals: tempoScan.proposals.map(proposal => ({ ...proposal, decision: tempoDecisions?.[proposal.id] ?? proposal.decision })) } : null }));
   const privateSync = allowed ? library.sync : emptySync();
   const sync = { status: privateSync.status, lastAttempt: privateSync.lastAttempt, lastSuccess: privateSync.lastSuccess, message: privateSync.message, saved: privateSync.saved, total: privateSync.total };
   const leaseUntil = privateSync.leaseUntil;

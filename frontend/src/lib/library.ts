@@ -1,11 +1,17 @@
 export type LibraryFolder = { id: string; name: string; parentId: string | null; managed: boolean; createdAt: string };
+export type EventDraft = { title: string; description: string; date: string; endDate: string; allDay: boolean; startTime: string | null; endTime: string | null;
+  recurrence: null | { frequency: string; interval: number; weekdays: number[]; until: string | null; count: number | null } };
+export type TempoProposal = { id: string; event: EventDraft; page: number | null; note: string; decision: "pending" | "added" | "ignored" };
+export type TempoScan = { id: string; state: "queued" | "scanning" | "ready" | "error"; automatic: boolean; requestedAt: string; completedAt: string | null; summary: string; error: string; changed: boolean; proposals: TempoProposal[] };
 export type LibraryFile = {
   id: string; name: string; folderId: string | null; kind: "pdf" | "powerpoint"; size: number;
   createdAt: string; updatedAt: string; error: string; ready: boolean; hasPreview: boolean;
   source: null | { courseId: number; fileId: string; module: string; available: boolean };
+  tempoScan?: TempoScan | null;
 };
 export type LibraryData = {
   folders: LibraryFolder[]; files: LibraryFile[]; moodleAvailable: boolean; semester: string; intervalMinutes: number; maxFileBytes: number;
+  aiAvailable?: boolean;
   sync: { status: "idle" | "running" | "warning" | "error"; lastAttempt: string | null; lastSuccess: string | null; message: string; saved: number; total: number };
 };
 export async function libraryRequest<T>(path = "", method = "GET", body?: unknown, headers?: Record<string, string>): Promise<T> {

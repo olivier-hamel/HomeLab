@@ -6,6 +6,10 @@ import { eventId, eventSchema, validateEvent, validDate } from "./events.ts";
 import { CalendarEventStore } from "./store.ts";
 import { CalendarDocumentStore } from "./documents.ts";
 import { handleDocumentRequest } from "./document-api.ts";
+import { importTempoArchive } from "../library/imports.ts";
+import { libraryStore } from "../library/store.ts";
+import { moodleAuthorized, publicLibrary } from "../library/model.ts";
+import { createLibraryApi } from "../library/api.ts";
 
 const rates = new BoundedCache<number>(1024, 60_000);
 const instruction = `Extract ONE calendar event or recurring series from the user's text, in the user's language.
@@ -44,15 +48,35 @@ function boundary(request: Request) {
 function currentDate() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
-export function createCalendarApi(fetcher: Fetcher = fetch, store = new CalendarEventStore(), authenticate: AccountVerifier = createAccountVerifier(fetcher), documents = new CalendarDocumentStore()) {
+export function createCalendarApi(fetcher: Fetcher = fetch, store = new CalendarEventStore(), authenticate: AccountVerifier = createAccountVerifier(fetcher), documents?: CalendarDocumentStore) {
+  const archive = documents ?? new CalendarDocumentStore();
   return async (request: Request) => {
     const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
     try {
       boundary(request);
       const { user } = await authenticate(request);
       const path = new URL(request.url).pathname.replace(/^\/api\/calendar\/?/, "").split("/").filter(Boolean);
-      if (path[0] === "documents") return await handleDocumentRequest(request, path, user.username, documents, store, fetcher);
-      if (request.method === "GET" && path.join("/") === "events") return json({ events: await store.list(user.username), aiAvailable: !!geminiApiKey() });
+      if (path[0] === "documents") {
+        if (documents) return await handleDocumentRequest(request, path, user.username, documents, store, fetcher);
+        if (request.method !== "GET") throw new MediaError("library", "Les documents sont maintenant gérés dans Bibliothèque.", 410);
+        if (path.length === 1) {
+          const data = publicLibrary(await libraryStore.snapshot(user.username), moodleAuthorized(user.username));
+          return json({ documents: data.files, folders: data.folders, aiAvailable: !!geminiApiKey() });
+        }
+        const file = (await libraryStore.snapshot(user.username)).files.find(row => row.id === path[1]);
+        if (file && path.length === 3 && path[2] === "file") {
+          const url = new URL(request.url); url.pathname = `/api/library/files/${file.id}/${url.searchParams.get("download") === "1" ? "original" : "preview"}`;
+          return createLibraryApi(async () => ({ user, accounts: [] }))(new Request(url, request));
+        }
+        if (path.length === 3 && path[2] === "file") return handleDocumentRequest(request, path, user.username, archive, store, fetcher);
+        throw new MediaError("not_found", "Ouvre ce document depuis Bibliothèque.", 404);
+      }
+      if (request.method === "GET" && path.join("/") === "events") {
+        const events = await store.list(user.username);
+        // Preserve existing PDFs/proposals without making any Gemini request.
+        if (process.env.MONGODB_URI) await importTempoArchive(user.username, events, archive).catch(() => {});
+        return json({ events, aiAvailable: !!geminiApiKey() });
+      }
       const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 24 * 1024))));
       if (request.method === "POST" && path.join("/") === "interpret") {
         if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 2000 || !validDate(body.selectedDate)) throw new MediaError("input", "Décris un événement en 2 000 caractères maximum.", 400);

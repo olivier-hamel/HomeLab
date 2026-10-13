@@ -1,16 +1,35 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
+async function librarySelection(page: Page, names: string[]) {
+  if (!await page.getByRole('button', { name: 'Depuis Bibliothèque', exact: true }).count()
+      && !await page.getByRole('button', { name: 'Choisir un document', exact: true }).count()) {
+    await page.getByRole('button', { name: 'Document', exact: true }).click()
+  }
+  if (!await page.getByRole('button', { name: 'Depuis Bibliothèque', exact: true }).count()) {
+    await page.getByRole('button', { name: 'Choisir un document', exact: true }).click()
+  }
+  await page.getByRole('button', { name: 'Depuis Bibliothèque', exact: true }).first().click()
+  const picker = page.getByRole('dialog', { name: 'Choisir dans Bibliothèque', exact: true })
+  for (const name of names) {
+    await picker.getByRole('searchbox').fill(name)
+    await picker.locator('.memo-library-file').filter({ has: page.getByText(name, { exact: true }) }).getByRole('checkbox').check()
+  }
+  return picker
+}
+
+async function attachLibrary(page: Page, names: string[]) {
+  const picker = await librarySelection(page, names)
+  await picker.getByRole('button', { name: /^Ajouter \d+ document/ }).click()
+  await expect(picker).toHaveCount(0)
+}
+
 async function validationDraft(page: Page) {
   await page.getByRole('button', { name: 'Nouvel ensemble', exact: true }).click()
   await page.getByLabel('Titre de l’ensemble', { exact: true }).fill('Validation du cours')
   await page.getByLabel('Terme 1', { exact: true }).fill('Question du brouillon ?')
   await page.getByLabel('Définition 1', { exact: true }).fill('Réponse non enregistrée.')
-  const pdf = await page.request.get('/api/__fixtures/course.pdf')
-  await page.getByLabel('Ajouter des documents de référence', { exact: true }).setInputFiles([
-    { name: 'Cours.pdf', mimeType: 'application/pdf', buffer: await pdf.body() },
-    { name: 'Annexe.pdf', mimeType: 'application/pdf', buffer: await pdf.body() },
-  ])
+  await attachLibrary(page, ['Cours.pdf', 'Annexe.pdf'])
   await expect(page.getByRole('button', { name: 'Validation', exact: true }).first()).toBeEnabled()
 }
 
@@ -59,6 +78,29 @@ async function reviewValidation(page: Page) {
 }
 
 const covered = { covered: true, proposals: [], checked_pages: 6, checked_cards: 1 }
+
+test('Library picker browses nested Moodle folders, refreshes, and prevents duplicate references', async ({ page }) => {
+  await page.getByRole('button', { name: 'Nouvel ensemble', exact: true }).click()
+  await page.getByLabel('Terme 1', { exact: true }).fill('Mon brouillon intact')
+  await page.getByRole('button', { name: 'Depuis Bibliothèque', exact: true }).first().click()
+  const picker = page.getByRole('dialog', { name: 'Choisir dans Bibliothèque', exact: true })
+  await picker.getByRole('button', { name: 'Moodle', exact: true }).click()
+  await picker.getByRole('button', { name: 'INF2705', exact: true }).click()
+  await picker.getByRole('button', { name: 'Documents du cours', exact: true }).click()
+  await expect(picker.locator('.memo-library-file')).toHaveCount(4)
+  await picker.getByRole('button', { name: 'Actualiser Bibliothèque', exact: true }).click()
+  await picker.locator('.memo-library-file').filter({ has: page.getByText('Cours.pdf', { exact: true }) }).getByRole('checkbox').check()
+  await picker.getByRole('button', { name: 'Ajouter 1 document', exact: true }).click()
+  await expect(picker).toHaveCount(0)
+  await page.getByRole('button', { name: 'Fermer le lecteur de documents', exact: true }).click()
+  await expect(page.getByLabel('Terme 1', { exact: true })).toHaveValue('Mon brouillon intact')
+  await page.getByRole('button', { name: 'Depuis Bibliothèque', exact: true }).first().click()
+  await picker.getByRole('searchbox').fill('Cours.pdf')
+  await expect(picker.getByRole('checkbox')).toBeDisabled()
+  await expect(picker).toContainText('Déjà ajouté à cet ensemble')
+  await picker.getByRole('button', { name: 'Fermer', exact: true }).click()
+  await expect(page.locator('input[type="file"]')).toHaveCount(0)
+})
 
 test('validation runs in the background, leaves editing available and notifies on completion', async ({ page }) => {
   const mock = await mockValidation(page, () => covered, true)
@@ -246,12 +288,7 @@ test('reference courses preserve notes, drafts, resized panels and reading posit
   const pdf = await page.request.get('/api/__fixtures/course.pdf')
   expect((await pdf.body()).subarray(0, 5).toString()).toBe('%PDF-')
   expect((await pptx.body()).subarray(0, 2).toString()).toBe('PK')
-  await page.getByLabel('Ajouter des documents de référence', { exact: true }).setInputFiles([
-    { name: 'Cours.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buffer: await pptx.body() },
-    { name: 'Chapitre.pdf', mimeType: 'application/pdf', buffer: await pdf.body() },
-  ])
-  await expect(page.getByRole('button', { name: 'Ajout en cours…' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Créer l’ensemble', exact: true }).first()).toBeDisabled()
+  await attachLibrary(page, ['Cours.pptx', 'Chapitre.pdf'])
   await page.getByLabel('Définition 1', { exact: true }).fill('Ma réponse pendant la conversion')
   await expect(page.getByRole('button', { name: 'Choisir un document', exact: true })).toBeVisible({ timeout: 30000 })
   await expect(page.locator('.reference-choice-heading')).toContainText('2 documents', { timeout: 30000 })
@@ -386,12 +423,11 @@ test('reference courses preserve notes, drafts, resized panels and reading posit
   expect(errors).toEqual([])
 })
 
-test('mobile reference reader switches panels and failed uploads preserve the draft', async ({ page }) => {
+test('mobile reference reader switches panels and failed Library selections preserve the draft', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 844 })
   await page.getByRole('button', { name: 'Nouvel ensemble' }).click()
   await page.getByLabel('Terme 1', { exact: true }).fill('Mobile sans perte')
-  const pdf = await page.request.get('/api/__fixtures/course.pdf')
-  await page.getByLabel('Ajouter des documents de référence', { exact: true }).setInputFiles({ name: 'Cours.pdf', mimeType: 'application/pdf', buffer: await pdf.body() })
+  await attachLibrary(page, ['Cours.pdf'])
   await expect(page.getByRole('button', { name: 'Document', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Document', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Page suivante', exact: true })).toBeEnabled()
@@ -403,8 +439,12 @@ test('mobile reference reader switches panels and failed uploads preserve the dr
   await expect(page.getByLabel('Numéro de page', { exact: true })).toHaveValue('2')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: test.info().outputPath('reader-mobile.png') })
-  await page.getByLabel('Ajouter des documents de référence', { exact: true }).setInputFiles({ name: 'Cassé.pdf', mimeType: 'application/pdf', buffer: Buffer.from('not a PDF') })
-  await expect(page.getByRole('alert')).toContainText('PDF valide')
+  await page.route('**/api/library-documents/attach', route => route.fulfill({ status: 503, json: { detail: 'Bibliothèque est indisponible.' } }))
+  const failedPicker = await librarySelection(page, ['Annexe.pdf'])
+  await failedPicker.getByRole('button', { name: 'Ajouter 1 document', exact: true }).click()
+  await expect(failedPicker.getByRole('alert')).toContainText('Bibliothèque est indisponible')
+  await failedPicker.getByRole('button', { name: 'Fermer', exact: true }).click()
+  await page.unroute('**/api/library-documents/attach')
   await page.getByRole('button', { name: 'Choisir un document', exact: true }).click()
   const picker = page.getByRole('dialog', { name: 'Choisir un document', exact: true })
   await expect(picker.getByRole('listitem')).toHaveCount(1)
@@ -412,8 +452,7 @@ test('mobile reference reader switches panels and failed uploads preserve the dr
   await picker.getByRole('button', { name: 'Fermer la fenêtre', exact: true }).click()
   await page.getByRole('button', { name: 'Cartes', exact: true }).click()
   await expect(page.getByLabel('Définition 1', { exact: true })).toHaveValue('Texte mobile')
-  const pptx = await page.request.get('/api/__fixtures/course.pptx')
-  await page.getByLabel('Ajouter des documents de référence', { exact: true }).setInputFiles({ name: 'Cours.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buffer: await pptx.body() })
+  await attachLibrary(page, ['Cours.pptx'])
   await expect(page.locator('.reference-choose')).toContainText('Cours.pptx', { timeout: 30000 })
   await page.getByRole('button', { name: 'Document', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Slide suivante', exact: true })).toBeEnabled()

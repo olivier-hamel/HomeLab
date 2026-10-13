@@ -146,3 +146,17 @@
   .reference-document-info strong { font-size: 12px; }
   .reference-delete { width: 30px; }
 }
+.memo-library-search { display: flex; align-items: center; gap: 9px; padding: 8px 11px; border: 1px solid var(--border, #e1e4d8); border-radius: 9px; margin: 18px 0 13px; }
+.memo-library-search input { border: 0; background: transparent; padding: 0; min-width: 0; width: 100%; outline: 0; }
+.memo-library-location { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; font-size: 12px; min-width: 0; }
+.memo-library-location strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memo-library-location button { display: flex; align-items: center; gap: 3px; background: transparent; border: 0; color: #7a8170; }
+.memo-library-choices { display: grid; gap: 7px; max-height: 42svh; overflow-y: auto; padding: 3px; }
+.memo-library-folder, .memo-library-file { display: flex; align-items: center; gap: 12px; border: 1px solid #e5e8dd; background: #fafbf7; border-radius: 9px; padding: 12px; text-align: left; font-size: 12px; }
+.memo-library-folder { color: #6c8060; cursor: pointer; }
+.memo-library-file input { width: auto; flex-shrink: 0; }
+.memo-library-file > svg { color: #97a18e; flex-shrink: 0; }
+.memo-library-file > span { min-width: 0; }
+.memo-library-file strong { display: block; overflow-wrap: anywhere; font-weight: 500; }
+.memo-library-file small { display: block; margin-top: 3px; color: #9ba292; }
+.memo-library-file.is-attached { opacity: .6; }

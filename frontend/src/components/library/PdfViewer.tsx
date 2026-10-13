@@ -4,9 +4,9 @@ import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTas
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
-export default function PdfViewer({ url, name }: { url: string; name: string }) {
+export default function PdfViewer({ url, name, initialPage = 1 }: { url: string; name: string; initialPage?: number }) {
   const stage = useRef<HTMLDivElement>(null), canvas = useRef<HTMLCanvasElement>(null);
-  const [document, setDocument] = useState<PDFDocumentProxy | null>(null), [pageNumber, setPageNumber] = useState(1);
+  const [document, setDocument] = useState<PDFDocumentProxy | null>(null), [pageNumber, setPageNumber] = useState(initialPage);
   const [zoom, setZoom] = useState(1), [width, setWidth] = useState(600), [error, setError] = useState("");
   const [rendered, setRendered] = useState(false), [text, setText] = useState("");
   useEffect(() => {
@@ -18,7 +18,7 @@ export default function PdfViewer({ url, name }: { url: string; name: string }) 
     const loading = getDocument({ url, enableXfa: false, cMapUrl: "/library-pdf/cmaps/", cMapPacked: true,
       standardFontDataUrl: "/library-pdf/standard_fonts/", wasmUrl: "/library-pdf/wasm/" });
     let disposed = false;
-    void loading.promise.then(pdf => { if (!disposed) setDocument(pdf); }).catch(() => { if (!disposed) setError("Ce document ne peut pas être affiché. Télécharge l’original pour l’ouvrir."); });
+    void loading.promise.then(pdf => { if (!disposed) { setPageNumber(n => Math.min(n, pdf.numPages)); setDocument(pdf); } }).catch(() => { if (!disposed) setError("Ce document ne peut pas être affiché. Télécharge l’original pour l’ouvrir."); });
     return () => { disposed = true; void loading.destroy(); };
   }, [url]);
   useEffect(() => {

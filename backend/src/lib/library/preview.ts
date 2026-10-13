@@ -17,7 +17,7 @@ export async function powerpointPreview(name: string, bytes: Uint8Array): Promis
     const input = join(directory, /\.pptx$/i.test(name) ? "presentation.pptx" : "presentation.ppt");
     await writeFile(input, bytes);
     await new Promise<void>((resolve, reject) => execFile(/* turbopackIgnore: true */ process.env.LIBRARY_SOFFICE_PATH || "soffice", [
-      `-env:UserInstallation=${pathToFileURL(profile).href}`, "--headless", "--nologo", "--nodefault", "--nofirststartwizard", "--convert-to", "pdf", "--outdir", directory, input,
+      `-env:UserInstallation=${pathToFileURL(profile).href}`, "--headless", "--nologo", "--nodefault", "--nofirststartwizard", "--convert-to", 'pdf:impress_pdf_Export:{"ExportHiddenSlides":{"type":"boolean","value":"true"},"ExportNotesPages":{"type":"boolean","value":"false"}}', "--outdir", directory, input,
     ], { timeout: 90_000, maxBuffer: 128 * 1024 }, error => error ? reject(error) : resolve()));
     const pdf = await readFile(join(directory, "presentation.pdf"));
     if (!pdf.length || pdf.length > MAX_FILE_BYTES || !pdf.subarray(0, 1024).includes(Buffer.from("%PDF-"))) throw new Error("Invalid preview");

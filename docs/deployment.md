@@ -237,9 +237,9 @@ curl -i "$APP_URL/missing.css"
 ```
 
 Expect `ok` from `/healthz` and `{"status":"ok"}` from `/api/health`.
-`/` and `/?section=tv` return HTML with status 200. The dashboard opens Tempo
-by default; `?section=tv` and `?section=memo` select the other apps. Unknown
-section names, including removed pages, fall back to Tempo.
+`/` and `/?section=tv` return HTML with status 200. The dashboard opens Accueil
+by default; `?section=calendar`, `?section=tv`, `?section=memo` and
+`?section=library` select the other apps. Unknown section names fall back to Accueil.
 All missing API and asset paths listed above should return 404. A Next.js 404
 may contain HTML, but it must not be the dashboard's index page or a 200 response.
 Future extensionless assets outside `/assets` need their own reserved prefix

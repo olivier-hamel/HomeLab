@@ -115,9 +115,9 @@ async function main() {
     const settings={...await envFile(settingsPath),...process.env};
     const localDatabase=process.env.HOMELAB_LOCAL_MONGODB_DATABASE||'homelab_calendar_dev';
     const data=resolve(root,'.local-data/memo-calendar');await mkdir(data,{recursive:true,mode:0o700});
-    const memoEnv={...settings,...await envFile(resolve(memo,'.env.memo-local')),...process.env,MEMO_ENV:'development',FLASHCARD_WEB_AUTH:'1',FLASHCARD_WEB_REQUIRE_HTTPS:'0',MEMO_COOKIE_PATH:'/',FLASHCARD_WEB_IMPORT_DESKTOP:'0',FLASHCARD_WEB_DATA:data,MEMO_MONGODB_DATABASE:process.env.HOMELAB_LOCAL_MEMO_DATABASE||'homelab_memo_dev'};
+    const memoEnv={...settings,...await envFile(resolve(memo,'.env.memo-local')),...process.env,MEMO_ENV:'development',FLASHCARD_WEB_AUTH:'1',FLASHCARD_WEB_REQUIRE_HTTPS:'0',MEMO_COOKIE_PATH:'/',FLASHCARD_WEB_IMPORT_DESKTOP:'0',FLASHCARD_WEB_DATA:data,MEMO_MONGODB_DATABASE:process.env.HOMELAB_LOCAL_MEMO_DATABASE||'homelab_memo_dev',HOMELAB_LIBRARY_URL:'http://127.0.0.1:3001'};
     const backendEnv={...settings,NODE_ENV:'development',MEMO_AUTH_URL:'http://127.0.0.1:8000',MONGODB_DATABASE:localDatabase,MEDIA_ALLOWED_ORIGINS:'http://localhost:3000,http://127.0.0.1:3000'};
-    if(!settings.MONGODB_URI?.trim())log('À configurer dans backend/.env : MONGODB_URI pour enregistrer les documents et événements.');
+    if(!settings.MONGODB_URI?.trim())log('À configurer dans backend/.env : MONGODB_URI pour enregistrer les événements Tempo et les ensembles Mémo.');
     if(!settings.GEMINI_API_KEY?.trim())log('À configurer dans backend/.env : GEMINI_API_KEY pour analyser les PDF.');
     log(`Base Tempo de développement : ${localDatabase}`);
 
@@ -144,7 +144,7 @@ async function main() {
     manager.start('HomeLab',process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','3000','--strictPort'],{cwd:resolve(root,'frontend'),env:{...process.env,NODE_ENV:'development'},persistent:true});
     const failure=manager.failure.then(error=>{throw error;});
     await Promise.race([waitForServices(signal),failure]);
-    log('\nHomeLab est prêt : http://localhost:3000\nConnecte-toi avec ton compte local, puis ouvre Tempo → Documents.\nCtrl+C pour arrêter les quatre services.\n');
+    log('\nHomeLab est prêt : http://localhost:3000\nConnecte-toi avec ton compte local, puis ouvre Bibliothèque ou Tempo.\nCtrl+C pour arrêter les quatre services.\n');
     await Promise.race([stopped,failure]);
   } catch(error) {
     if(!signal.aborted)throw error;

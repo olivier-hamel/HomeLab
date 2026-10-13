@@ -22,6 +22,7 @@ from .auth import Accounts, PASSWORDS, SESSION_SECONDS
 from .decks import DEFAULT_SET_ID, DeckError, MongoDecks, validate_cards
 from .quizlet import import_quizlet
 from .reference_documents import MAX_UPLOAD_BYTES, ReferenceDocuments
+from .library_documents import LibraryDocuments
 from .card_validation import PROJECT_TOO_LARGE, validate_coverage
 from .gemini_requests import GeminiRequests
 from .validation_jobs import ValidationJobs
@@ -79,6 +80,11 @@ class QuizletInput(BaseModel):
 class ValidationInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     cards: list[CardInput] = Field(min_length=1, max_length=300)
+    document_ids: list[str] = Field(min_length=1, max_length=20)
+
+
+class LibraryAttachmentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     document_ids: list[str] = Field(min_length=1, max_length=20)
 
 
@@ -188,6 +194,15 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
             raise HTTPException(403, "La bibliothèque MongoDB n’est pas activée.")
         return current_user(request), app.state.decks
 
+    def documents_for(request, user):
+        if os.environ.get("HOMELAB_LIBRARY_URL"):
+            return LibraryDocuments(directory, user, request, app.state.documents)
+        return app.state.documents
+
+    def prepare_documents(documents, user, identifiers):
+        documents.attachments(user, identifiers)
+        return [{**documents.metadata(identifier), "path": documents.pdf_path(identifier)} for identifier in identifiers]
+
     def local_set(request):
         if auth_enabled:
             current_user(request)
@@ -238,14 +253,15 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
                 raise HTTPException(404, "Ensemble introuvable.")
             return deck
         user, repository = library_for(request)
-        return app.state.documents.details(repository.get(user, identifier, version))
+        return documents_for(request, user).details(repository.get(user, identifier, version))
 
     @app.post("/api/sets", status_code=201)
     def create_set(body: SetInput, request: Request):
         user, repository = library_for(request)
-        app.state.documents.attachments(user, body.document_ids or [])
+        documents = documents_for(request, user)
+        documents.attachments(user, body.document_ids or [])
         with app.state.lock:
-            return app.state.documents.details(repository.save(user, body.title, body.description,
+            return documents.details(repository.save(user, body.title, body.description,
                 [card.model_dump() for card in body.cards], document_ids=body.document_ids))
 
     @app.post("/api/sets/import/quizlet")
@@ -256,9 +272,10 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
     @app.post("/api/sets/{identifier}")
     def edit_set(identifier: str, body: SetInput, request: Request):
         user, repository = library_for(request)
+        documents = documents_for(request, user)
         if body.document_ids is not None:
-            app.state.documents.attachments(user, body.document_ids)
-        return app.state.documents.details(repository.save(user, body.title, body.description,
+            documents.attachments(user, body.document_ids)
+        return documents.details(repository.save(user, body.title, body.description,
             [card.model_dump() for card in body.cards], identifier, body.revision, body.document_ids))
 
     @app.post("/api/sets/validate/coverage")
@@ -267,9 +284,7 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
         cards = [card.model_dump() for card in body.cards]
         validate_cards(cards)
         # Authorize every attachment before reading or sending anything to Gemini.
-        app.state.documents.attachments(user, body.document_ids)
-        documents = [{**app.state.documents.metadata(identifier), "path": app.state.documents.pdf_path(identifier)}
-            for identifier in body.document_ids]
+        documents = await run_in_threadpool(prepare_documents, documents_for(request, user), user, body.document_ids)
         if app.state.validations.locked():
             raise HTTPException(503, "Deux validations sont déjà en cours. Réessaie dans un instant.")
         async with app.state.validations:
@@ -303,9 +318,7 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
             deck = repository.get(user, body.set_id)
             if not deck["editable"]:
                 raise HTTPException(403, "Cet ensemble ne peut pas être modifié.")
-        app.state.documents.attachments(user, body.document_ids)
-        documents = [{**app.state.documents.metadata(identifier), "path": app.state.documents.pdf_path(identifier)}
-            for identifier in body.document_ids]
+        documents = await run_in_threadpool(prepare_documents, documents_for(request, user), user, body.document_ids)
         return app.state.validation_jobs.start(user["id"], snapshot, documents)
 
     @app.get("/api/validation-jobs")
@@ -355,22 +368,50 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
                         raise HTTPException(413, "Le document doit peser au maximum 30 Mio.")
                     output.write(chunk)
             try:
-                return await run_in_threadpool(app.state.documents.create, user, source, name)
+                return await run_in_threadpool(documents_for(request, user).create, user, source, name)
             except OSError:
                 raise HTTPException(503, "Le document n’a pas pu être sauvegardé. Réessaie dans un instant.") from None
 
     @app.get("/api/reference-documents/{identifier}")
     def get_document(identifier: str, request: Request, set_id: str | None = None):
         user, repository = library_for(request)
-        metadata = app.state.documents.authorize(user, identifier, repository, set_id)
-        return {**app.state.documents.public(metadata), "notes": metadata["notes"], "comments": metadata.get("comments", [])}
+        documents = documents_for(request, user)
+        metadata = documents.authorize(user, identifier, repository, set_id)
+        return {**documents.public(metadata), "notes": metadata["notes"], "comments": metadata.get("comments", [])}
 
     @app.get("/api/reference-documents/{identifier}/pdf")
     def document_pdf(identifier: str, request: Request, set_id: str | None = None):
         user, repository = library_for(request)
-        app.state.documents.authorize(user, identifier, repository, set_id)
-        return FileResponse(app.state.documents.pdf_path(identifier), media_type="application/pdf",
+        documents = documents_for(request, user)
+        documents.authorize(user, identifier, repository, set_id)
+        return FileResponse(documents.pdf_path(identifier), media_type="application/pdf",
             headers={"X-Content-Type-Options": "nosniff", "Content-Disposition": "inline"})
+
+    @app.get("/api/library-documents")
+    def list_library_documents(request: Request):
+        user, _ = library_for(request)
+        return LibraryDocuments(directory, user, request, app.state.documents).available()
+
+    @app.post("/api/library-documents/attach")
+    async def attach_library_documents(body: LibraryAttachmentInput, request: Request):
+        user, _ = library_for(request)
+        documents = LibraryDocuments(directory, user, request, app.state.documents)
+        rows = await run_in_threadpool(prepare_documents, documents, user, body.document_ids)
+        return {"documents": [documents.public(row) for row in rows]}
+
+    @app.get("/api/reference-documents/legacy/{identifier}")
+    def legacy_document(identifier: str, request: Request):
+        user = current_user(request)
+        metadata = app.state.documents.metadata(identifier)
+        if metadata["owner_id"] != user["id"]:
+            raise HTTPException(404, "Document introuvable.")
+        return metadata
+
+    @app.get("/api/reference-documents/legacy/{identifier}/pdf")
+    def legacy_document_pdf(identifier: str, request: Request):
+        legacy_document(identifier, request)
+        return FileResponse(app.state.documents.pdf_path(identifier), media_type="application/pdf",
+                            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     def set_cookie(response, token):
         # Remove the old Mémo-only cookie when upgrading an existing installation.
