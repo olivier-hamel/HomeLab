@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Welcome, WELCOME_FALLBACK } from '../src/lib/media/welcome.ts';
 import { ASSIST_MODEL } from '../src/lib/media/source-assist.ts';
-import { createMediaApi } from '../src/lib/media/api.ts';
+import { createMediaApi } from './fixtures/accounts.mjs';
 
 const secret = 'test-only-welcome-private-canary';
 Object.assign(process.env, { GEMINI_API_KEY: secret, MEDIA_TRUSTED_NETWORK: 'true', MEDIA_ALLOWED_ORIGINS: 'http://welcome.test', MEDIA_SESSION_SECRET: secret });

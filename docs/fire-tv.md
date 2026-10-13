@@ -7,7 +7,7 @@ browser. Fire TV device identifiers automatically enable TV mode and open
 If the browser hides its device identity or uses desktop mode, add `?tv=1`:
 
 ```text
-http://YOUR-HOMELAB-IP:3000/?tv=1
+https://YOUR-HOMELAB-IP:3443/?tv=1
 ```
 
 You can also use that URL on a desktop to preview the TV layout. Use the
@@ -142,12 +142,15 @@ playback handoff, TV layouts, and desktop isolation.
 
 From `frontend`, run `npm run lint`, `npm test`, and `npm run build`.
 From the repository root, run `node scripts/test-tv-ui.mjs` after building.
-The browser check uses a local server with mock media responses and headless
+The browser check uses a local HTTPS server with mock Mémo accounts and media responses and headless
 Chrome (`CHROME_BIN` can override its executable); it does not contact your media
 services. It checks TV and desktop layouts, browser/cursor/button scrolling,
 remote navigation, dialog focus,
 source/file selection, player controls, and fallback APIs. It simulates media
 events rather than verifying video decoding.
+
+The HTTPS fixture needs OpenSSL (`OPENSSL_BIN` can override the executable),
+or existing test certificate/key paths in `TV_TEST_CERT` and `TV_TEST_KEY`.
 Motion checks also cover rapid D-pad navigation, interrupted panel toggles,
 dialog exit/focus restoration, and reduced-motion behavior.
 
@@ -176,7 +179,7 @@ the APK.
 The first launch asks for the dashboard URL, for example:
 
 ```text
-http://192.168.1.50:3000
+https://192.168.1.50:3443
 ```
 
 Use the address that already works from another device on the same network.
@@ -187,9 +190,11 @@ header to change it later.
 
 The native project uses Capacitor 6 and `minSdkVersion 22`, covering Fire OS 5
 and later. It declares the Leanback launcher, landscape orientation, and no
-touchscreen requirement. Cleartext HTTP is enabled for private home-network
-deployments; prefer HTTPS when the service is reachable beyond a trusted LAN or
-tailnet.
+touchscreen requirement. HomeLab login requires HTTPS with the existing Mémo
+accounts. Install the Caddy root CA as a trusted authority on the Fire TV, or use
+a certificate already recognized by the device. Rebuild the APK to include its
+network security configuration for user-installed authorities. Saved HTTP server
+addresses are upgraded to HTTPS and persisted so the app does not return to HTTP.
 
 ### Build
 

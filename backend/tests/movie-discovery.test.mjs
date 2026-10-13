@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MovieDiscovery } from "../src/lib/media/movie-discovery.ts";
-import { createMediaApi } from "../src/lib/media/api.ts";
+import { createMediaApi } from "./fixtures/accounts.mjs";
 import { MediaError } from "../src/lib/media/core.ts";
 
 const secret = "discovery-test-only-secret-not-for-production";

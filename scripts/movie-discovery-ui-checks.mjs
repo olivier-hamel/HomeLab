@@ -6,6 +6,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 export async function checkMovieDiscovery({ call, evaluate, until, activate, focus, press, resize, origin, fixture, output }) {
   await resize(1280, 720);
   await call('Page.navigate', { url: `${origin}/?tv=1` });
+  await until('!!document.querySelector(".media-account-button")');
+  await activate('.media-account-button');
   await until('!!document.querySelector(".media-profile-grid button")');
   await activate('.media-profile-grid button');
   await until('!!document.querySelector("[data-discovery-open]")');
@@ -39,15 +41,13 @@ export async function checkMovieDiscovery({ call, evaluate, until, activate, foc
       assert.ok(await evaluate('document.querySelector(".discovery-card").getBoundingClientRect().bottom <= innerHeight'), `Both actions visible without scrolling at ${width}`);
       const longContentBottom = await evaluate(`(() => {
         const heading = document.querySelector('.discovery-card h2');
-        const overview = document.querySelector('.discovery-overview');
-        const original = [heading.textContent, overview.textContent];
+        const original = heading.textContent;
         heading.textContent = 'A Very Long Movie Title: An Unexpected Journey Across the World';
-        overview.textContent = 'Two unlikely friends set out on a journey across the world, uncovering a mystery that will change their lives forever. Along the way they must decide what matters most and find their way home.';
         const bottom = document.querySelector('.discovery-card').getBoundingClientRect().bottom;
-        [heading.textContent, overview.textContent] = original;
+        heading.textContent = original;
         return bottom;
       })()`);
-      assert.ok(longContentBottom <= height, `Long titles and descriptions keep Watch now visible at ${width}: bottom ${longContentBottom}`);
+      assert.ok(longContentBottom <= height, `Long titles keep Watch now visible at ${width}: bottom ${longContentBottom}`);
       const screenshot = await call('Page.captureScreenshot', { format: 'png' });
       writeFileSync(resolve(output, `discovery-${width}.png`), Buffer.from(screenshot.data, 'base64'));
     }

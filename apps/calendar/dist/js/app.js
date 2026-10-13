@@ -1,4 +1,5 @@
 import {createCalendarStore} from "./state.js";
+import {calendarAccount, escapeHtml} from "./account.js";
 import {dateKey, parseDate, addDays, fullDate, periodTitle, zoneOffset} from "./date.js";
 import {renderSidebar} from "./components/sidebar.js";
 import {renderCalendar} from "./components/views.js";
@@ -6,9 +7,11 @@ import {renderHome} from "./components/home.js";
 import {renderShell, renderBreadcrumb} from "./components/shell.js";
 import {jumpDialog, preferencesDialog, shortcutsDialog} from "./components/dialogs.js";
 
+async function startCalendar() {
+const account = await calendarAccount();
 let storage = null;
 try {storage = window.localStorage;} catch { /* All calendar controls still work without storage. */ }
-const store = createCalendarStore(storage);
+const store = createCalendarStore(storage, account);
 const app = document.getElementById("app");
 const dialogRoot = document.getElementById("dialog-root");
 let dialogOpener = null;
@@ -169,3 +172,8 @@ store.subscribe(render);
 render(store.getState());
 setInterval(() => {if (!document.hidden) store.refreshClock();}, 60_000);
 document.addEventListener("visibilitychange", () => {if (!document.hidden) store.refreshClock();});
+
+}
+void startCalendar().catch(error => {
+  document.getElementById("app").innerHTML = `<main style="padding:40px"><h1>Ton calendrier HomeLab</h1><p>${escapeHtml(error.message)}</p><a href="/?section=calendar">Ouvrir HomeLab</a></main>`;
+});

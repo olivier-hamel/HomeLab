@@ -7,6 +7,7 @@ import Calendar from "./pages/Calendar";
 import { useTvMode } from "./lib/tv";
 import useTvNavigation from "./components/useTvNavigation";
 import { hasNativeVideoPlayer, isNativeApp } from "./native";
+import AccountControls from "./components/AccountControls";
 
 const buildTag = "2026.09.10-native-4";
 
@@ -52,6 +53,7 @@ export default function App() {
       </main>
       <footer className="tv-footer">
         <div ref={setTvFooterActions} className="tv-footer-actions" />
+        <AccountControls />
         <span data-build-tag="">
           BUILD {buildTag} · {hasNativeVideoPlayer() ? "NATIVE PLAYER READY" : isNativeApp() ? "NATIVE PLUGIN MISSING" : "WEB PLAYER"}
         </span>
@@ -93,6 +95,7 @@ export default function App() {
         </div>
 
         <div className={`dashboard-sidebar-content ${mobileMenuOpen ? "block" : "hidden"} max-h-[60svh] overflow-y-auto px-4 pb-4 md:block md:max-h-none`}>
+          <AccountControls />
           <nav id="dashboard-navigation" aria-label="Dashboard sections" className="space-y-2">
             {sections.map((section) => (
               <button

@@ -7,8 +7,9 @@ You can also use an existing Ubuntu server without Proxmox.
 
 The repository supplies the dashboard and its deployment files. Your hypervisor,
 other guests, storage, backups, and remote-access service are separate parts of
-your lab. The dashboard contains Calendar, TV & Movies, and Mémo; Mémo has its
-own login system. Start with access from your home network. The optional TV & Movies
+your lab. The dashboard contains Calendar, TV & Movies, and Mémo, protected by
+one HomeLab HTTPS login using the existing Mémo accounts. See [shared accounts](accounts.md).
+Start with access from your home network. The optional TV & Movies
 integration has its own [setup and verification guide](tv-media.md), including
 backend-to-media Tailscale connectivity, credentials and private-access controls.
 
@@ -181,7 +182,7 @@ requests in this order:
 | Request | Result |
 | --- | --- |
 | `/healthz` | Lightweight Caddy health response |
-| `/calendar/*` | Proxy to `calendar:4173`, stripping `/calendar` |
+| `/calendar/*` | Verify the Mémo session, then proxy to `calendar:4173`, stripping `/calendar` (`healthz` stays public) |
 | `/memo/*` | HTTPS-only proxy to `memo:8000`, stripping `/memo` |
 | `/api/media/stream/*`, `/api/media/external/*` | Private media streaming proxy with separate timeouts and disconnect cancellation |
 | `/api` or `/api/*` | Proxy to `backend:3001`, preserving the `/api` prefix |

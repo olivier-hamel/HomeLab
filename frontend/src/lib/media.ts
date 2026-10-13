@@ -1,3 +1,5 @@
+import type { AccountName } from "./accounts";
+
 export type Kind = "movie" | "tv";
 export type Title = { id: number; kind: Kind; title: string; year: string; overview: string; poster: string | null };
 export type Details = Title & { imdbId: string | null; tvdbId: number | null; rating: number | null; seasons: { number: number; name: string; episodes: number | null }[] };
@@ -17,24 +19,41 @@ export type PlaybackOption = { id: string; mode: "direct" | "remux" | "transcode
 export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; width?: number; height?: number; frameRate?: number; options: PlaybackOption[] };
 export type PreparedPlayback = PlaybackOption & { stream: string; duration: number | null };
 
-export const mediaProfiles = [
-  { id: "default", name: "Home", color: "orange" },
-  { id: "oli", name: "Oli", color: "sky" },
-  { id: "max", name: "Max", color: "emerald" },
-] as const;
-export type MediaProfileId = (typeof mediaProfiles)[number]["id"];
+export type MediaProfileId = string;
+export type MediaProfile = { id: string; name: string; color: string };
 const mediaProfileStorageKey = "homelab:media-profile";
+let homeLabUsername: string | null = null;
+let profiles: MediaProfile[] = [];
+let selectedMediaProfile: string | null = null;
+
+export function mediaProfilesFor(accounts: AccountName[]): MediaProfile[] {
+  const colors = ["orange", "sky", "emerald"];
+  return accounts.map((account, index) => ({ id: account.username, name: account.display_name,
+    color: account.username === "oli" ? "sky" : account.username === "max" ? "emerald" : colors[index % colors.length] }));
+}
+export function configureMediaAccount(username: string | null, accounts: AccountName[]) {
+  if (homeLabUsername !== username) selectedMediaProfile = null;
+  homeLabUsername = username;
+  profiles = mediaProfilesFor(accounts);
+}
 export function loadMediaProfile(): MediaProfileId | null {
+  if (!homeLabUsername) return null;
+  if (profiles.some(profile => profile.id === selectedMediaProfile)) return selectedMediaProfile;
   try {
-    const saved = localStorage.getItem(mediaProfileStorageKey);
-    return mediaProfiles.some(profile => profile.id === saved) ? saved as MediaProfileId : null;
-  } catch { return null; }
+    const saved = localStorage.getItem(`${mediaProfileStorageKey}:${homeLabUsername}`);
+    if (profiles.some(profile => profile.id === saved)) return saved;
+  } catch { /* Use the connected account if storage is unavailable. */ }
+  return profiles.some(profile => profile.id === homeLabUsername) ? homeLabUsername : null;
 }
 export function saveMediaProfile(profile: MediaProfileId) {
-  try { localStorage.setItem(mediaProfileStorageKey, profile); } catch { /* The in-memory selection still works. */ }
+  if (!homeLabUsername || !profiles.some(item => item.id === profile)) return;
+  selectedMediaProfile = profile;
+  try { localStorage.setItem(`${mediaProfileStorageKey}:${homeLabUsername}`, profile); } catch { /* The in-memory selection still works. */ }
 }
 export function activeMediaProfile(): MediaProfileId {
-  return loadMediaProfile() ?? "default";
+  const profile = loadMediaProfile();
+  if (!profile) throw new Error("Connecte-toi à HomeLab pour accéder aux films.");
+  return profile;
 }
 
 export type PlaybackTarget = "browser" | "android-tv";
@@ -60,6 +79,7 @@ export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unkn
   const profile = activeMediaProfile();
   const response = await fetch(`/api/media/${path}`, { signal, credentials: "same-origin", cache: "no-store", headers: { "X-Media-Profile": profile, ...(body === undefined ? {} : { "Content-Type": "application/json", "X-Media-Request": "1" }) }, ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }) });
   const data = await response.json().catch(() => { throw new Error("The media API returned an unreadable response. Check the dashboard proxy."); });
+  if ((response.status === 401 && data.code === "account_session") || data.code === "password_change") window.dispatchEvent(new Event("homelab:session-expired"));
   if (!response.ok) throw new Error(data.error || `Media request failed (HTTP ${response.status}).`);
   return data as T;
 }

@@ -40,6 +40,10 @@
 		respond @publicCalendar "Calendar access requires a trusted network" 403
 		redir /calendar /calendar/ 308
 		handle_path /calendar/* {
+			@calendarContent not path /healthz
+			forward_auth @calendarContent memo:8000 {
+				uri /api/auth/verify
+			}
 			reverse_proxy calendar:4173
 		}
 

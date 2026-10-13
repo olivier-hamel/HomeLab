@@ -373,12 +373,32 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
             headers={"X-Content-Type-Options": "nosniff", "Content-Disposition": "inline"})
 
     def set_cookie(response, token):
+        # Remove the old Mémo-only cookie when upgrading an existing installation.
+        if cookie_path == "/":
+            response.delete_cookie(COOKIE, path="/memo", secure=require_https, httponly=True, samesite="strict")
         response.set_cookie(COOKIE, token, max_age=SESSION_SECONDS, httponly=True,
                             secure=require_https, samesite="strict", path=cookie_path)
 
+    @app.get("/api/auth/accounts")
+    def account_list():
+        return {"enabled": auth_enabled, "accounts": app.state.accounts.list_public() if auth_enabled else []}
+
     @app.get("/api/auth/me")
-    def me(request: Request):
-        return {"enabled": auth_enabled, "user": Accounts.public(current_user(request, True)) if auth_enabled else None}
+    def me(request: Request, response: Response):
+        if auth_enabled:
+            current_user(request, True)
+            # Existing /memo cookies can resume the same session on all paths.
+            # Resolving it first preserves its original server-side expiry.
+            set_cookie(response, request.cookies.get(COOKIE))
+        return {"enabled": auth_enabled, "user": Accounts.public(current_user(request, True)) if auth_enabled else None,
+                "accounts": app.state.accounts.list_public() if auth_enabled else []}
+
+    @app.get("/api/auth/verify")
+    def verify(request: Request):
+        if not auth_enabled:
+            raise HTTPException(503, "Active les comptes Mémo pour accéder à HomeLab.")
+        current_user(request)
+        return {"status": "ok"}
 
     @app.post("/api/auth/login")
     def login(body: Login, request: Request, response: Response):
@@ -400,6 +420,8 @@ def create_app(progress_path=None, legacy_path=LEGACY_PATH, raw_cards=None, conf
         if auth_enabled:
             app.state.accounts.logout(request.cookies.get(COOKIE))
         response.delete_cookie(COOKIE, path=cookie_path, secure=require_https, httponly=True, samesite="strict")
+        if cookie_path == "/":
+            response.delete_cookie(COOKIE, path="/memo", secure=require_https, httponly=True, samesite="strict")
         return {"status": "ok"}
 
     @app.post("/api/auth/password")

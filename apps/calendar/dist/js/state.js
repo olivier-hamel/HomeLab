@@ -3,15 +3,16 @@ import {addDays, addMonths, civilDate, todayInZone, DEFAULT_TIMEZONE} from "./da
 const STORAGE_KEY = "clear-calendar:preferences:v1";
 const DEFAULT_PREFERENCES = {weekStart: 1, timeFormat: "12", timezone: DEFAULT_TIMEZONE};
 
-export function createCalendarStore(storage = null) {
+export function createCalendarStore(storage = null, account = null) {
+  const storageKey = account ? `${STORAGE_KEY}:${account.username}` : STORAGE_KEY;
   let preferences = {...DEFAULT_PREFERENCES};
   try {
-    const saved = JSON.parse(storage?.getItem(STORAGE_KEY) || "null");
+    const saved = JSON.parse(storage?.getItem(storageKey) || "null");
     if (saved?.weekStart === 0 || saved?.weekStart === 1) preferences.weekStart = saved.weekStart;
     if (saved?.timeFormat === "12" || saved?.timeFormat === "24") preferences.timeFormat = saved.timeFormat;
   } catch { /* Storage is optional, including in private browsing. */ }
   const today = todayInZone(preferences.timezone);
-  let state = {page: "home", view: "month", date: today, today, miniDate: today, preferences, sidebarOpen: false};
+  let state = {page: "home", view: "month", date: today, today, miniDate: today, preferences, account, sidebarOpen: false};
   const subscribers = new Set();
   function update(patch, reason) {
     state = {...state, ...patch};
@@ -59,7 +60,7 @@ export function createCalendarStore(storage = null) {
       const preferences = {...state.preferences};
       if (patch.weekStart === 0 || patch.weekStart === 1) preferences.weekStart = patch.weekStart;
       if (patch.timeFormat === "12" || patch.timeFormat === "24") preferences.timeFormat = patch.timeFormat;
-      try {storage?.setItem(STORAGE_KEY, JSON.stringify(preferences));} catch { /* Keep working without persistence. */ }
+      try {storage?.setItem(storageKey, JSON.stringify(preferences));} catch { /* Keep working without persistence. */ }
       update({preferences}, "preferences");
     },
     refreshClock() {update({today: todayInZone(state.preferences.timezone)}, "clock");}

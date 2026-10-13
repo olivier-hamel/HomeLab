@@ -5,15 +5,18 @@ links select Calendar, TV & Movies, or Mémo, and TV mode still starts with TV &
 Removed or unknown section names fall back to Calendar. There is no dashboard
 top bar; the sidebar contains app navigation and the fullscreen control.
 The Calendar navigation item embeds `/calendar/` in a same-origin frame, including
-the dashboard's fullscreen view and Escape handling. It works on HTTP and HTTPS.
+the dashboard's fullscreen view and Escape handling. It uses the HomeLab HTTPS session and displays the connected account. Calendar
+preferences are saved separately for each account in the browser.
 
 The source is [apps/calendar](../apps/calendar/README.md) in this repository.
 Compose builds its Dockerfile and serves it internally on `calendar:4173` without
-publishing a port. Caddy strips `/calendar` and limits this route to trusted networks.
+publishing a port. Caddy verifies the Mémo session before serving calendar content, strips `/calendar`,
+and limits this route to trusted networks.
 Relative asset URLs work under this prefix. `/calendar/healthz` returns `ok`.
 
 For local development, run `npm run dev` in the Calendar checkout alongside
-HomeLab's frontend dev server; Vite proxies `/calendar/*` to port 4173.
+HomeLab's frontend dev server and authenticated Mémo backend; Vite proxies
+`/calendar/*` to port 4173 and `/memo/*` to port 8000. See [shared accounts](accounts.md).
 
 All changes use HomeLab's `feat/memo-integration` branch and a single server pull.
 Rebuild `calendar` for Calendar changes and `frontend` for dashboard changes.

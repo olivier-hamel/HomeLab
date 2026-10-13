@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Keep the local APK shell and the upgrade from saved HTTP addresses. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- The HomeLab Caddy CA must be installed by the device owner. -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 // bridge. Native drawing/decoding still requires a physical device.
 export async function checkNativePlayer({ call, evaluate, until, activate, origin, metrics }) {
   const injection = await call('Page.addScriptToEvaluateOnNewDocument', { source: `
-    localStorage.setItem('homelab:media-profile', 'default');
+    localStorage.setItem('homelab:media-profile:oli', 'oli');
     localStorage.setItem('homelab:advanced-media', 'false');
     sessionStorage.clear();
     window.androidBridge = {};
