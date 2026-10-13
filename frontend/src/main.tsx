@@ -9,6 +9,7 @@ import { installNativeLifecycle, isNativeApp, prepareNativeApp } from "./native"
 import NativeServerSetup from "./NativeServerSetup";
 import { reportStartupError, reportStartupStage } from "./startup";
 import { StartupBoundary, StartupReady } from "./StartupBoundary";
+import AuthGate from "./components/AuthGate";
 
 async function bootstrap() {
   reportStartupStage("JavaScript loaded; installing browser fallbacks");
@@ -28,7 +29,7 @@ async function bootstrap() {
   }).render(
     <StrictMode>
       <StartupBoundary>
-        {nativeState === "setup" ? <NativeServerSetup /> : <TvModeContext.Provider value={tvMode}><App /></TvModeContext.Provider>}
+        {nativeState === "setup" ? <NativeServerSetup /> : <TvModeContext.Provider value={tvMode}><AuthGate><App /></AuthGate></TvModeContext.Provider>}
         <StartupReady />
       </StartupBoundary>
     </StrictMode>,

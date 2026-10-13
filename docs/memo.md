@@ -2,7 +2,7 @@
 
 The desktop and mobile browser dashboard includes a Mémo section. It embeds
 `/memo/` on the same HTTPS origin; its styles and study state remain isolated
-from HomeLab and the movie app. Fire TV/native navigation remains unchanged.
+from HomeLab and the movie app. HomeLab handles the shared login before opening any section, including Fire TV/native mode.
 
 On desktop with a mouse, HomeLab navigation collapses to an icon rail and
 expands on hover or keyboard focus. Mobile retains its menu button. The
@@ -19,9 +19,10 @@ frontend build and ASGI root path both account for the prefix.
 Configure private HTTP/HTTPS bind addresses and `HTTPS_LAN_HOST` / `HTTPS_TAILSCALE_HOST` in `.env`.
 The browser HTTPS port defaults to 3443; the Caddy container uses 8443 for LAN and 8444 for Tailscale. Separate
 listeners select the correct IP certificate when browsers omit TLS SNI. Keep
-machine-specific values and all credentials out of Git. Existing HTTP access
-remains available for other sections; selecting Mémo switches the whole page
-to HTTPS before login.
+machine-specific values and all credentials out of Git. Opening HomeLab over HTTP switches the whole page to HTTPS before login.
+The HomeLab account chooser and Mémo use the same accounts, passwords and session.
+The session cookie uses `Path=/`; existing Mémo sessions are upgraded on first load.
+See [shared accounts](accounts.md) for configuration and verification.
 
 Caddy issues certificates through its local authority. Export the public root
 certificate from `/data/caddy/pki/authorities/local/root.crt` in the frontend

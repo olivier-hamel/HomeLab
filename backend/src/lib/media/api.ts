@@ -16,9 +16,10 @@ import { ProgressStore, WatchHistoryStore, type ContinueWatchingRecord, type Wat
 import { MediaRecommendations } from "./recommendations.ts";
 import { Omdb } from "./omdb.ts";
 import { MovieDiscovery } from "./movie-discovery.ts";
+import { memoSessionCookie, requireHomeLabAccount, type AccountSession, type AccountVerifier } from "../accounts.ts";
 
 type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe };
-type Share = { owner: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
+type Share = { owner: string; account: string; accountCookie: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
 function context(value: unknown): SearchContext | undefined {
   if (!value) return;
   const c = record(value);
@@ -33,13 +34,13 @@ function catalogueKind(value: string | null): "movie" | "tv" | "all" {
 function json(value: unknown, status = 200, headers: Record<string, string> = {}) {
   return Response.json(value, { status, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", ...headers } });
 }
-function mediaProfile(request: Request): string | undefined {
+function mediaProfile(request: Request, account: AccountSession): string {
   const profile = request.headers.get("X-Media-Profile");
-  if (!profile || profile === "default") return undefined;
-  if (profile === "oli" || profile === "max") return profile;
-  throw new MediaError("input", "Choose a valid media account.", 400);
+  if (!profile) return account.user.username;
+  if (account.accounts.some(item => item.username === profile)) return profile;
+  throw new MediaError("input", "Choisis un profil cinéma parmi les comptes HomeLab.", 400);
 }
-export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">) {
+export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">, authenticate: AccountVerifier = requireHomeLabAccount) {
   const tmdb = new Tmdb(fetcher);
   const catalogue = new CatalogueSearch(fetcher, tmdb);
   const prowlarr = new Prowlarr(fetcher);
@@ -93,20 +94,27 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
       if (!["GET", "HEAD", "POST"].includes(request.method)) return json({ error: "Method not allowed." }, 405);
       boundary(request, mutation);
       rate("global", 600);
+      if (path[0] === "external" && ["GET", "HEAD"].includes(request.method)) {
+        const share = shares.get(path[1]);
+        if (!share) throw new MediaError("expired", "Stream link expired or revoked.", 410);
+        // Native players use a file-scoped link. Its creator's HomeLab session
+        // must still be valid, including after logout or a password reset.
+        const headers = new Headers(request.headers);
+        headers.set("Cookie", share.accountCookie);
+        const account = await authenticate(new Request(request, { headers }));
+        if (account.user.username !== share.account) throw new MediaError("account_session", "HomeLab session expired.", 401);
+        const signal = AbortSignal.any([request.signal, share.controller.signal, AbortSignal.timeout(Math.max(1, share.expires - Date.now()))]);
+        return await stream(share.hash, share.file, new Request(request, { signal }), share.owner);
+      }
+      const account = await authenticate(request);
       if (path[0] === "status" && request.method === "GET") {
         rate("session-start", 60);
         const { cookie } = startSession(request);
         // Configuration states are independent; connectivity is checked explicitly below.
         return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), discovery: !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, recommendations: ProgressStore.configured() && !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
       }
-      if (path[0] === "external" && ["GET", "HEAD"].includes(request.method)) {
-        const share = shares.get(path[1]);
-        if (!share) throw new MediaError("expired", "Stream link expired or revoked.", 410);
-        const signal = AbortSignal.any([request.signal, share.controller.signal, AbortSignal.timeout(Math.max(1, share.expires - Date.now()))]);
-        return await stream(share.hash, share.file, new Request(request, { signal }), share.owner);
-      }
-      const owner = requireSession(request);
-      const profile = mediaProfile(request);
+      const owner = `${account.user.username}:${requireSession(request)}`;
+      const profile = mediaProfile(request, account);
       rate(`all:${owner}`, 180);
       if (path[0] === "converted" && path.length === 2 && ["GET", "HEAD"].includes(request.method)) {
         const entry = conversions.get(path[1]);
@@ -329,7 +337,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
             const entry = playback(id, owner);
             if (!entry.file) throw new MediaError("input", "Choose a video first.", 400);
             const token = randomBytes(32).toString("hex");
-            shares.set(token, { owner, playback: id, hash: entry.hash, file: entry.file, expires: Date.now() + 15 * 60_000, controller: new AbortController() });
+            shares.set(token, { owner, account: account.user.username, accountCookie: memoSessionCookie(request) || "", playback: id, hash: entry.hash, file: entry.file, expires: Date.now() + 15 * 60_000, controller: new AbortController() });
             return json({ token, path: `/api/media/external/${token}`, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() });
           }
           if (path[0] === "revoke") {

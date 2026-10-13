@@ -77,3 +77,18 @@ test("Invalid drilldown dates and views do not disturb the current page", () => 
   store.openDate(null, "day");
   assert.equal(store.getState(), before);
 });
+
+test("Calendar uses the HomeLab account and isolates preferences between accounts", () => {
+  const values = new Map();
+  const storage = {getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value)};
+  const oli = {username: "oli", display_name: "Oli"};
+  const max = {username: "max", display_name: "Max"};
+  createCalendarStore(storage, oli).setPreferences({weekStart: 0, timeFormat: "24"});
+  assert.equal(createCalendarStore(storage, max).getState().preferences.weekStart, 1);
+  assert.equal(createCalendarStore(storage, oli).getState().preferences.timeFormat, "24");
+  assert.match(renderHome(createCalendarStore(storage, oli).getState()), /, Oli\./);
+  const unsafe = {username: "test", display_name: '<script>alert("x")</script>'};
+  const html = renderHome(createCalendarStore(storage, unsafe).getState());
+  assert(!html.includes("<script>"));
+  assert(html.includes("&lt;script&gt;"));
+});

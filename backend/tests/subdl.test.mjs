@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Subdl } from '../src/lib/media/subdl.ts';
-import { createMediaApi } from '../src/lib/media/api.ts';
+import { createMediaApi } from './fixtures/accounts.mjs';
 import { subtitleArchive, SUBTITLE_LIMIT, ARCHIVE_LIMIT } from '../src/lib/media/subtitle-archive.ts';
 import { subtitleFixture, subtitleZip } from '../../scripts/subtitle-test-fixture.mjs';
 

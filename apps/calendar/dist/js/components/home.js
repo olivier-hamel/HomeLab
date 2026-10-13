@@ -1,10 +1,12 @@
 import {WEEKDAYS, dateKey, weekDates, sameDay, formatDate, fullDate, periodTitle, currentMinutes} from "../date.js";
 import {icon} from "./icons.js";
+import {escapeHtml} from "../account.js";
 
 export function renderHome(state, now = new Date()) {
   const today = state.today;
   const hour = currentMinutes(state.preferences.timezone, now) / 60;
-  const greeting = hour < 12 ? "Good morning." : hour < 17 ? "Good afternoon." : "Good evening.";
+  const baseGreeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = state.account ? `${baseGreeting}, ${escapeHtml(state.account.display_name)}.` : `${baseGreeting}.`;
   const days = weekDates(today, state.preferences.weekStart);
   const week = periodTitle({...state, date: today, view: "week"});
   return `<div class="home-page">

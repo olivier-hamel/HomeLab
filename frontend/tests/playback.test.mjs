@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { before, after, test } from 'node:test';
 import { preparePlayback, supportedPlayback } from '../src/lib/media.ts';
+import { configureMediaAccount } from '../src/lib/media.ts';
+
+before(() => configureMediaAccount('oli', [{ username: 'oli', display_name: 'Oli' }]));
+after(() => configureMediaAccount(null, []));
 
 test('browser checks exact codec MIME strings without claiming unsupported formats', () => {
   const options = [{ id: 'direct', mime: 'video/mp4; codecs="avc1.640028, mp4a.40.2"' }, { id: 'hevc', mime: 'video/mp4; codecs="hvc1.2.4.L153.B0, mp4a.40.2"' }, { id: 'remux', mime: 'video/webm; codecs="vp9, opus"' }];

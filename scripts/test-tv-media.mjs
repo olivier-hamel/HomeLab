@@ -9,6 +9,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { subtitleZip, subtitleFixture } from './subtitle-test-fixture.mjs';
+import { fixtureAccount, fixtureCookie, fixtureTls, fetchFixtureHttps } from './account-ui-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cache = resolve(root, 'backend/node_modules/.cache/media-reference');
@@ -30,7 +31,9 @@ for (const [id, name, codecs] of [[5, 'Remux fixture.ts', ['-c', 'copy']], [6, '
 }
 const freePort = async () => { const s = portProbe(); await new Promise(r => s.listen(0, '127.0.0.1', r)); const p = s.address().port; await new Promise(r => s.close(r)); return p; };
 const [backendPort, frontendPort, fixturePort] = await Promise.all([freePort(), freePort(), freePort()]);
-const origin = `http://127.0.0.1:${frontendPort}`;
+const origin = `https://127.0.0.1:${frontendPort}`;
+const tls = fixtureTls(out);
+const dashboardFetch = (url, init) => fetchFixtureHttps(url, init, tls);
 const upstream = `http://127.0.0.1:${fixturePort}`;
 const hash = 'b'.repeat(40);
 const secret = 'test-only-media-canary-not-a-live-credential';
@@ -41,6 +44,7 @@ const fixture = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, upstream);
     const json = (data, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
+    if (url.pathname === '/api/auth/me') { res.setHeader('Set-Cookie', fixtureCookie); return json(fixtureAccount); }
     if (url.pathname === '/gemini/v1beta/models/gemini-3.5-flash-lite:generateContent') {
       assert.equal(req.headers['x-goog-api-key'], secret);
       let raw = ''; for await (const chunk of req) raw += chunk;
@@ -129,7 +133,8 @@ const fixture = createServer(async (req, res) => {
 });
 await new Promise(r => fixture.listen(fixturePort, '127.0.0.1', r));
 const originalConfig = readFileSync(resolve(root, 'frontend/Caddyfile'), 'utf8');
-const config = originalConfig.replace(':8080 {', `:${frontendPort} {\n\tbind 127.0.0.1`).replace('root * /srv', `root * "${resolve(root, 'frontend/dist').replaceAll('\\', '/')}"`).replaceAll('backend:3001', `127.0.0.1:${backendPort}`);
+const config = originalConfig.split(':8080 {')[0].replace('root * /srv', `root * "${resolve(root, 'frontend/dist').replaceAll('\\', '/')}"`).replaceAll('backend:3001', `127.0.0.1:${backendPort}`).replaceAll('memo:8000', `127.0.0.1:${fixturePort}`)
+  + `https://127.0.0.1:${frontendPort} {\n bind 127.0.0.1\n tls "${tls.certPath.replaceAll('\\', '/')}" "${tls.keyPath.replaceAll('\\', '/')}"\n import dashboard\n}\n`;
 const configPath = resolve(out, 'Caddyfile'); writeFileSync(configPath, config);
 cpSync(resolve(root, 'backend/.next/static'), resolve(root, 'backend/.next/standalone/.next/static'), { recursive: true });
 const processes = [];
@@ -139,12 +144,12 @@ const launch = (bin, args, env = process.env) => { const child = spawn(bin, args
 try {
   const validate = launch(caddyBin, ['validate', '--config', configPath, '--adapter', 'caddyfile']);
   assert.equal(await new Promise(r => validate.on('exit', r)), 0, logs.join(''));
-  launch(process.execPath, [resolve(root, 'backend/.next/standalone/server.js')], { ...process.env, NODE_ENV: 'production', PORT: String(backendPort), HOSTNAME: '127.0.0.1', NEXT_TELEMETRY_DISABLED: '1', MEDIA_TRUSTED_NETWORK: 'true', MEDIA_ALLOWED_ORIGINS: origin, MEDIA_SESSION_SECRET: secret, PROWLARR_BASE_URL: upstream, PROWLARR_API_KEY: secret, TORRSERVER_BASE_URL: upstream, TORRSERVER_USERNAME: 'fixture', TORRSERVER_PASSWORD: secret, TMDB_READ_ACCESS_TOKEN: secret, SUBDL_API_KEY: secret, GEMINI_API_KEY: secret, TV_TEST_UPSTREAM: upstream, NODE_OPTIONS: `--import=${pathToFileURL(resolve(root, 'scripts/tmdb-test-preload.mjs')).href}` });
+  launch(process.execPath, [resolve(root, 'backend/.next/standalone/server.js')], { ...process.env, NODE_ENV: 'production', PORT: String(backendPort), HOSTNAME: '127.0.0.1', NEXT_TELEMETRY_DISABLED: '1', MEMO_AUTH_URL: upstream, MEDIA_TRUSTED_NETWORK: 'true', MEDIA_ALLOWED_ORIGINS: origin, MEDIA_SESSION_SECRET: secret, PROWLARR_BASE_URL: upstream, PROWLARR_API_KEY: secret, TORRSERVER_BASE_URL: upstream, TORRSERVER_USERNAME: 'fixture', TORRSERVER_PASSWORD: secret, TMDB_READ_ACCESS_TOKEN: secret, SUBDL_API_KEY: secret, GEMINI_API_KEY: secret, TV_TEST_UPSTREAM: upstream, NODE_OPTIONS: `--import=${pathToFileURL(resolve(root, 'scripts/tmdb-test-preload.mjs')).href}` });
   launch(caddyBin, ['run', '--config', configPath, '--adapter', 'caddyfile']);
-  for (let i = 0; i < 100; i++) { try { if ((await fetch(`${origin}/api/health`)).ok) break; } catch {} await delay(100); }
-  assert.equal((await fetch(`${origin}/api/health`)).status, 200, logs.join(''));
+  for (let i = 0; i < 100; i++) { try { if ((await dashboardFetch(`${origin}/api/health`)).ok) break; } catch {} await delay(100); }
+  assert.equal((await dashboardFetch(`${origin}/api/health`)).status, 200, logs.join(''));
   const profile = resolve(out, `chrome-${Date.now()}`);
-  launch(chromeBin, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-extensions', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank']);
+  launch(chromeBin, ['--headless=new', '--ignore-certificate-errors', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-extensions', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank']);
   let debugPort;
   for (let i = 0; i < 100; i++) { try { debugPort = readFileSync(resolve(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]; break; } catch { await delay(100); } }
   assert.ok(debugPort, 'Chrome started');
@@ -281,10 +286,10 @@ try {
   await evaluate(`document.querySelector('section[aria-label="Playback"] details').open = true`);
   await click('Create player link'); await until(`!!document.querySelector('input[readonly]')`);
   const link = await evaluate(`document.querySelector('input[readonly]').value`);
-  const partial = await fetch(link, { headers: { Range: 'bytes=1-3', 'If-Range': '"fixture"' } }); assert.equal(partial.status, 206); assert.equal((await partial.arrayBuffer()).byteLength, 3);
-  const head = await fetch(link, { method: 'HEAD' }); assert.equal(head.status, 200); assert.equal(head.headers.get('content-length'), String(videoBytes.length));
-  const invalid = await fetch(link, { headers: { Range: `bytes=${videoBytes.length + 10}-` } }); assert.equal(invalid.status, 416); assert.equal(await invalid.text(), '');
-  await click('Revoke link'); await until(`document.body.innerText.includes('Player link revoked.')`); assert.equal((await fetch(link)).status, 410);
+  const partial = await dashboardFetch(link, { headers: { Range: 'bytes=1-3', 'If-Range': '"fixture"' } }); assert.equal(partial.status, 206); assert.equal((await partial.arrayBuffer()).byteLength, 3);
+  const head = await dashboardFetch(link, { method: 'HEAD' }); assert.equal(head.status, 200); assert.equal(head.headers.get('content-length'), String(videoBytes.length));
+  const invalid = await dashboardFetch(link, { headers: { Range: `bytes=${videoBytes.length + 10}-` } }); assert.equal(invalid.status, 416); assert.equal(await invalid.text(), '');
+  await click('Revoke link'); await until(`document.body.innerText.includes('Player link revoked.')`); assert.equal((await dashboardFetch(link)).status, 410);
   for (const [id, expected] of [[5, 'Remuxing'], [6, 'Converting audio'], [7, 'Converting video and audio']]) {
     const name = generated.get(id).name;
     await evaluate(`(() => { const row = [...document.querySelectorAll('[aria-label="Torrent files"] > div')].find(e => e.innerText.includes(${JSON.stringify(name)})); row.querySelector('button').click(); })()`);

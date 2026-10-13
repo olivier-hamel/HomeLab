@@ -4,6 +4,9 @@ Mémo fonctionne comme un service Docker indépendant. Caddy, dans le frontend
 HomeLab, sert le tableau de bord et transmet `/memo/*` à Mémo en retirant ce
 préfixe. Le frontend Mémo est compilé avec `VITE_MEMO_BASE=/memo/` et Uvicorn
 reçoit `--root-path /memo`. Les API HomeLab `/api/*` conservent leur routage.
+HomeLab présente sa propre page de connexion HTTPS et réutilise les comptes,
+mots de passe et sessions Mémo. Le cookie partagé utilise `Path=/`.
+Voir [les comptes centralisés](../../../docs/accounts.md).
 
 ## Déployer avec Git
 

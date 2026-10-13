@@ -4,6 +4,8 @@ services:
       context: ./frontend
       args:
         VITE_MEMO_HTTPS_PORT: "${FRONTEND_HTTPS_PORT:-3443}"
+        VITE_TAILSCALE_HTTP_PORT: "${TAILSCALE_PORT:-3002}"
+        VITE_TAILSCALE_HTTPS_PORT: "${TAILSCALE_HTTPS_PORT:-3444}"
     ports:
       - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:8080"
       - "${TAILSCALE_BIND_ADDRESS:-127.0.0.1}:${TAILSCALE_PORT:-3002}:8080"
@@ -49,9 +51,13 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       HOSTNAME: 0.0.0.0
       PORT: "3001"
+      MEMO_AUTH_URL: http://memo:8000
       # Local .env may contain Windows executable paths; the image uses apt's binaries.
       FFMPEG_PATH: /usr/bin/ffmpeg
       FFPROBE_PATH: /usr/bin/ffprobe
+    depends_on:
+      memo:
+        condition: service_healthy
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
@@ -106,6 +112,8 @@ services:
     build:
       context: ./apps/memo/web-app
     image: memo-app:local
+    environment:
+      MEMO_COOKIE_PATH: /
     env_file:
       - path: "${MEMO_MONGODB_ENV_FILE:-./.env.memo-mongodb}"
         required: false

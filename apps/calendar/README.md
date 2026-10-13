@@ -10,7 +10,10 @@ Requires Node.js 20 or later. No dependencies to install.
 npm run dev
 ```
 
-Open http://localhost:4173. Use `PORT=3000 npm run dev` for another port. Run `npm test` for calendar calculations and state checks, and `npm run check` for module syntax.
+Start HomeLab and the Mémo account service as described in [shared accounts](../../docs/accounts.md),
+then open Calendar through HomeLab. The standalone static server listens on
+http://localhost:4173; the calendar UI requires the shared account API.
+Use `PORT=3000 npm run dev` for another static-server port. Run `npm test` for calendar calculations and state checks, and `npm run check` for module syntax.
 
 ## Server
 

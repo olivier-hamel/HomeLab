@@ -54,10 +54,40 @@ class AccountApiTests(unittest.TestCase):
         cookie = response.headers["set-cookie"].lower()
         for flag in ("httponly", "secure", "samesite=strict", "max-age=604800"):
             self.assertIn(flag, cookie)
+        self.assertIn("path=/;", cookie)
         self.assertNotIn("password_hash", response.text)
         self.assertNotIn(PASSWORD, response.text)
         self.assertEqual(self.client.get("/api/state").status_code, 200)
         self.assertEqual(self.client.get("/api/auth/me").headers["cache-control"], "no-store")
+
+    def test_account_chooser_lists_only_existing_names(self):
+        response = self.client.get("/api/auth/accounts")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"enabled": True, "accounts": [
+            {"username": "max", "display_name": "Max"}, {"username": "oli", "display_name": "Oli"}]})
+        self.assertNotIn(PASSWORD, response.text)
+        self.assertNotIn(self.oli["id"], response.text)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.accounts.create("alex", "Alex", PASSWORD)
+        self.assertEqual(len(self.client.get("/api/auth/accounts").json()["accounts"]), 3)
+
+    def test_calendar_verification_requires_login_and_completed_password_change(self):
+        self.assertEqual(self.client.get("/api/auth/verify").status_code, 401)
+        self.login()
+        self.assertEqual(self.client.get("/api/auth/verify").status_code, 200)
+        self.accounts.set_password(self.oli["id"], PASSWORD, must_change=True)
+        self.login()
+        self.assertEqual(self.client.get("/api/auth/verify").status_code, 403)
+
+    def test_existing_memo_session_expands_to_dashboard_without_replacing_it(self):
+        user, token = self.accounts.issue_session(self.oli)
+        self.client.cookies.set(COOKIE, token, path="/memo")
+        # A reverse proxy strips /memo before FastAPI; simulate that request.
+        response = self.client.get("/api/auth/me", headers={"Cookie": f"{COOKIE}={token}"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(any("Path=/;" in cookie for cookie in response.headers.get_list("set-cookie")))
+        self.assertTrue(any("Path=/memo;" in cookie and "Max-Age=0" in cookie for cookie in response.headers.get_list("set-cookie")))
+        self.assertEqual(self.accounts.resolve(token)["username"], "oli")
 
     def test_http_credentials_and_forged_forwarding_are_rejected(self):
         with TestClient(self.make_app(), base_url="http://memo.test") as client:

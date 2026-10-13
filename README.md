@@ -4,10 +4,15 @@ One repository contains the dashboard, TV & Movies, Calendar, and Mémo.
 Use `feat/memo-integration` for development and server deployment. All changes
 use one commit → push → pull workflow; see [SERVER-UPDATE.md](SERVER-UPDATE.md).
 
-**Calendar** is the default page. Its source is in [apps/calendar](apps/calendar/README.md).
+**HomeLab** opens with its own HTTPS login page and lists the existing Mémo accounts.
+One Mémo session opens Calendar, TV & Movies, and Mémo; no duplicate accounts are created.
+The cinema profile can switch without a password while the HomeLab login stays unchanged.
+See [shared accounts](docs/accounts.md).
+
+**Calendar** is the default page after login. Its source is in [apps/calendar](apps/calendar/README.md).
 See [Calendar setup](docs/calendar.md).
 
-**Mémo** is the French flashcard app in [apps/memo](apps/memo/README.md), with
+**Mémo** is the flashcard app in [apps/memo](apps/memo/README.md), with
 password-protected accounts. See [Memo setup](docs/memo.md) for private HTTPS
 and persistent data. Original Git histories are preserved; see
 [repository structure and history](docs/repository.md).
@@ -83,8 +88,9 @@ if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
 ```
 
 The root example binds to `127.0.0.1:3000` for local use. If you already have a
-`.env`, check its address and port before starting. No credentials are required
-to open Calendar. Mémo uses its own login; TV & Movies requires its media-service configuration.
+`.env`, check its address and port before starting. HomeLab requires an existing Mémo account and switches to HTTPS before login.
+TV & Movies also requires its media-service configuration, including the HTTPS
+dashboard URL in `MEDIA_ALLOWED_ORIGINS`.
 
 Build and start the stack from the repository root:
 
@@ -99,7 +105,8 @@ Open [http://localhost:3000](http://localhost:3000). Check
 [/healthz](http://localhost:3000/healthz) for frontend health and
 [/api/health](http://localhost:3000/api/health) for the API response
 `{"status":"ok"}`. A successful API check verifies the proxy connection; the
-dashboard opens Calendar. Account setup is described in [Memo setup](docs/memo.md).
+dashboard displays the HomeLab account chooser, then opens Calendar after login.
+Account setup is described in [shared accounts](docs/accounts.md).
 
 View logs with `docker compose logs -f --tail=100`. Stop the stack with
 `docker compose stop`; start it again with `docker compose up -d --wait`.
@@ -145,7 +152,10 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. Vite proxies `/api` and `/api/*` to the local backend
-on port 3001, preserving the path. Browser API calls should use relative URLs,
+on port 3001, preserving the path. Start Mémo on port 8000 with
+`FLASHCARD_WEB_AUTH=1`; `/memo/*` is proxied to that service and supplies the shared login.
+For loopback HTTP development only, set `FLASHCARD_WEB_REQUIRE_HTTPS=0`.
+Production still requires HTTPS. Set `MEMO_AUTH_URL=http://127.0.0.1:8000` in the local backend. Browser API calls should use relative URLs,
 such as `fetch('/api/health')`. Docker service names belong in server-side proxy
 configuration.
 

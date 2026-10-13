@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { saveNativeServer } from "./native";
 
 export default function NativeServerSetup() {
-  const [value, setValue] = useState("http://192.168.1.50:3000");
+  const [value, setValue] = useState("https://192.168.1.50:3443");
   const [error, setError] = useState("");
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -27,7 +27,7 @@ export default function NativeServerSetup() {
       </label>
       {error && <p role="alert" className="text-orange-300">{error}</p>}
       <button type="submit" className="h-16 w-full rounded-lg bg-orange-600 px-6 text-xl font-semibold hover:bg-orange-500 focus:outline-none focus:ring-4 focus:ring-orange-400">Connect</button>
-      <p className="text-sm text-neutral-400">The server must be reachable from this Fire TV. HTTP is supported for private LAN deployments.</p>
+      <p className="text-sm text-neutral-400">Use the HomeLab HTTPS address and trust its certificate on this Fire TV, as for Mémo.</p>
     </form>
   </main>;
 }

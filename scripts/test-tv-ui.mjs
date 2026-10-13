@@ -1,7 +1,7 @@
 // UI integration check against built assets and local mock APIs; no live media services.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
+import { createServer } from 'node:https';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { checkNativePlayer } from './native-player-ui-checks.mjs';
 import { checkTvMotion } from './tv-motion-ui-checks.mjs';
 import { checkMovieDiscovery } from './movie-discovery-ui-checks.mjs';
+import { fixtureAccount, fixtureCookie, fixtureTls } from './account-ui-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'frontend/dist');
@@ -31,9 +32,13 @@ let simpleFixture = true;
 let subtitleDelay = 0;
 let recommendationDelay = 250;
 let fallbackAdvice = false;
-const server = createServer(async (req, res) => {
+const server = createServer(fixtureTls(output), async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const path = url.pathname;
+  if (path === '/memo/api/auth/me') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': fixtureCookie });
+    res.end(JSON.stringify(fixtureAccount)); return;
+  }
   if (path.startsWith('/api/media/')) {
     const endpoint = path.slice('/api/media/'.length);
     let raw = ''; for await (const chunk of req) raw += chunk;
@@ -79,8 +84,8 @@ const server = createServer(async (req, res) => {
   } catch { res.writeHead(404); res.end(); }
 });
 await new Promise(done => server.listen(0, '127.0.0.1', done));
-const origin = `http://127.0.0.1:${server.address().port}`;
-const chrome = spawn(process.env.CHROME_BIN || 'C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-extensions', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+const origin = `https://127.0.0.1:${server.address().port}`;
+const chrome = spawn(process.env.CHROME_BIN || 'C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless=new', '--ignore-certificate-errors', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-extensions', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 let socket;
 let call;
 const errors = [];
@@ -167,8 +172,10 @@ try {
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), undefined, 'Normal desktop keeps its layout');
   assert.equal(await evaluate('getComputedStyle(document.documentElement).fontSize'), '16px');
   await focus('nav button'); await press('ArrowRight');
-  assert.equal(await active(), 'OVERVIEW', 'TV spatial navigation is inactive on desktop');
+  assert.equal(await active(), 'Calendar', 'TV spatial navigation is inactive on desktop');
   await call('Page.navigate', { url: `${origin}/?tv=1` });
+  await until('!!document.querySelector(".media-account-button")');
+  await activate('.media-account-button');
   await until('!!document.querySelector(".media-profile-grid button, .tv-catalogue-grid button")');
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".tv-footer")).display'), 'none', 'Profile chooser hides the TV footer');
   await evaluate('document.querySelector(".media-profile-grid button")?.click()');
@@ -333,6 +340,7 @@ try {
   const behindDialog = await evaluate('window.scrollY');
   await evaluate(`document.querySelector('dialog').style.maxHeight = '260px'; document.querySelector('dialog .max-w-4xl').style.minHeight = '900px'`);
   await focus('dialog button'); await press('PageDown');
+  await until('document.querySelector("dialog").scrollTop > 0');
   assert.ok(await evaluate('document.querySelector("dialog").scrollTop > 0'), 'PageDown scrolls long dialog content');
   await scrollSettled('dialog');
   const dialogScroll = await evaluate('document.querySelector("dialog").scrollTop');
@@ -385,13 +393,10 @@ try {
   await press('Escape'); await until('!!document.querySelector("#catalogue-query")');
   assert.equal(await evaluate('document.querySelector(".tv-header")'), null, 'TV mode has no top bar');
   assert.ok(await evaluate('document.querySelector(".tv-footer")?.innerText.includes("BUILD")'), 'TV build information is in the footer');
-  assert.ok(await evaluate('!!document.querySelector(".tv-footer #tv-dashboard-section")'), 'Dashboard navigation is in the footer');
+  assert.ok(await evaluate('document.querySelector(".tv-footer .homelab-account-name")?.innerText.includes("Oli")'), 'The connected HomeLab account is in the TV footer');
+  assert.ok(await evaluate(`!!document.querySelector('.tv-footer [aria-label="Se déconnecter de HomeLab"]')`), 'The TV footer offers HomeLab logout');
   assert.ok(await evaluate(`!!document.querySelector('.tv-footer [aria-label="Advanced mode"]')`), 'Advanced mode is in the footer');
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Advanced mode"]').length`), 1, 'TV page does not duplicate Advanced mode in its header');
-  await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'overview'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  await until('document.querySelector("#tv-dashboard-section").value === "overview"');
-  await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'tv'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  await until('!!document.querySelector("#catalogue-query")');
   await call('Page.navigate', { url: `${origin}/?tv=0` }); await until('!!document.querySelector("aside")');
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), undefined);
   await call('Page.navigate', { url: origin }); await until('!!document.querySelector("aside")');
@@ -417,8 +422,8 @@ try {
   await activate('#startup-retry');
   await until('!!document.querySelector(".tv-shell")');
   assert.equal(await evaluate('document.querySelector("#startup-error").hidden'), true, 'Retry recovers after bridge failure');
-  // The footer controls a native select during TV render; force that render to throw.
-  const renderFailure = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'Object.defineProperty(HTMLOptionElement.prototype, "selected", { get() { throw new Error("Fixture React render failure"); }, set() { throw new Error("Fixture React render failure"); } });' });
+  // Force the catalogue search input to fail during React rendering.
+  const renderFailure = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'Object.defineProperty(HTMLInputElement.prototype, "value", { get() { throw new Error("Fixture React render failure"); }, set() { throw new Error("Fixture React render failure"); } });' });
   await call('Page.navigate', { url: `${origin}/?tv=1` });
   await until('document.querySelector("#startup-error")?.hidden === false');
   assert.match(await evaluate('document.querySelector("#startup-details").textContent'), /React render error[\s\S]*Fixture React render failure/);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ASSIST_MODEL, MIN_STREAMING_SEEDERS, baselineAdvice, SourceAssist } from '../src/lib/media/source-assist.ts';
-import { createMediaApi } from '../src/lib/media/api.ts';
+import { createMediaApi } from './fixtures/accounts.mjs';
 import { queryTarget, sourceIdentity } from '../src/lib/media/source-identity.ts';
 
 const secret = 'test-only-source-assist-private-canary';
