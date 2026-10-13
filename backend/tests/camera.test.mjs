@@ -1,0 +1,127 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { mkdtemp, readFile, stat, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { CameraSettings, cameraHost } from '../src/lib/camera/config.ts';
+import { createCameraApi } from '../src/lib/camera/api.ts';
+import { TapoStreams, rtspInput, streamArguments } from '../src/lib/camera/stream.ts';
+import { TapoControl, validPreset } from '../src/lib/camera/control.ts';
+import { MediaError } from '../src/lib/media/core.ts';
+import { Cam } from 'onvif';
+
+const config = { name: 'Salon', username: 'camera-user', password: 'private@password:?' };
+const origin = 'https://homelab.test';
+const request = (path, data, headers = {}) => new Request(`${origin}/api/camera/${path}`, {
+  headers: { Cookie: 'memo_session=fixture', ...(data ? { Origin: origin, 'X-Camera-Request': '1', 'Content-Type': 'application/json' } : {}), ...headers },
+  ...(data ? { method: 'POST', body: JSON.stringify(data) } : {}),
+});
+function fixture() {
+  const calls = [];
+  const settings = { get: async () => config, save: async body => ({ ...config, ...body }) };
+  const control = {
+    status: async () => ({ connected: true, ptz: true, presetsSupported: true, presets: [{ name: 'Entrée', token: '1' }] }),
+    move: async (...args) => { calls.push(['move', ...args]); }, stop: async (...args) => { calls.push(['stop', ...args]); },
+    preset: async (...args) => { calls.push(['preset', ...args]); }, reset: () => { calls.push(['control-reset']); },
+  };
+  const streams = { asset: async (...args) => { calls.push(['asset', ...args]); return new Uint8Array([1, 2, 3]); }, reset: () => { calls.push(['stream-reset']); } };
+  const auth = async req => { if (!req.headers.get('cookie')) throw new MediaError('account_session', 'Session required', 401); return { user: { username: 'oli' } }; };
+  return { api: createCameraApi(auth, settings, control, streams), calls, control, settings };
+}
+test('all camera and video routes require a HomeLab account; cross-site commands fail before camera access', async () => {
+  const { api, calls } = fixture();
+  for (const path of ['status', 'stream/hd/index.m3u8', 'stream/sd/segment-000000001.ts']) {
+    assert.equal((await api(new Request(`${origin}/api/camera/${path}`))).status, 401);
+  }
+  for (const headers of [{ Origin: 'https://evil.test' }, { 'X-Camera-Request': '' }, { Origin: '' }, { 'Sec-Fetch-Site': 'cross-site' }]) {
+    assert.equal((await api(request('move', { direction: 'left', speed: 0.5 }, headers))).status, 403);
+  }
+  assert.equal(calls.length, 0);
+});
+test('status exposes connection and presets without revealing the camera account; offline errors are sanitized', async () => {
+  const f = fixture();
+  const response = await f.api(request('status'));
+  assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  const data = await response.json(); assert.equal(data.connected, true); assert.deepEqual(data.presets, [{ name: 'Entrée', token: '1' }]);
+  assert.equal(data.username, undefined); assert.equal(data.password, undefined);
+  f.control.status = async () => { throw new Error(config.password); };
+  const offline = await (await f.api(request('status'))).json();
+  assert.equal(offline.connected, false); assert.equal(JSON.stringify(offline).includes(config.password), false);
+  f.settings.get = async () => ({ ...config, username: '', password: '' });
+  assert.equal((await (await f.api(request('status'))).json()).configured, false);
+});
+test('commands use private server credentials, settings reset both transports, and stream assets have strict paths', async () => {
+  const f = fixture();
+  assert.equal((await f.api(request('move', { direction: 'up', speed: 0.25 }))).status, 200);
+  assert.deepEqual(f.calls[0], ['move', config, 'up', 0.25]);
+  assert.equal((await f.api(request('stop', {}))).status, 200);
+  assert.equal((await f.api(request('preset', { action: 'save', value: 'Entrée' }))).status, 200);
+  assert.equal((await f.api(request('settings', { name: 'Entrée' }))).status, 200);
+  assert.ok(f.calls.some(call => call[0] === 'control-reset')); assert.ok(f.calls.some(call => call[0] === 'stream-reset'));
+  const stream = await f.api(request('stream/hd/index.m3u8'));
+  assert.equal(stream.headers.get('content-type'), 'application/vnd.apple.mpegurl'); assert.deepEqual([...new Uint8Array(await stream.arrayBuffer())], [1, 2, 3]);
+  const count = f.calls.length;
+  for (const path of ['stream/hd/secret.json', 'stream/4k/index.m3u8', 'stream/hd/..%2Faccount.json']) assert.equal((await f.api(request(path))).status, 404);
+  assert.equal(f.calls.length, count);
+});
+test('settings persist with restrictive permissions; partial credentials and untrusted camera targets are rejected', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'camera-settings-test-'));
+  try {
+    const settings = new CameraSettings(directory);
+    assert.equal((await settings.get()).username, '');
+    await assert.rejects(settings.save({ name: 'Salon', username: 'only-user' }), error => error.status === 400);
+    await assert.rejects(settings.save({ ...config, password: 'bad\npassword' }), error => error.status === 400);
+    await settings.save(config); assert.deepEqual(await settings.get(), config);
+    assert.equal((await stat(join(directory, 'account.json'))).mode & 0o777, 0o600);
+    assert.equal((await stat(directory)).mode & 0o777, 0o700);
+    await settings.save({ name: 'Entrée' }); assert.equal((await settings.get()).password, config.password);
+    assert.equal((await readFile(join(directory, 'account.json'), 'utf8')).includes('Entrée'), true);
+    const previous = process.env.TAPO_HOST; process.env.TAPO_HOST = '8.8.8.8';
+    try { assert.throws(cameraHost, error => error.status === 503); }
+    finally { if (previous === undefined) delete process.env.TAPO_HOST; else process.env.TAPO_HOST = previous; }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+test('RTSP input escapes credentials and ffmpeg remuxes video with bounded segments; invalid movement never connects', async () => {
+  assert.equal(rtspInput(config, 'sd'), 'rtsp://camera-user:private%40password%3A%3F@192.168.0.188:554/stream2');
+  const args = streamArguments('rtsp://fixture', '/tmp/output');
+  assert.ok(args.includes('delete_segments+omit_endlist+temp_file')); assert.equal(args[args.indexOf('-c:v') + 1], 'copy');
+  assert.equal(args[args.indexOf('-timeout') + 1], '10000000');
+  const control = new TapoControl();
+  await assert.rejects(control.move(config, 'diagonal', 0.5), error => error.status === 400);
+  await assert.rejects(control.move(config, 'left', 100), error => error.status === 400);
+  await assert.rejects(control.preset(config, 'save', '<script>'), error => error.status === 400);
+  assert.equal(validPreset('1</PresetToken>'), false);
+});
+test('the real ONVIF library encodes each movement with a 350 ms camera-side limit and can stop pan/tilt', async () => {
+  const bodies = [];
+  const cam = Object.create(Cam.prototype);
+  Object.assign(cam, { activeSource: { profileToken: 'profile1', ptz: true },
+    _envelopeHeader: () => '<Envelope>', _envelopeFooter: () => '</Envelope>',
+    _request: (options, done) => { bodies.push(options.body); done(null, []); }, on: () => cam,
+  });
+  const control = new TapoControl((saved, done) => { assert.deepEqual(saved, config); queueMicrotask(() => done(null)); return cam; });
+  await control.move(config, 'left', 0.5);
+  assert.match(bodies[0], /<Timeout>PT0\.35S<\/Timeout>/);
+  assert.match(bodies[0], /PanTilt x="-0\.5" y="0"/);
+  await control.stop(config);
+  assert.match(bodies[1], /<PanTilt>true<\/PanTilt>/);
+  assert.doesNotMatch(bodies[1], /<Zoom>true<\/Zoom>/);
+});
+test('a real FFmpeg relay shares one encoder between viewers and produces playable HLS assets', async () => {
+  let starts = 0;
+  const streams = new TapoStreams((_binary, args, options) => {
+    starts++;
+    const output = args.slice(args.indexOf('-map'));
+    output[output.indexOf('-c:v') + 1] = 'libx264';
+    return spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=15', '-preset', 'ultrafast', '-g', '15', ...output], options);
+  });
+  try {
+    const [first, second] = await Promise.all([streams.asset(config, 'hd', 'index.m3u8', AbortSignal.timeout(15_000)), streams.asset(config, 'hd', 'index.m3u8', AbortSignal.timeout(15_000))]);
+    assert.equal(starts, 1);
+    const manifest = new TextDecoder().decode(first); assert.match(manifest, /#EXTM3U/); assert.match(new TextDecoder().decode(second), /#EXTINF/);
+    const segment = manifest.match(/segment-\d{9}\.ts/)[0];
+    const bytes = await streams.asset(config, 'hd', segment, AbortSignal.timeout(1000)); assert.equal(bytes[0], 0x47); assert.ok(bytes.length > 1000);
+    await assert.rejects(streams.asset(config, 'hd', '../account.json', AbortSignal.timeout(1000)), error => error.status === 404);
+  } finally { streams.reset(); }
+});

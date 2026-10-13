@@ -1,4 +1,4 @@
-export type SectionId = "home" | "calendar" | "tv" | "memo" | "library";
+export type SectionId = "home" | "calendar" | "tv" | "memo" | "library" | "camera";
 export type CalendarTarget = { date?: string; view?: "month" | "week" | "day"; event?: string; create?: boolean };
 export type Navigate = (section: SectionId, target?: CalendarTarget) => void;
 
