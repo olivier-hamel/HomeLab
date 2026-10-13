@@ -1,9 +1,9 @@
 # Tempo
 
 Tempo est le calendrier de HomeLab, entièrement en français. Son nom évoque le
-rythme des journées et accompagne Mémo. L’accueil sert de point de départ :
-recherche Web, tâches du jour, agenda et événements des 14 prochains jours,
-avec des vues par mois, semaine et jour. Les événements
+rythme des journées et accompagne Mémo. Tempo ouvre directement le calendrier,
+avec des vues par mois, semaine et jour. La recherche Web, les tâches du jour et
+l’aperçu de l’agenda sont dans l’app distincte [Accueil](../../docs/home.md). Les événements
 sont enregistrés dans MongoDB pour chaque compte HomeLab. Tu peux les créer
 en langage naturel avec Gemini, vérifier les détails avant l’ajout, puis
 les modifier ou les supprimer. Aucun événement de démonstration n’est inclus.
@@ -27,7 +27,8 @@ l’API de compte partagée et le backend HomeLab sur le port 3001. `PORT=3000 n
 
 ## Serveur
 
-Tempo est la section ouverte par défaut après la connexion à HomeLab.
+Accueil est l’app ouverte par défaut après la connexion à HomeLab.
+La section Tempo ouvre le calendrier.
 HomeLab sert l’application à `/calendar/` via le service Docker `calendar`.
 Les chemins et identifiants techniques restent les mêmes pour conserver les
 liens existants et la configuration du serveur. Les préférences déjà enregistrées
@@ -44,13 +45,12 @@ commit → push → pull → mise à jour.
 - `dist/js/events.js` : contrat des événements, accès API et disposition des horaires qui se chevauchent.
 - `dist/js/event-controller.js` : création assistée, aperçu, saisie manuelle, modification et suppression.
 - `dist/js/components/event-dialog.js` : fenêtre accessible et adaptative de gestion des événements.
-- `dist/js/documents.js` et `document-controller.js` : imports multiples, bibliothèque, analyse et revue des événements.
-- `dist/js/components/documents.js` : bibliothèque, panneau de détails et fenêtres de revue/suppression.
+- `dist/js/notifications.js` : notifications persistantes et revue des événements détectés dans Bibliothèque.
+- `dist/js/components/documents.js` : fenêtre de revue des propositions; composants historiques conservés pour les archives.
 - `dist/js/pdf-preview.js` : aperçu de première page avec PDF.js, sans service externe.
 - `scripts/prepare-pdf.mjs` : préparation des ressources PDF.js, exécutée par le serveur de développement et le build Docker.
 - `dist/js/account.js` : compte HomeLab et protection des textes affichés.
 - `dist/js/components/` : menu, vues du calendrier, fenêtres et icônes.
-- `dist/js/components/home.js` : recherche Web, tâches, agenda et prochains événements.
 - `dist/js/components/shell.js` : interface commune et fil d’Ariane.
 - `dist/js/app.js` : assemblage des vues, interactions et raccourcis clavier.
 - `dist/styles/` : thème, styles des composants et mises en page adaptatives.
@@ -63,47 +63,17 @@ n’est nécessaire. Les modules JavaScript natifs séparent les composants.
 Les données passent par `/api/calendar/*` dans le backend HomeLab. La connexion
 MongoDB commune se trouve dans `backend/src/lib/database.ts`, la configuration
 Gemini dans `backend/src/lib/ai/gemini.ts` et le dépôt des événements dans
-`backend/src/lib/calendar/`. Les préférences et les tâches restent dans le navigateur.
-
-## Accueil et recherche
-
-La recherche centrale propose Google ou DuckDuckGo. Le moteur choisi est
-enregistré sur cet appareil, séparément pour chaque compte; les préférences
-permettent aussi de le changer. Entrée lance la recherche dans l’onglet courant,
-y compris lorsque Tempo est intégré à HomeLab. Le raccourci `/` ramène à
-l’accueil et place le curseur dans la recherche. Sur ordinateur, la recherche
-reçoit le focus à l’ouverture. Sur mobile, le clavier reste fermé au chargement.
-
-« À faire » permet d’ajouter, cocher et supprimer les tâches. Elles sont
-enregistrées dans le navigateur pour chaque compte, sans synchronisation entre
-appareils. Les onglets Tempo du même navigateur se mettent à jour entre eux.
-Les tâches inachevées restent visibles le lendemain; les tâches
-terminées restent affichées le jour où elles ont été cochées. Si le navigateur
-refuse l’enregistrement, la liste fonctionne pour la session et l’indique.
-
-L’agenda met en évidence le rendez-vous en cours ou le prochain rendez-vous.
-L’aperçu « À venir » présente les trois premiers événements des 14 prochains
-jours, avec le nombre total et un accès au calendrier. Il inclut les répétitions
-et les événements qui se poursuivent, même si la semaine courante se termine.
-La bande de dates ouvre les sept prochaines journées. Les textes saisis et
-la position du curseur restent intacts lors des rafraîchissements de l’accueil.
-
-`node scripts/test-calendar-home-ui.mjs`, depuis la racine, vérifie la recherche,
-les tâches, les préférences, les dates, la navigation depuis une iframe et le
-rendu à six tailles d’écran, avec des API simulées. Les captures sont dans
-`artifacts/calendar-home/`.
+`backend/src/lib/calendar/`. Les préférences restent dans le navigateur. Les tâches sont gérées par Accueil.
 
 ## Navigation
 
-L’accueil affiche toujours la journée actuelle à Toronto et les jours à venir,
-même après avoir consulté d’autres dates. La flèche de la carte « Aujourd’hui »
-ouvre l’horaire du jour, les dates de l’aperçu ouvrent chaque journée et
-la flèche de la carte « À venir » ouvre la vue semaine. « Voir le calendrier »
-et le raccourci « Calendrier » ouvrent la vue mois.
+Tempo ouvre la vue mois. L’app [Accueil](../../docs/home.md) affiche les tâches
+et l’agenda de la journée et peut ouvrir directement une date ou un événement
+dans Tempo. Les liens de HomeLab acceptent `?section=calendar&date=2026-10-13&view=day`.
 
 Clique sur une date du mois ou du mini calendrier pour ouvrir sa semaine,
 puis sur un jour pour voir son horaire. Le fil d’Ariane permet de revenir à
-la semaine, au mois ou à l’accueil. Les commandes précédent, suivant,
+la semaine ou au mois. Les commandes précédent, suivant,
 aujourd’hui et « Aller à une date » fonctionnent dans les vues du calendrier.
 
 Utilise « Nouvel événement » ou `N` pour créer un événement. Dans la vue mois,
@@ -126,7 +96,7 @@ répétition commencent le lundi, quelle que soit la préférence d’affichage.
 Pour les répétitions mensuelles, les mois sans le jour choisi sont sautés
 (ex. le 31) ; le 29 février annuel se répète seulement les années bissextiles.
 
-Les raccourcis existants sont conservés : `H` pour l’accueil, `M` pour le mois,
+Les raccourcis du calendrier sont conservés : `M` pour le mois,
 `W` pour la semaine, `D` pour le jour, `T` pour aujourd’hui, `G` pour choisir
 une date et `?` pour l’aide. Les flèches changent de période ou de date lorsqu’une
 date du mois a le focus. Entrée ouvre la semaine de cette date.
@@ -185,86 +155,30 @@ Gemini prépare seulement un brouillon : l’ajout nécessite
 l’action de l’utilisateur. Les dates relatives suivent la date actuelle
 à Toronto, même lorsqu’un autre mois est affiché.
 
-## Documents PDF
+## Documents de Bibliothèque
 
-Le backend propose aussi une [connexion Moodle personnelle en lecture seule](../../docs/moodle.md),
-protégée par la session HomeLab et une liste de comptes autorisés. Ce connecteur
-fournit les cours, fichiers et textes via l’API; il n’ajoute pas encore de
-parcours d’import Moodle à la bibliothèque Tempo.
+Tempo utilise maintenant [Bibliothèque](../../docs/library.md#tempo-et-mémo) pour
+les documents PDF et PowerPoint. La section Documents est supprimée du menu.
+Chaque nouveau fichier, quelle que soit son origine, déclenche un scan Gemini
+en arrière-plan. Une notification persistante permet d’accepter ou d’ignorer
+les propositions, avec modification des détails. **Plus tard** conserve la revue.
+Les fichiers déjà présents ne sont pas scannés automatiquement; un bouton de
+scan/rescan reste disponible sur chaque fichier dans Bibliothèque.
 
-Pour tester avec la **vraie API Gemini** avant de déployer, configure
-`GEMINI_API_KEY` dans `backend/.env`, puis lance `npm run test:pdf` depuis
-`backend/`, ou `npm run test:pdf -- "/chemin/document.pdf"`. Ce test réutilise
-l’extracteur du serveur et ne crée aucune donnée dans MongoDB.
-Voir le [guide de test local](../../docs/calendar-local.md) pour lancer aussi
-l’interface complète.
+`dist/js/notifications.js` gère la notification et la revue. Les événements
+acceptés conservent leur lien vers Bibliothèque et la page source. Les archives
+Tempo existantes sont migrées sans scan, avec leurs dossiers et propositions.
 
-« Documents » ouvre une bibliothèque avec recherche et filtre « À vérifier ».
-« Nouveau dossier » crée un dossier à l’emplacement affiché; chaque dossier
-peut contenir des PDF et d’autres dossiers. Le fil d’Ariane permet de remonter
-dans la bibliothèque. Le menu de chaque dossier propose de le renommer, de
-le déplacer avec tout son contenu ou de le supprimer lorsqu’il est vide.
-Dans les détails d’un PDF, « Déplacer » permet de choisir son dossier ou de
-le remettre à la racine. Les imports sont enregistrés dans le dossier ouvert,
-même si tu navigues ailleurs pendant l’import. Un PDF déjà présent conserve
-son emplacement. La recherche et « À vérifier » couvrent toute la bibliothèque
-et affichent l’emplacement des résultats.
+Pour tester avec Gemini réel, configure la clé privée dans `backend/.env`, puis
+lance `npm run test:pdf` depuis `backend/`. Le test ne crée aucune donnée. Voir
+le [guide local](../../docs/calendar-local.md).
 
-Ajoute plusieurs PDF par le bouton ou par glisser-déposer (10 Mo par fichier).
-Sur ordinateur, le panneau de détails présente l’aperçu de première page,
-l’original à ouvrir ou télécharger et les événements associés. Sur téléphone,
-la sélection ouvre les détails avec un retour à la bibliothèque.
+Le parcours commun est vérifié avec
+`node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-library-tempo-ui.mjs`
+depuis la racine, frontend local démarré. Il utilise une bibliothèque temporaire,
+Gemini et un calendrier simulés. Les captures sont dans `artifacts/library/`.
+Les tests des archives historiques restent dans `backend/tests/calendar-documents.test.mjs`.
 
-Chaque PDF est enregistré avant son analyse. Gemini recherche les événements
-explicites, puis une fenêtre les regroupe par document avec la page d’origine,
-les hypothèses éventuelles et des détails modifiables. Sélectionne tout ou
-quelques événements, ou ferme la revue pour la reprendre depuis la bibliothèque.
-Aucun événement n’est ajouté sans validation. Les corrections d’une revue
-fermée restent disponibles pendant la session; les propositions originales
-sont conservées côté serveur.
-
-Les événements ajoutés gardent une référence à leur PDF, son nom et sa page.
-Cette référence est conservée lors des modifications, y compris pour les
-séries récurrentes. Supprimer un PDF demande confirmation : le fichier et ses
-propositions disparaissent, les événements restent avec la mention « Document
-supprimé ». Supprimer un événement permet de sélectionner à nouveau sa
-proposition dans la bibliothèque.
-
-La collection MongoDB `calendar_documents` conserve les PDF binaires et leur
-analyse par compte, sans volume Docker supplémentaire. La limite de 10 Mo
-laisse une marge sous la limite BSON de 16 Mio pour les métadonnées. Le même
-PDF importé plusieurs fois dans un compte est reconnu par son empreinte SHA-256.
-Les listes n’incluent jamais les octets PDF. Les originaux et toutes les
-opérations nécessitent la session HomeLab.
-
-La collection `calendar_document_libraries` conserve les dossiers et les
-emplacements des PDF séparément pour chaque compte. Les changements de
-structure sont atomiques pour empêcher les déplacements circulaires, même
-depuis plusieurs onglets. Les documents existants apparaissent à la racine;
-aucune migration manuelle n’est nécessaire. Déplacer ou renommer un dossier
-conserve les analyses, les fichiers originaux et les liens des événements.
-
-Les PDF sont envoyés à Gemini comme données PDF intégrées à la requête
-d’analyse. Leur conservation durable est assurée par HomeLab; elle ne dépend
-pas des fichiers temporaires Google. Une erreur d’analyse conserve le PDF et
-propose une nouvelle tentative. Sans clé Gemini, la bibliothèque fonctionne
-et les documents pourront être analysés après configuration. Une analyse
-propose jusqu’à 100 événements, avec au maximum 6 analyses par minute et par
-compte. Les requêtes interrompues et les clics répétés ne créent pas de copies
-supplémentaires des événements déjà ajoutés.
-
-Prépare PDF.js avec `npm run prepare:pdf` dans ce dossier, puis lance
-`node scripts/test-calendar-documents-ui.mjs` depuis la racine pour vérifier
-le parcours complet. Le script utilise Playwright, Chrome et des API simulées,
-sans accéder à Gemini ou MongoDB. Les captures sont dans
-`artifacts/calendar-documents/`. Le backend comprend aussi
-`tests/calendar-documents.test.mjs` pour le stockage, les accès, l’analyse,
-les liens, les reprises et la suppression.
-
-Pour les vérifications de l’API, lance `npm test`, `npm run lint`,
-`npm run typecheck` et `npm run build` dans `backend/`. Pour le parcours
-visuel, lance `node scripts/test-calendar-ui.mjs` depuis la racine après
-installation des dépendances de `apps/memo/web-app/frontend/` (Playwright)
-et de Chrome. `CHROME_BIN` permet de choisir un autre exécutable Chromium.
-Les captures sont produites dans `artifacts/calendar/`. Ces vérifications
-utilisent des API simulées; elles ne contactent pas ton MongoDB ni Gemini.
+Pour l’API, lance `npm test`, `npm run lint`, `npm run typecheck` et `npm run build`
+dans `backend/`. Pour le calendrier, utilise `node scripts/test-calendar-ui.mjs`
+depuis la racine après installation de Playwright dans Mémo et de Chrome.

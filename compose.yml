@@ -117,6 +117,7 @@ services:
     image: memo-app:local
     environment:
       MEMO_COOKIE_PATH: /
+      HOMELAB_LIBRARY_URL: http://backend:3001
     env_file:
       - path: "${MEMO_MONGODB_ENV_FILE:-./.env.memo-mongodb}"
         required: false

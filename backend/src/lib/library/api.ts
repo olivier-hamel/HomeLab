@@ -5,6 +5,9 @@ import { fileMime, MAX_FILE_BYTES, moodleAuthorized, publicLibrary } from "./mod
 import { libraryStore, type LibraryStore } from "./store.ts";
 import { moodleSync, type MoodleSync } from "./sync.ts";
 import { powerpointPreview } from "./preview.ts";
+import { TempoScans } from "./scans.ts";
+import { geminiApiKey } from "../ai/gemini.ts";
+import { importMemoArchive } from "./imports.ts";
 
 const rates = new BoundedCache<number>(1024, 60_000);
 function boundary(request: Request) {
@@ -14,21 +17,25 @@ function boundary(request: Request) {
   if (origin && origin !== `${protocol}://${request.headers.get("host") || new URL(request.url).host}`) throw new MediaError("origin", "Cette origine n’est pas autorisée.", 403);
   if (request.method !== "GET" && (!origin || request.headers.get("x-library-request") !== "1")) throw new MediaError("csrf", "Utilise les commandes de la bibliothèque.", 403);
 }
-async function body(request: Request) {
+async function body(request: Request, limit = 8 * 1024) {
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") throw new MediaError("input", "La demande est invalide.", 400);
-  const value: unknown = JSON.parse(new TextDecoder().decode(await readLimited(request, 8 * 1024)));
+  const value: unknown = JSON.parse(new TextDecoder().decode(await readLimited(request, limit)));
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new MediaError("input", "La demande est invalide.", 400);
   return value as Record<string, unknown>;
 }
 function parent(value: unknown): string | null { if (value === null) return null; if (typeof value !== "string") throw new MediaError("input", "Choisis un dossier valide.", 400); return value; }
-export function createLibraryApi(authenticate: AccountVerifier = createAccountVerifier(), store: LibraryStore = libraryStore, sync: Pick<MoodleSync, "start"> = moodleSync, convert = powerpointPreview) {
+export function createLibraryApi(authenticate: AccountVerifier = createAccountVerifier(), store: LibraryStore = libraryStore, sync: Pick<MoodleSync, "start"> = moodleSync, convert = powerpointPreview, scans = new TempoScans(store, undefined, convert)) {
   return async (request: Request) => {
     const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
     try {
       boundary(request); const { user } = await authenticate(request); const username = user.username;
       const allowed = moodleAuthorized(username);
       const path = new URL(request.url).pathname.replace(/^\/api\/library\/?/, "").split("/").filter(Boolean);
-      if (!path.length && request.method === "GET") return json(publicLibrary(await store.snapshot(username), allowed));
+      if (!path.length && request.method === "GET") return json({ ...publicLibrary(await store.snapshot(username), allowed), aiAvailable: !!geminiApiKey() });
+      if (path.length === 1 && path[0] === "notifications" && request.method === "GET") return json(await scans.notifications(username));
+      if (path.join("/") === "import/memo" && request.method === "POST") {
+        const data = await body(request); await importMemoArchive(request, username, data.id, store); return json({ imported: true });
+      }
       if (path[0] === "sync" && path.length === 1 && request.method === "POST") {
         if (!allowed) throw new MediaError("moodle_access", "Ton compte n’a pas accès à cette connexion Moodle.", 403);
         await body(request);
@@ -55,6 +62,16 @@ export function createLibraryApi(authenticate: AccountVerifier = createAccountVe
         if (path.length >= 2) {
           const file = await store.get(username, path[1]);
           if (file.source && !allowed) throw new MediaError("moodle_access", "Ton compte n’a plus accès aux fichiers Moodle.", 403);
+          if (path.length === 3 && request.method === "POST" && path[2] === "scan") {
+            await body(request);
+            const key = `scan:${username}`, count = rates.get(key) || 0;
+            if (count >= 6) throw new MediaError("rate_limit", "Patiente une minute avant de demander un autre scan.", 429);
+            rates.set(key, count + 1);
+            await scans.request(username, file.id); return json({ queued: true }, 202);
+          }
+          if (path.length === 3 && request.method === "POST" && path[2] === "events") {
+            const data = await body(request, 768 * 1024); return json(await scans.decide(username, file.id, data.scanId, data.events, data.ignored ?? []), 201);
+          }
           if (path.length === 2 && request.method === "PATCH") {
             const data = await body(request);
             await store.updateFile(username, file.id, { ...(data.name !== undefined ? { name: data.name } : {}), ...(data.folderId !== undefined ? { folderId: parent(data.folderId) } : {}) });

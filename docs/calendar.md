@@ -1,9 +1,10 @@
 # Tempo
 
-Tempo est le calendrier en français de HomeLab et sa section ouverte par défaut
-après la connexion. Les liens `?section=calendar`, `?section=tv` et
-`?section=memo` sélectionnent respectivement Tempo, TV & Movies et Mémo.
-Les noms de sections inconnus ouvrent Tempo ; le mode TV commence avec TV & Movies.
+Tempo est le calendrier en français de HomeLab. L’app [Accueil](home.md) s’ouvre
+par défaut après la connexion. Les liens `?section=home`, `?section=calendar`,
+`?section=tv`, `?section=memo` et `?section=library` sélectionnent respectivement
+Accueil, Tempo, TV & Movies, Mémo et Bibliothèque. Les noms de sections inconnus
+ouvrent Accueil ; le mode TV commence avec TV & Movies.
 Le menu latéral contient la navigation et la commande de plein écran.
 
 Tempo s’affiche dans une iframe de même origine à `/calendar/`, y compris en
@@ -38,8 +39,8 @@ Le bouton « Nouvel événement » ouvre la création en langage naturel ou la
 saisie manuelle. Gemini propose un objet avec le titre, la description, les
 dates et l’horaire; une étape de vérification permet de le corriger avant
 l’enregistrement. Un clic sur un événement ouvre la modification; la
-suppression demande une confirmation. Les vues mois, semaine, jour et
-l’accueil affichent les événements du compte connecté.
+suppression demande une confirmation. Les vues mois, semaine et jour ainsi que
+l’app Accueil affichent les événements du compte connecté.
 
 Le backend utilise la connexion MongoDB commune à HomeLab : configure
 `MONGODB_URI` dans `backend/.env`, avec `MONGODB_DATABASE=homelab` ou ta base
@@ -62,27 +63,21 @@ MongoDB du backend doit avoir accès à la base configurée.
 
 Voir le [contrat des événements et les vérifications](../apps/calendar/README.md#mongodb-et-gemini).
 
-## Documents
+## Documents de Bibliothèque
 
-La bibliothèque « Documents » permet de conserver plusieurs PDF dans Tempo,
-avec recherche, aperçu de première page, téléchargement et suppression.
-L’import accepte plusieurs fichiers et le glisser-déposer, avec une limite
-de 10 Mo par PDF. Les événements détectés par Gemini sont présentés dans une
-fenêtre de revue : sélectionne les propositions, ajuste leurs détails, puis
-confirme l’ajout au calendrier. La revue reste accessible depuis la bibliothèque.
+Tempo utilise les PDF et PowerPoint de [Bibliothèque](library.md#tempo-et-mémo).
+Les nouveaux fichiers produisent automatiquement des propositions d’événements,
+présentées dans une notification persistante. Vérifie et corrige les détails
+avant d’accepter; les propositions non cochées sont ignorées, et **Plus tard**
+conserve la notification. Aucun événement n’est ajouté automatiquement.
 
-Les événements issus d’un PDF affichent leur document d’origine et un lien
-vers sa page. La suppression d’un document conserve les événements déjà
-ajoutés et remplace l’accès au fichier par une mention de suppression.
+Les anciens fichiers ne sont pas scannés automatiquement. Leur menu et le panneau
+d’informations de Bibliothèque proposent un scan manuel, également disponible
+pour les documents Moodle. Les événements acceptés gardent un lien vers le fichier
+et sa page. La suppression du fichier conserve les événements du calendrier.
 
-MongoDB conserve les fichiers et les analyses dans `calendar_documents`,
-séparément par compte. Les index sont créés automatiquement; aucun nouveau
-volume ni changement de configuration n’est nécessaire. Les PDF sont envoyés
-à Gemini pendant l’analyse et conservés durablement dans HomeLab. Un échec de
-Gemini ne supprime pas le PDF. Sans clé Gemini, l’import et la consultation
-restent disponibles.
-
-Reconstruis les services `calendar` et `backend` pour activer cette fonctionnalité.
-Le build Docker de Tempo prépare automatiquement PDF.js; en local, exécute
-`npm ci --omit=optional --ignore-scripts` dans `apps/calendar` avant `npm run dev`.
-Consulte les [détails et vérifications des PDF](../apps/calendar/README.md#documents-pdf).
+Les notifications et les fichiers restent dans le volume Bibliothèque; les
+événements acceptés restent dans MongoDB. Les anciens PDF Tempo et leurs dossiers
+sont migrés à l’ouverture du calendrier sans relancer Gemini. Les anciens liens
+restent consultables. Reconstruis `backend`, `frontend`, `calendar` et `memo`
+pour activer le parcours commun.

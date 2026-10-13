@@ -1,5 +1,5 @@
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
-export const documentUrl = (id, page, download = false) => `/api/calendar/documents/${encodeURIComponent(id)}/file${download ? "?download=1" : ""}${page ? `#page=${page}` : ""}`;
+export const documentUrl = (id, page, download = false, origin) => origin === "library" ? download ? `/api/library/files/${encodeURIComponent(id)}/original` : `/?section=library&file=${encodeURIComponent(id)}${page ? `&page=${page}` : ""}` : `/api/calendar/documents/${encodeURIComponent(id)}/file${download ? "?download=1" : ""}${page ? `#page=${page}` : ""}`;
 export const fileSize = size => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} Ko` : `${(size / 1024 / 1024).toLocaleString("fr-CA", {maximumFractionDigits: 1})} Mo`;
 export function pendingProposals(document, events = []) {
   const added = new Set(events.filter(event => event.source?.documentId === document.id).map(event => event.source.proposalId));

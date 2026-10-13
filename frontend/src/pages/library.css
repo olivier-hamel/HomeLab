@@ -287,3 +287,34 @@
   .library-reader-footer { gap: 15px; padding-inline: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .library-app * { animation: none !important; transition: none !important; } }
+.library-tempo-notification { display: flex; align-items: center; gap: 12px; margin: 0 36px 18px; padding: 14px 17px; background: #f1f7ff; border: 1px solid #dbe9fc; border-radius: 10px; color: #6d91bc; }
+.library-tempo-notification > div { flex: 1; }
+.library-tempo-notification strong { font-size: 12px; color: #547aa6; font-weight: 550; }
+.library-tempo-notification p { color: #8da4bf; font-size: 11px; margin-top: 3px; }
+.library-tempo-notification button { border: 0; background: transparent; color: #007aff; font-size: 11px; }
+.library-scan-button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 9px; border: 1px solid #dbe6f4; background: #f4f8fe; color: #728cae; border-radius: 7px; font-size: 11px !important; margin: 10px 0; }
+.library-tempo-review { width: min(720px,calc(100vw - 32px)); }
+.library-tempo-review form > header { display: flex; gap: 13px; align-items: center; margin-bottom: 15px; }
+.library-tempo-review header > div { flex: 1; }
+.library-tempo-review header p { font-size: 9px; color: #8da1bb; letter-spacing: 1px; margin: 0 0 4px; }
+.library-tempo-review header h2 { font-size: 20px; margin: 0; }
+.library-tempo-review header > button { border: 0; background: transparent; color: #98a5b8; }
+.library-tempo-select { display: flex; align-items: center; justify-content: space-between; color: #96a5b8; font-size: 11px; border-block: 1px solid #edf1f6; padding: 12px 0; margin-bottom: 20px; }
+.library-tempo-review .library-tempo-select label { display: flex; align-items: center; gap: 8px; margin: 0; }
+.library-tempo-review input[type=checkbox] { width: auto; accent-color: #007aff; }
+.library-tempo-review-content { max-height: 48svh; overflow: auto; padding-right: 7px; }
+.library-tempo-file-heading { display: flex; align-items: center; gap: 10px; justify-content: space-between; font-size: 12px; color: #667c97; margin-bottom: 8px; overflow-wrap: anywhere; }
+.library-tempo-review-content section > p { font-size: 11px; margin-bottom: 12px; }
+.library-tempo-review-content article { border: 1px solid #e7edf5; border-radius: 9px; padding: 14px; margin-bottom: 12px; }
+.library-tempo-review .library-tempo-proposal-heading { display: flex; align-items: center; gap: 12px; }
+.library-tempo-proposal-heading strong { display: block; font-size: 12px; color: #5a6e87; }
+.library-tempo-proposal-heading small { display: block; margin-top: 4px; color: #9aa8ba; font-size: 10px; }
+.library-tempo-review p.library-tempo-proposal-note { font-size: 11px; margin: 10px 0; }
+.library-tempo-review details summary { cursor: pointer; color: #8fa2bb; font-size: 10px; margin-top: 10px; }
+.library-tempo-review fieldset { border: 0; padding: 14px 0 0; }
+.library-tempo-review fieldset label { display: block; margin-bottom: 12px; }
+.library-tempo-review fieldset label > input:not([type=checkbox]),.library-tempo-review textarea { margin-top: 6px; width: 100%; font-size: 12px; }
+.library-tempo-review textarea { padding: 10px; border: 1px solid #dce3ed; border-radius: 7px; background: #fff; color: #657993; }
+.library-tempo-review .library-tempo-all-day { display: flex; align-items: center; gap: 8px; margin-top: 15px; }
+.library-tempo-review fieldset > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .library-tempo-notification { margin-inline: 20px; flex-wrap: wrap; } .library-tempo-notification > div { flex-basis: calc(100% - 35px); } .library-tempo-notification button { margin-left: 30px; } }

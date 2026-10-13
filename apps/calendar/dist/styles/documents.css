@@ -270,3 +270,14 @@ button:disabled { cursor:default; opacity:.55; }
 @media (max-width:760px) { .documents-intro { flex-direction:column; } .documents-header-actions { max-width:none; justify-content:flex-start; } .document-list-heading { flex-wrap:wrap; gap:6px; } .document-location-bar { padding:12px 14px; } }
 @media (max-width:620px) { .documents-header-actions { width:100%; gap:8px; } .documents-header-actions > button { flex:1; justify-content:center; font-size:10px; padding:10px 9px; } .document-folder-grid { grid-template-columns:minmax(0,1fr); padding:0 4px 10px; gap:8px; } .document-folder-open { padding:13px 10px; } .document-list-heading { padding:12px 6px 15px; } .document-list-heading > span { font-size:9px; } .document-library-toolbar { flex-wrap:wrap; gap:9px; } .document-search { flex-basis:100%; max-width:none; } .document-empty { padding:28px 13px; } .document-folder-dialog { padding:22px 20px; } .document-folder-dialog .dialog-heading h2 { font-size:23px; } .document-folder-dialog .dialog-actions { gap:8px; } .document-folder-dialog .dialog-actions button { padding:10px 12px; } .folder-destination-list { max-height:190px; } .documents-no-results { padding:42px 14px; } .documents-no-results p { line-height:1.8; } }
 @media (pointer:coarse) { .folder-menu > summary { width:44px; height:44px; } .folder-menu button, .document-breadcrumbs > button, .inspector-location button, .document-folder-dialog button { min-height:44px; } .document-folder-open { min-height:74px; } }
+.tempo-library-notifications { display: flex; align-items: center; gap: 13px; padding: 13px 18px; margin: 0 0 18px; border: 1px solid #dde9df; background: #f4f8f3; border-radius: 12px; color: #718975; }
+.tempo-library-notifications[hidden] { display: none; }
+.tempo-library-notifications > svg { flex-shrink: 0; width: 22px; }
+.tempo-library-notifications > div { flex: 1; }
+.tempo-library-notifications strong { display: block; color: #596f5c; font-size: 12px; }
+.tempo-library-notifications span { display: block; color: #91a193; font-size: 11px; margin-top: 3px; }
+.tempo-library-notifications :is(button,a) { display: flex; align-items: center; gap: 7px; border: 0; background: transparent; color: #69896f; font-size: 11px; font-weight: 600; }
+.tempo-library-notifications button svg { width: 15px; }
+.tempo-notifications-button { position: relative; }
+.tempo-notifications-button > span { position: absolute; top: -3px; right: -5px; padding: 1px 5px; border-radius: 8px; background: #769e7b; color: #fff; font-size: 9px; }
+@media (max-width: 620px) { .tempo-library-notifications { flex-wrap: wrap; } .tempo-library-notifications > div { flex-basis: calc(100% - 40px); } .tempo-library-notifications :is(button,a) { margin-left: 35px; } }

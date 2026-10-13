@@ -21,6 +21,45 @@ polices DejaVu/Liberation. En développement, installe `libreoffice-impress` ou
 configure `LIBRARY_SOFFICE_PATH`; sans ce programme, le téléchargement fonctionne
 et l’interface indique que l’aperçu est indisponible.
 
+## Tempo et Mémo
+
+Bibliothèque est le point d’entrée commun des documents. Tempo ouvre directement
+le calendrier et n’a plus de section Documents. Chaque **nouveau** fichier
+PDF/PPT/PPTX, importé à la main ou téléchargé depuis Moodle, entre dans une file
+de scans persistante. Gemini recherche des dates explicites et propose jusqu’à
+100 événements. Les fichiers déjà présents lors de l’intégration et les archives
+migrées depuis Tempo/Mémo ne sont pas analysés automatiquement.
+
+Une notification dans Tempo et Bibliothèque conserve les propositions jusqu’à
+ta décision. **Vérifier les propositions** permet de choisir les événements,
+modifier leurs détails et confirmer l’ajout. Les propositions non cochées sont
+ignorées; **Plus tard** conserve la notification. Aucun événement n’est créé
+automatiquement. Les choix résistent aux rechargements, redémarrages et rescans;
+les reprises après une erreur d’enregistrement évitent les doublons.
+
+Chaque fichier enregistré dispose de **Scanner pour Tempo** ou **Relancer le
+scan Tempo**, dans son menu et ses informations, y compris les anciens fichiers
+Moodle. Les scans interrompus reprennent après expiration du verrou. Les échecs
+restent visibles et peuvent être relancés. Sans `GEMINI_API_KEY`, les nouveaux
+fichiers attendent dans la file; la consultation fonctionne. Les scans utilisent
+la configuration Gemini privée du backend. MongoDB reste nécessaire pour
+enregistrer les événements acceptés, tandis que les notifications restent dans
+le stockage Bibliothèque.
+
+Dans l’éditeur Mémo, **Depuis Bibliothèque** ouvre les dossiers imbriqués et une
+recherche globale, puis rattache les documents choisis à l’ensemble. Les
+originaux restent dans Bibliothèque. Mémo conserve seulement un cache de lecture
+PDF avec notes/commentaires PowerPoint, et les IDs des références dans MongoDB.
+Il vérifie l’accès à Bibliothèque avant de servir ce cache. Une référence retirée
+ne bloque pas les cartes et devient indisponible. Partager un ensemble ne partage
+pas les fichiers privés de sa bibliothèque. Les anciennes références Mémo sont
+migrées à leur première ouverture, sans scan automatique; les PDF Tempo sont
+migrés à l’ouverture du calendrier, en conservant dossiers et propositions.
+
+La passerelle Mémo utilise `HOMELAB_LIBRARY_URL=http://backend:3001` dans Compose
+et `http://127.0.0.1:3001` avec `./start-local.sh`. Elle transmet uniquement la
+session du compte courant, sans stocker le cookie dans les références.
+
 ## Moodle A26
 
 Le dossier **Moodle** existe dès l’ouverture. La synchronisation crée un dossier
@@ -121,7 +160,7 @@ Le contexte Docker exclut les données locales. Le build supprime aussi ces
 documents du paquet standalone et du tracing de l’instrumentation Next.js.
 
 Pour déployer, suivre [la procédure du dépôt](../SERVER-UPDATE.md), reconstruire
-`backend` et `frontend`, puis vérifier `/api/health` et `/?section=library`.
+`backend`, `frontend`, `calendar` et `memo`, puis vérifier `/api/health` et `/?section=library`.
 La connexion Moodle privée doit rester disponible dans le namespace backend.
 Le premier lancement synchronise les comptes autorisés automatiquement.
 
@@ -151,3 +190,19 @@ d’écran de 320 à 1440 px. Les captures sont dans `artifacts/library/`.
 Les tests backend couvrent les accès par compte, la révocation Moodle, les cycles
 de dossiers, les mutations concurrentes, les transferts corrompus, les reprises,
 les révisions de même taille et la conservation des fichiers retirés.
+
+Le parcours commun est vérifié depuis la racine avec :
+
+```sh
+node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+  scripts/test-library-tempo-ui.mjs
+cd apps/memo/web-app
+.venv/bin/python -m unittest backend.tests.test_library_documents
+cd frontend
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npm run test:decks
+```
+
+Ces tests utilisent une bibliothèque isolée et des fournisseurs simulés; ils
+vérifient les rescans explicites, l’exclusion des anciens fichiers, les
+notifications persistantes, l’ajout/refus, les reprises après erreur et les
+références Mémo avec notes PowerPoint sur ordinateur et mobile.

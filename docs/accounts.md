@@ -2,7 +2,7 @@
 
 HomeLab affiche sa propre page de connexion en HTTPS avec les comptes Mémo
 disponibles. Sélectionner un compte, puis saisir son mot de passe habituel.
-La session ouvre Tempo, les films et Mémo. Les comptes restent dans
+La session ouvre Accueil, Tempo, les films, Mémo et Bibliothèque. Les comptes restent dans
 `accounts.sqlite3` du volume `memo_data` : aucune nouvelle base de comptes,
 migration MongoDB ou copie de mots de passe n'est nécessaire.
 

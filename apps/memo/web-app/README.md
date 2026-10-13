@@ -102,15 +102,13 @@ Interface : **http://localhost:5173**. Documentation de l’API : **http://local
 
 ## Lire les documents de cours dans l’éditeur
 
-Dans **Nouvel ensemble** ou dans un ensemble modifiable, utilise **Ajouter des
-documents** pour joindre plusieurs `.pdf`, `.ppt` ou `.pptx`, puis **Afficher le
-lecteur**. **Choisir un document** ouvre une fenêtre avec tous les documents
-de l’ensemble, leur format et leur nombre de pages ou de slides. Clique sur un
-document pour le consulter ; la corbeille permet de le retirer de l’ensemble,
-avec un bouton **Annuler**. Enregistre l’ensemble pour conserver les suppressions.
-Tu peux continuer à
-écrire les cartes pendant l’ajout ou la conversion ; l’enregistrement de
-l’ensemble devient disponible une fois les documents prêts.
+Dans **Nouvel ensemble** ou un ensemble modifiable, **Depuis Bibliothèque**
+ouvre les dossiers et une recherche globale. Choisis plusieurs PDF ou PowerPoint
+pour les joindre à l’ensemble. Importe les nouveaux originaux dans l’app
+[Bibliothèque](../../../docs/library.md); ils restent conservés au même endroit.
+**Choisir un document** liste les références de l’ensemble et permet de consulter
+un fichier ou de le retirer avec une corbeille et un bouton **Annuler**.
+Enregistre l’ensemble pour conserver ces changements.
 
 Le lecteur permet de faire défiler les pages, de passer à une page précise et
 de zoomer de 50 à 200 %. Les PowerPoint sont convertis en PDF sur le serveur et
@@ -132,10 +130,10 @@ et **Document** alternent entre les panneaux et conservent le brouillon.
 La largeur, le document sélectionné, la page et le zoom sont mémorisés dans le
 navigateur pour le compte. Le lecteur fonctionne sans service externe ni CDN.
 
-Limites : **20 documents par ensemble, 30 Mio par fichier, 500 pages/slides**.
+Limites : **20 documents par ensemble, 25 Mo par fichier dans Bibliothèque, 500 pages/slides**.
 Les PDF protégés par mot de passe et les fichiers endommagés sont refusés avec
-un message dans l’éditeur. Les documents restent privés et suivent l’accès à
-l’ensemble lorsqu’il est partagé. Ajouter ou retirer un document ne crée pas
+un message dans l’éditeur. Les documents suivent l’accès à la bibliothèque du compte connecté. Partager
+un ensemble ne donne pas accès à ses fichiers privés. Ajouter ou retirer un document ne crée pas
 une nouvelle version des cartes et ne réinitialise pas leur progression.
 
 La bibliothèque MongoDB et un compte connecté sont nécessaires. LibreOffice
@@ -145,11 +143,17 @@ ou configure `MEMO_LIBREOFFICE_BIN` avec le chemin de `soffice`. Les PDF restent
 utilisables si LibreOffice est absent. Les dépendances Python et PDF.js sont
 installées par les fichiers de dépendances habituels.
 
-Les PDF et leurs notes sont stockés dans
-`$FLASHCARD_WEB_DATA/reference-documents/` (ou `backend/data/reference-documents/`
-par défaut), et leurs liens dans MongoDB. Sauvegarde le volume de données avec
-MongoDB. Fermer le lecteur conserve les fichiers liés à l’ensemble.
-Un brouillon abandonné peut également laisser des fichiers sur ce volume.
+Les originaux sont stockés dans Bibliothèque; les IDs des références restent
+dans MongoDB. Mémo conserve seulement des PDF de lecture et leurs annotations
+dans `$FLASHCARD_WEB_DATA/library-references/<compte>/<document>/`. L’accès au
+fichier d’origine est revérifié avant toute lecture de ce cache. Les anciennes
+références dans `reference-documents/` sont migrées à leur première ouverture
+sans déclencher un scan Tempo. Si un fichier est retiré de Bibliothèque, les
+cartes restent accessibles avec une référence indiquée indisponible.
+
+La passerelle nécessite `HOMELAB_LIBRARY_URL=http://backend:3001` en Docker
+ou `http://127.0.0.1:3001` en local; Compose et `./start-local.sh` la fournissent.
+Les notes et commentaires PowerPoint sont conservés par le lecteur.
 
 ## Valider la couverture des cartes
 

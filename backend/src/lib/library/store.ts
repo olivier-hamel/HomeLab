@@ -25,7 +25,8 @@ export class LibraryStore {
       if (!previous) {
         try { await rows.insertOne(library); return result; } catch (error) { if ((error as { code?: number }).code !== 11000) throw error; }
       } else {
-        const saved = await rows.updateOne({ username, version: previous }, { $set: { folders: library.folders, files: library.files, sync: library.sync, version: library.version } });
+        const saved = await rows.updateOne({ username, version: previous }, { $set: { folders: library.folders, files: library.files, sync: library.sync, version: library.version,
+          ...(library.tempoArchiveIds ? { tempoArchiveIds: library.tempoArchiveIds } : {}) } });
         if (saved.modifiedCount) return result;
       }
     }

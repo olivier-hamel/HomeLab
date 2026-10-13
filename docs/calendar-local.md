@@ -46,7 +46,7 @@ Un port occupé est signalé avant le démarrage; si un service échoue, le scri
 arrête les autres et affiche l’erreur.
 
 Le fichier `backend/.env` est créé depuis le modèle s’il manque. Complète
-`GEMINI_API_KEY` et `MONGODB_URI` pour analyser et enregistrer les PDF. Le lanceur
+`GEMINI_API_KEY` et `MONGODB_URI` pour scanner les documents et enregistrer les événements. Le lanceur
 utilise `homelab_calendar_dev` pour Tempo et `homelab_memo_dev` pour la
 bibliothèque Mémo. Les comptes et fichiers Mémo locaux restent dans
 `.local-data/memo-calendar/`. Tous les services écoutent sur loopback.
@@ -62,6 +62,10 @@ Pour choisir d’autres bases de développement autorisées par ton compte Mongo
 HOMELAB_LOCAL_MONGODB_DATABASE=ma_base_tempo_dev \
   HOMELAB_LOCAL_MEMO_DATABASE=ma_base_memo_dev ./start-local.sh
 ```
+
+La sélection Mémo utilise `HOMELAB_LIBRARY_URL=http://127.0.0.1:3001`, fourni par
+le lanceur. Les originaux restent dans `backend/.local-data/library/`. Configure
+`MEMO_MONGODB_URI` dans `apps/memo/web-app/.env.memo-local` pour les ensembles Mémo.
 
 Les réglages privés `.env.memo-local` sont chargés, avec les paramètres de
 connexion locale et le répertoire de données fixés par le lanceur.
@@ -123,7 +127,7 @@ FLASHCARD_WEB_DATA="$PWD/../../../.local-data/memo-calendar" \
 ```
 
 Choisis le mot de passe à l’invite. Ouvre **http://localhost:3000**, connecte-toi
-avec ce compte, puis ouvre **Tempo → Documents**. Utilise cette URL HomeLab;
+avec ce compte, puis ouvre **Bibliothèque** ou **Tempo**. Utilise cette URL HomeLab;
 elle fournit les proxys `/memo`, `/calendar` et `/api` au même navigateur.
 L’exception HTTP est réservée au développement local; le serveur conserve HTTPS.
 
@@ -131,6 +135,17 @@ L’exception HTTP est réservée au développement local; le serveur conserve H
 
 `npm test` dans `backend/` teste les contrats, l’isolation des comptes, les
 erreurs et les validations avec des fournisseurs simulés. Le parcours visuel
-`node scripts/test-calendar-documents-ui.mjs` utilise lui aussi des API simulées.
+`node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-library-tempo-ui.mjs` utilise lui aussi des API simulées.
 Ces tests ne remplacent pas `npm run test:pdf` pour vérifier la compatibilité
 avec la vraie API Gemini avant un déploiement.
+
+## Vérifier l’app Accueil
+
+HomeLab ouvre maintenant **Accueil** après connexion; **Tempo** ouvre directement
+le calendrier. Accueil a une interface propre dans `frontend/src/pages/Home.tsx`
+et conserve les tâches et préférences auparavant enregistrées dans Tempo.
+
+Avec le frontend lancé, `node scripts/test-home-ui.mjs` depuis la racine vérifie
+les tâches, la recherche, les événements récurrents, les liens vers Tempo, les
+comptes et six tailles d’écran avec des API simulées. Les captures se trouvent
+dans `artifacts/home/`. Voir [Accueil](home.md) pour les détails.
