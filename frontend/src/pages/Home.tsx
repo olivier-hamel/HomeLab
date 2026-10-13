@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ArrowRight, ArrowUpRight, BookOpen, CalendarDays, Check, CheckCheck, Clapperboard, Clock3, FolderOpen, House, Plus, RefreshCw, Search, Sun, Trash2 } from "lucide-react";
+import { ArrowRight, ArrowUpRight, BookOpen, CalendarDays, Check, CheckCheck, Clapperboard, Clock3, FolderOpen, House, Plus, RefreshCw, Search, Sun, Trash2, Video } from "lucide-react";
 import { useAccount } from "../lib/account-context";
 import { dateLabel, dayAfter, HOME_TIMEZONE, homeStoreFor, loadHomeAgenda, todayKey, plannerTasks, writeHomeTask, homeTaskInput, migrateHomeTasks, applyTaskCompletion } from "../lib/home";
 import type { CalendarEvent, CalendarModel } from "../lib/home";
@@ -11,6 +11,7 @@ const apps = [
   { id: "memo", name: "Mémo", detail: "Apprendre et réviser", icon: BookOpen, color: "violet" },
   { id: "library", name: "Bibliothèque", detail: "Retrouver mes documents", icon: FolderOpen, color: "blue" },
   { id: "tv", name: "TV & Movies", detail: "Faire une pause", icon: Clapperboard, color: "peach" },
+  { id: "camera", name: "Caméra", detail: "Un œil sur la maison", icon: Video, color: "green" },
 ] as const;
 type Agenda = { status: "loading" | "ready" | "error"; events: CalendarEvent[]; model?: CalendarModel };
 

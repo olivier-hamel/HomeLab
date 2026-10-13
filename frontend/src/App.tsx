@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, CalendarDays, Clapperboard, FolderOpen, House, Maximize2, Menu, Minimize2, X } from "lucide-react";
+import { BookOpen, CalendarDays, Clapperboard, FolderOpen, House, Maximize2, Menu, Minimize2, Video, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import TV from "./pages/TV";
 import Memo from "./pages/Memo";
 import Calendar from "./pages/Calendar";
 import Library from "./pages/Library";
 import Home from "./pages/Home";
+import Camera from "./pages/Camera";
 import { sectionUrl } from "./lib/navigation";
 import type { Navigate } from "./lib/navigation";
 import { useAccount } from "./lib/account-context";
@@ -22,6 +23,7 @@ const sections = [
   { id: "tv", icon: Clapperboard, label: "TV & Movies", component: TV },
   { id: "memo", icon: BookOpen, label: "Mémo", component: Memo },
   { id: "library", icon: FolderOpen, label: "Bibliothèque", component: Library },
+  { id: "camera", icon: Video, label: "Caméra", component: Camera },
 ] as const;
 
 export default function App() {
@@ -158,7 +160,7 @@ export default function App() {
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <main id="dashboard-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-auto focus:outline-none">
-          {activeSection === "home" ? <Home key={user.username} onNavigate={navigate} /> : activeSection === "memo" ? <Memo onEscape={fullscreenView ? exitFullscreen : undefined} /> : activeSection === "calendar" ? <Calendar search={pageSearch} onEscape={fullscreenView ? exitFullscreen : undefined} /> : activeSection === "library" ? <Library /> : <TV />}
+          {activeSection === "home" ? <Home key={user.username} onNavigate={navigate} /> : activeSection === "memo" ? <Memo onEscape={fullscreenView ? exitFullscreen : undefined} /> : activeSection === "calendar" ? <Calendar search={pageSearch} onEscape={fullscreenView ? exitFullscreen : undefined} /> : activeSection === "library" ? <Library /> : activeSection === "camera" ? <Camera key={user.username} /> : <TV />}
         </main>
       </div>
       {fullscreenView && <Button

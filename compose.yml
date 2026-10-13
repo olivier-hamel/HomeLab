@@ -56,8 +56,10 @@ services:
       FFMPEG_PATH: /usr/bin/ffmpeg
       FFPROBE_PATH: /usr/bin/ffprobe
       LIBRARY_STORAGE_PATH: /data/library
+      CAMERA_STORAGE_PATH: /data/camera
     volumes:
       - library_data:/data/library
+      - camera_data:/data/camera
     depends_on:
       memo:
         condition: service_healthy
@@ -149,6 +151,7 @@ volumes:
   caddy_data:
   caddy_config:
   library_data:
+  camera_data:
 
 networks:
   app:

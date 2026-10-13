@@ -1,11 +1,11 @@
 # HomeLab
 
-One repository contains the dashboard, Accueil, TV & Movies, Tempo, Mémo, and Bibliothèque.
+One repository contains the dashboard, Accueil, TV & Movies, Tempo, Mémo, Bibliothèque, and Caméra.
 Use `feat/memo-integration` for development and server deployment. All changes
 use one commit → push → pull workflow; see [SERVER-UPDATE.md](SERVER-UPDATE.md).
 
 **HomeLab** opens with its own HTTPS login page and lists the existing Mémo accounts.
-One Mémo session opens Accueil, Tempo, TV & Movies, Mémo, and Bibliothèque; no duplicate accounts are created.
+One Mémo session opens Accueil, Tempo, TV & Movies, Mémo, Bibliothèque, and Caméra; no duplicate accounts are created.
 The cinema profile can switch without a password while the HomeLab login stays unchanged.
 See [shared accounts](docs/accounts.md).
 
@@ -28,7 +28,7 @@ selects its reference documents from the same Library.
 Its UI lives in `frontend/src/pages/Library.tsx`; its API and durable file
 storage live in `backend/src/lib/library/`. See [Bibliothèque setup](docs/library.md).
 
-The browser dashboard contains Accueil, Tempo, TV & Movies, Mémo, and Bibliothèque. The apps
+The browser dashboard contains Accueil, Tempo, TV & Movies, Mémo, Bibliothèque, and Caméra. The apps
 fill the content area; fullscreen is available from the sidebar.
 
 **TV & Movies** adds an optional TMDB catalogue,
@@ -36,6 +36,10 @@ Prowlarr search and TorrServer playback through backend APIs. It requires privat
 network configuration and your own credentials. Follow the
 [TV & Movies setup and verification guide](docs/tv-media.md). Live media services
 still need verification on your homelab; implementation tests used mocks.
+
+**Caméra / Veille** streams the Tapo C200 at `192.168.0.188`, with pan/tilt controls,
+saved viewpoints, audio and snapshots. Connect the separate Tapo camera account
+in the app's settings. See [camera setup](docs/camera.md).
 
 Fire Stick users get a separate TV browser layout with larger controls and
 remote navigation. Open `/?tv=1` to enable it manually; desktop keeps its
