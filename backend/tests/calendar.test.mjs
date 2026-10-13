@@ -110,7 +110,7 @@ test('OpenAI produces the exact event contract without saving, and receives no a
     const result=await f.call('interpret','POST',{text:'Dentiste demain à 14 h pour 45 min',selectedDate:'2030-01-02'});
     assert.equal(result.status,200);
     const body=await result.json(); assert.deepEqual(body.event,draft); assert.equal(f.rows.length,0);
-    assert.equal(calls[0].model, 'gpt-6.1-sol');
+    assert.equal(calls[0].model, 'gpt-6-luna');
     assert.equal(calls[0].text.format.type,'json_schema');
     assert.equal(calls[0].text.format.strict,true);
     assert.equal(calls[0].store,false);

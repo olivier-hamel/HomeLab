@@ -102,6 +102,7 @@ test('OpenAI receives owned type names and enum IDs, assigns a type without savi
   const response = await f.call('interpret', 'POST', {text:'Examen de physique demain à 14 h', selectedDate:draft.date});
   assert.equal(response.status, 200); assert.deepEqual((await response.json()).event, answer); assert.equal(f.rows.length, 0);
   const input = JSON.parse(captured.input[0].content);
+  assert.equal(captured.model, 'gpt-6-luna');
   assert.deepEqual(input.eventTypes, [DEFAULT_EVENT_TYPE, type]);
   assert(!JSON.stringify(input).includes('type-test-canary')); assert.equal(input.username, undefined);
   assert.match(captured.instructions, /best matches the event title/);

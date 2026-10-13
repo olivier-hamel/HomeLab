@@ -36,7 +36,7 @@ Les mises à jour courantes préservent la configuration et les volumes existant
 ## Événements
 
 Le bouton « Nouvel événement » ouvre la création en langage naturel ou la
-saisie manuelle. GPT-6.1 Sol propose un objet avec le titre, la description, les
+saisie manuelle. GPT-6 Luna propose un objet avec le titre, la description, les
 dates et l’horaire; une étape de vérification permet de le corriger avant
 l’enregistrement. Un clic sur un événement ouvre la modification; la
 suppression demande une confirmation. Les vues mois, semaine et jour ainsi que
@@ -66,12 +66,13 @@ mensuelle et annuelle, un intervalle réglable et une fin facultative (date
 incluse ou nombre d’occurrences). Une série reste un seul document MongoDB ;
 les vues calculent ses occurrences pour les dates affichées, à l’heure locale
 de Toronto. La modification et la suppression concernent toute la série.
-GPT-6.1 Sol peut préparer ces mêmes règles depuis une description en langage naturel.
+GPT-6 Luna peut préparer ces mêmes règles depuis une description en langage naturel.
 
 La création assistée utilise `OPENAI_API_KEY`, exclusivement côté serveur.
 Ajoute la clé dans le fichier privé `backend/.env`, puis redémarre le backend.
-Toutes les fonctionnalités Tempo utilisent le modèle fixe `gpt-6.1-sol`, y
-compris les scans PDF et PowerPoint. Le fichier `.env` à la racine sert uniquement
+La création depuis une description utilise `gpt-6-luna`; les scans PDF et
+PowerPoint utilisent `gpt-6.1-sol`. Ces modèles sont fixés dans le code serveur.
+Le fichier `.env` à la racine sert uniquement
 aux réglages Compose. Mémo conserve ses variables
 `MEMO_*` dans son service distinct. Le compte MongoDB du backend doit avoir
 accès à la base configurée.
