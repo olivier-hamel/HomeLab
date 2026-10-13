@@ -9,9 +9,10 @@ les modifier ou les supprimer. Aucun événement de démonstration n’est inclu
 
 ## Lancer en local
 
-Node.js 20 ou plus récent est nécessaire. Aucune dépendance à installer.
+Node.js 24 est recommandé. PDF.js est servi localement pour afficher les aperçus.
 
 ```sh
+npm ci --omit=optional --ignore-scripts
 npm run dev
 ```
 
@@ -42,6 +43,10 @@ commit → push → pull → mise à jour.
 - `dist/js/events.js` : contrat des événements, accès API et disposition des horaires qui se chevauchent.
 - `dist/js/event-controller.js` : création assistée, aperçu, saisie manuelle, modification et suppression.
 - `dist/js/components/event-dialog.js` : fenêtre accessible et adaptative de gestion des événements.
+- `dist/js/documents.js` et `document-controller.js` : imports multiples, bibliothèque, analyse et revue des événements.
+- `dist/js/components/documents.js` : bibliothèque, panneau de détails et fenêtres de revue/suppression.
+- `dist/js/pdf-preview.js` : aperçu de première page avec PDF.js, sans service externe.
+- `scripts/prepare-pdf.mjs` : préparation des ressources PDF.js, exécutée par le serveur de développement et le build Docker.
 - `dist/js/account.js` : compte HomeLab et protection des textes affichés.
 - `dist/js/components/` : menu, vues du calendrier, fenêtres et icônes.
 - `dist/js/components/home.js` : accueil, aperçu de la semaine et raccourcis.
@@ -53,6 +58,7 @@ commit → push → pull → mise à jour.
 
 `dist/` contient directement les sources de l’application : aucune compilation
 n’est nécessaire. Les modules JavaScript natifs séparent les composants.
+`dist/vendor/` contient les ressources PDF.js générées, exclues de Git.
 Les données passent par `/api/calendar/*` dans le backend HomeLab. La connexion
 MongoDB commune se trouve dans `backend/src/lib/database.ts`, la configuration
 Gemini dans `backend/src/lib/ai/gemini.ts` et le dépôt des événements dans
@@ -148,6 +154,53 @@ pour les règles non prises en charge, comme le dernier dimanche du mois.
 Gemini prépare seulement un brouillon : l’ajout nécessite
 l’action de l’utilisateur. Les dates relatives suivent la date actuelle
 à Toronto, même lorsqu’un autre mois est affiché.
+
+## Documents PDF
+
+« Documents » ouvre une bibliothèque avec recherche et filtre « À vérifier ».
+Ajoute plusieurs PDF par le bouton ou par glisser-déposer (10 Mo par fichier).
+Sur ordinateur, le panneau de détails présente l’aperçu de première page,
+l’original à ouvrir ou télécharger et les événements associés. Sur téléphone,
+la sélection ouvre les détails avec un retour à la bibliothèque.
+
+Chaque PDF est enregistré avant son analyse. Gemini recherche les événements
+explicites, puis une fenêtre les regroupe par document avec la page d’origine,
+les hypothèses éventuelles et des détails modifiables. Sélectionne tout ou
+quelques événements, ou ferme la revue pour la reprendre depuis la bibliothèque.
+Aucun événement n’est ajouté sans validation. Les corrections d’une revue
+fermée restent disponibles pendant la session; les propositions originales
+sont conservées côté serveur.
+
+Les événements ajoutés gardent une référence à leur PDF, son nom et sa page.
+Cette référence est conservée lors des modifications, y compris pour les
+séries récurrentes. Supprimer un PDF demande confirmation : le fichier et ses
+propositions disparaissent, les événements restent avec la mention « Document
+supprimé ». Supprimer un événement permet de sélectionner à nouveau sa
+proposition dans la bibliothèque.
+
+La collection MongoDB `calendar_documents` conserve les PDF binaires et leur
+analyse par compte, sans volume Docker supplémentaire. La limite de 10 Mo
+laisse une marge sous la limite BSON de 16 Mio pour les métadonnées. Le même
+PDF importé plusieurs fois dans un compte est reconnu par son empreinte SHA-256.
+Les listes n’incluent jamais les octets PDF. Les originaux et toutes les
+opérations nécessitent la session HomeLab.
+
+Les PDF sont envoyés à Gemini comme données PDF intégrées à la requête
+d’analyse. Leur conservation durable est assurée par HomeLab; elle ne dépend
+pas des fichiers temporaires Google. Une erreur d’analyse conserve le PDF et
+propose une nouvelle tentative. Sans clé Gemini, la bibliothèque fonctionne
+et les documents pourront être analysés après configuration. Une analyse
+propose jusqu’à 100 événements, avec au maximum 6 analyses par minute et par
+compte. Les requêtes interrompues et les clics répétés ne créent pas de copies
+supplémentaires des événements déjà ajoutés.
+
+Prépare PDF.js avec `npm run prepare:pdf` dans ce dossier, puis lance
+`node scripts/test-calendar-documents-ui.mjs` depuis la racine pour vérifier
+le parcours complet. Le script utilise Playwright, Chrome et des API simulées,
+sans accéder à Gemini ou MongoDB. Les captures sont dans
+`artifacts/calendar-documents/`. Le backend comprend aussi
+`tests/calendar-documents.test.mjs` pour le stockage, les accès, l’analyse,
+les liens, les reprises et la suppression.
 
 Pour les vérifications de l’API, lance `npm test`, `npm run lint`,
 `npm run typecheck` et `npm run build` dans `backend/`. Pour le parcours

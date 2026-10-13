@@ -1,7 +1,9 @@
 *
 !Dockerfile
 !package.json
+!package-lock.json
 !scripts/
 !scripts/**
 !dist/
 !dist/**
+dist/vendor/

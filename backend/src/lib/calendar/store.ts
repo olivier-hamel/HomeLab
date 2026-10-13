@@ -1,7 +1,7 @@
 import { type Collection } from "mongodb";
 import { database } from "../database.ts";
 import { MediaError } from "../media/core.ts";
-import { eventId, validateEvent, type CalendarEvent, type EventInput } from "./events.ts";
+import { eventId, validateEvent, type CalendarEvent, type EventInput, type EventSource } from "./events.ts";
 
 export type StoredEvent = CalendarEvent & { username: string };
 let collectionPromise: Promise<Collection<StoredEvent>> | null = null;
@@ -15,7 +15,7 @@ async function eventCollection() {
   return collectionPromise;
 }
 function publicEvent(event: StoredEvent): CalendarEvent {
-  return { ...validateEvent(event), id: event.id, createdAt: event.createdAt, updatedAt: event.updatedAt };
+  return { ...validateEvent(event), id: event.id, createdAt: event.createdAt, updatedAt: event.updatedAt, ...(event.source ? { source: event.source } : {}) };
 }
 function owner(username: string) {
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(username)) throw new MediaError("account", "Compte invalide.", 403);
@@ -28,14 +28,14 @@ export class CalendarEventStore {
     const events = await (await this.collection()).find({ username: owner(username) }).sort({ date: 1, startTime: 1, id: 1 }).toArray();
     return events.map(publicEvent);
   }
-  async create(username: string, input: EventInput, requestId: string) {
+  async create(username: string, input: EventInput, requestId: string, source?: EventSource) {
     const id = eventId(requestId);
     const now = new Date().toISOString();
     const collection = await this.collection();
     const filter = { username: owner(username), id };
     // The unique compound index and setOnInsert make interrupted retries safe.
     try {
-      await collection.updateOne(filter, { $setOnInsert: { ...input, ...filter, createdAt: now, updatedAt: now } }, { upsert: true });
+      await collection.updateOne(filter, { $setOnInsert: { ...input, ...filter, ...(source ? { source } : {}), createdAt: now, updatedAt: now } }, { upsert: true });
     } catch (error) {
       if ((error as { code?: number }).code !== 11000) throw error;
     }

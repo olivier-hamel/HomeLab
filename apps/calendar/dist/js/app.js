@@ -1,4 +1,7 @@
 import {createEventController} from "./event-controller.js";
+import {createDocumentController} from "./document-controller.js";
+import {renderDocuments} from "./components/documents.js";
+import {renderPdfPreview} from "./pdf-preview.js";
 import {eventsOnDate, eventCount} from "./events.js";
 import {createCalendarStore} from "./state.js";
 import {calendarAccount, escapeHtml} from "./account.js";
@@ -24,6 +27,7 @@ let renderedToday = null;
 
 app.innerHTML = renderShell();
 const eventController = createEventController(store, dialogRoot);
+const documentController = createDocumentController(store, dialogRoot, eventController);
 
 function render(state, reason = "initial") {
   const active = document.activeElement;
@@ -31,6 +35,9 @@ function render(state, reason = "initial") {
   const focusDate = active?.dataset.date;
   const focusWasMonth = active?.classList.contains("month-date");
   const focusWasMini = active?.classList.contains("mini-day");
+  const focusDocumentId = active?.closest("[data-document-id]")?.dataset.documentId;
+  const searchFocused = active?.id === "document-search";
+  const searchSelection = searchFocused ? [active.selectionStart, active.selectionEnd] : null;
   const content = document.getElementById("calendar-content");
   const oldScroll = document.querySelector(".time-scroll")?.scrollTop;
   const previousPage = renderedPage;
@@ -48,15 +55,18 @@ function render(state, reason = "initial") {
     return;
   }
   const isHome = state.page === "home";
+  const isDocuments = state.page === "documents";
   document.getElementById("workspace-breadcrumb").innerHTML = renderBreadcrumb(state);
   app.querySelector(".calendar-workspace").classList.toggle("is-home", isHome);
-  app.querySelector(".calendar-toolbar").hidden = isHome;
+  app.querySelector(".calendar-workspace").classList.toggle("is-documents", isDocuments);
+  app.querySelector(".calendar-toolbar").hidden = isHome || isDocuments;
+  app.querySelector('.jump-button').hidden = isDocuments;
   const status = document.getElementById("events-status");
-  status.hidden = state.eventsStatus === "ready";
+  status.hidden = isDocuments || state.eventsStatus === "ready";
   status.innerHTML = state.eventsStatus === "error" ? `<span>${escapeHtml(state.eventsError)}</span><button data-action="events-retry">Réessayer</button>` : "Chargement de tes événements…";
   status.classList.toggle("has-error", state.eventsStatus === "error");
   const title = periodTitle(state);
-  if (!isHome) {
+  if (!isHome && !isDocuments) {
     document.getElementById("period-title").innerHTML = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
     app.querySelector('[data-action="prev"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "précédente" : "précédent"}`);
     app.querySelector('[data-action="next"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "suivante" : "suivant"}`);
@@ -64,7 +74,8 @@ function render(state, reason = "initial") {
   }
   const monthKey = dateKey(state.date).slice(0, 7);
   const retainMonth = !isHome && renderedPage === "calendar" && state.view === "month" && renderedView === "month" && renderedPeriod === monthKey && ["date", "keyboard-date"].includes(reason);
-  if (isHome) {
+  if (isDocuments) {content.innerHTML = renderDocuments(state); void renderPdfPreview(content);}
+  else if (isHome) {
     content.innerHTML = renderHome(state);
     content.querySelector(".home-page").classList.toggle("entering", previousPage !== "home");
   }
@@ -81,12 +92,17 @@ function render(state, reason = "initial") {
   renderedView = state.view;
   renderedPage = state.page;
   const hints = {month: "Clique sur une date pour voir sa semaine", week: "Clique sur un jour pour voir son horaire", day: "Ta journée, heure par heure"};
-  document.getElementById("view-hint").innerHTML = `<span class="hint-dot"></span>${isHome ? "Ta journée en un coup d’œil" : hints[state.view]}`;
+  document.getElementById("view-hint").innerHTML = `<span class="hint-dot"></span>${isDocuments ? "Tes documents, liés à ton calendrier" : isHome ? "Ta journée en un coup d’œil" : hints[state.view]}`;
   document.getElementById("timezone-offset").textContent = zoneOffset(state.preferences.timezone, isHome ? state.today : state.date);
   if (previousPage !== state.page) content.scrollTop = 0;
   const scroll = app.querySelector(".time-scroll");
   if (scroll) scroll.scrollTop = oldScroll !== undefined && !["view", "drilldown"].includes(reason) ? oldScroll : 7 * 64 - 16;
-  if (reason === "home") document.getElementById("home-title")?.focus({preventScroll: true});
+  if (isDocuments && searchFocused) {const input = document.getElementById("document-search"); input?.focus({preventScroll: true}); if (input && searchSelection) input.setSelectionRange(...searchSelection);}
+  else if (reason === "documents-open") document.getElementById("documents-title")?.focus({preventScroll: true});
+  else if (isDocuments && reason === "document-select" && state.documentDetailsOpen) {content.scrollTop = 0; app.querySelector('.inspector-back')?.focus({preventScroll: true});}
+  else if (isDocuments && reason === "document-back") app.querySelector(`[data-action="document-select"][data-document-id="${state.selectedDocumentId}"]`)?.focus();
+  else if (isDocuments && focusDocumentId && !document.contains(active)) app.querySelector(`[data-action="${focusAction}"][data-document-id="${focusDocumentId}"]`)?.focus({preventScroll: true});
+  else if (reason === "home") document.getElementById("home-title")?.focus({preventScroll: true});
   else if (reason === "drilldown" || (reason === "view" && previousPage === "home")) (app.querySelector(`.time-day-heading[data-date="${dateKey(state.date)}"]`) || app.querySelector(".month-date[tabindex='0']") || content)?.focus({preventScroll: true});
   else if ((focusWasMonth || reason === "keyboard-date") && !isHome && state.view === "month") app.querySelector(`.month-date[data-date="${dateKey(state.date)}"]`)?.focus({preventScroll: true});
   else if (focusWasMini) {
@@ -178,6 +194,7 @@ document.addEventListener("keydown", event => {
 store.subscribe(render);
 render(store.getState());
 void eventController.loadEvents();
+void documentController.loadDocuments();
 setInterval(() => {if (!document.hidden) store.refreshClock();}, 60_000);
 document.addEventListener("visibilitychange", () => {if (!document.hidden) store.refreshClock();});
 

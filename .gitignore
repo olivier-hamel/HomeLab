@@ -53,6 +53,7 @@ flashcard_progress.json
 # Calendar dist is authored source, not generated output.
 !/apps/calendar/dist/
 !/apps/calendar/dist/**
+/apps/calendar/dist/vendor/
 
 # Operating system files
 .DS_Store

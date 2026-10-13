@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/serve.mjs",
+    "dev": "npm run prepare:pdf && node scripts/serve.mjs",
+    "prepare:pdf": "node scripts/prepare-pdf.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check dist/js/app.js && node --check dist/js/components/views.js && node --check dist/js/components/home.js && node --check dist/js/components/shell.js && node --check dist/js/state.js && node --check dist/js/account.js && node --check dist/js/events.js && node --check dist/js/recurrence.js && node --check dist/js/event-controller.js && node --check dist/js/components/event-dialog.js"
+    "check": "node --check dist/js/app.js && node --check dist/js/components/views.js && node --check dist/js/components/home.js && node --check dist/js/components/shell.js && node --check dist/js/state.js && node --check dist/js/account.js && node --check dist/js/events.js && node --check dist/js/recurrence.js && node --check dist/js/event-controller.js && node --check dist/js/components/event-dialog.js && node --check dist/js/documents.js && node --check dist/js/document-controller.js && node --check dist/js/components/documents.js && node --check dist/js/pdf-preview.js"
+  },
+  "dependencies": {
+    "pdfjs-dist": "6.4.299"
   }
 }

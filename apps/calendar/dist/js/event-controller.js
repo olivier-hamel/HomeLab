@@ -111,7 +111,7 @@ export function createEventController(store, dialogRoot) {
     const state = store.getState();
     const opener = document.activeElement;
     const date = selectedDate || dateKey(state.page === "home" ? state.today : state.date);
-    dialogRoot.innerHTML = eventDialog({event, date, aiAvailable: state.aiAvailable});
+    dialogRoot.innerHTML = eventDialog({event, date, aiAvailable: state.aiAvailable, documents: state.documents, documentsStatus: state.documentsStatus});
     const dialog = dialogRoot.querySelector("dialog");
     const context = {dialog, event, opener, dirty: false, busy: null, controller: new AbortController(), requestId: crypto.randomUUID()};
     current = context;
@@ -247,5 +247,9 @@ export function createEventController(store, dialogRoot) {
     void (e.target.id === "event-interpret-form" ? interpret(e.target) : save(e.target));
   });
   document.addEventListener("visibilitychange", () => {if (!document.hidden) void loadEvents();});
-  return {loadEvents, openCreate: () => open()};
+  return {loadEvents, openCreate: () => open(), toast, acceptEvents(added) {
+    ++loadId;
+    const ids = new Set(added.map(event => event.id));
+    store.setEvents([...store.getState().events.filter(event => !ids.has(event.id)), ...added], {eventsStatus: "ready", eventsError: ""});
+  }};
 }
