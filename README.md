@@ -1,5 +1,10 @@
 # HomeLab
 
+**Calendar** is the default browser dashboard page. Clone the
+[Calendar repository](https://github.com/olivier-hamel/calendar-app) beside this
+checkout as `calendar`, or set `CALENDAR_SOURCE_DIR`. See
+[Calendar setup and updates](docs/calendar.md).
+
 **Mémo** adds an independent French flashcard app with password-protected
 accounts. Clone the [Memo repository](https://github.com/olivier-hamel/Memo)
 beside this checkout as `memo`, or set `MEMO_SOURCE_DIR` in your private `.env`.
