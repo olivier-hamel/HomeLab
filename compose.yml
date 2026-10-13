@@ -77,6 +77,31 @@ services:
     networks:
       - app
 
+  calendar:
+    build:
+      context: "${CALENDAR_SOURCE_DIR:-../calendar}"
+    image: calendar-app:local
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/healthz', { signal: AbortSignal.timeout(3000) }).then(async r => { if (!r.ok || (await r.text()).trim() !== 'ok') process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app
+
   memo:
     build:
       context: "${MEMO_SOURCE_DIR:-../memo}/web-app"

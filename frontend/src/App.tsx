@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, Bell, BookOpen, Boxes, Clapperboard, ListChecks, Maximize2, Menu, Minimize2, Monitor, RefreshCw, Server, X } from "lucide-react";
+import { Archive, Bell, BookOpen, Boxes, CalendarDays, Clapperboard, ListChecks, Maximize2, Menu, Minimize2, Monitor, RefreshCw, Server, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import Overview from "./pages/Overview";
 import Guests from "./pages/Guests";
@@ -8,6 +8,7 @@ import Backups from "./pages/Backups";
 import Infrastructure from "./pages/Infrastructure";
 import TV from "./pages/TV";
 import Memo from "./pages/Memo";
+import Calendar from "./pages/Calendar";
 import { useTvMode } from "./lib/tv";
 import useTvNavigation from "./components/useTvNavigation";
 import { hasNativeVideoPlayer, isNativeApp } from "./native";
@@ -15,6 +16,7 @@ import { hasNativeVideoPlayer, isNativeApp } from "./native";
 const buildTag = "2026.09.10-native-4";
 
 const sections = [
+  { id: "calendar", icon: CalendarDays, label: "Calendar", component: Calendar },
   { id: "overview", icon: Monitor, label: "OVERVIEW", component: Overview },
   { id: "guests", icon: Boxes, label: "VMS & CONTAINERS", component: Guests },
   { id: "tasks", icon: ListChecks, label: "TASKS", component: Tasks },
@@ -29,7 +31,7 @@ export default function App() {
   useTvNavigation(tvMode);
   const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>(() => {
     const requested = new URLSearchParams(location.search).get("section");
-    return !tvMode ? sections.find(section => section.id === requested)?.id || "overview" : "tv";
+    return !tvMode ? sections.find(section => section.id === requested)?.id || "calendar" : "tv";
   });
   const [tvFooterActions, setTvFooterActions] = useState<HTMLDivElement | null>(null);
   const [sidebarKeyboardFocus, setSidebarKeyboardFocus] = useState(false);
@@ -63,7 +65,7 @@ export default function App() {
         <label htmlFor="tv-dashboard-section">Dashboard</label>
         <select id="tv-dashboard-section" value={activeSection} onChange={event => setActiveSection(event.target.value as typeof activeSection)}>
           <option value="tv">TV &amp; Movies</option>
-          {sections.filter(section => section.id !== "tv" && section.id !== "memo").map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
+          {sections.filter(section => section.id !== "tv" && section.id !== "memo" && section.id !== "calendar").map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
         </select>
         <span data-build-tag="">
           BUILD {buildTag} · {hasNativeVideoPlayer() ? "NATIVE PLAYER READY" : isNativeApp() ? "NATIVE PLUGIN MISSING" : "WEB PLAYER"}
@@ -128,7 +130,7 @@ export default function App() {
             ))}
           </nav>
 
-          {activeSection !== "tv" && activeSection !== "memo" && (
+          {activeSection !== "tv" && activeSection !== "memo" && activeSection !== "calendar" && (
             <div className="dashboard-sidebar-sample mt-8 hidden rounded border border-neutral-700 bg-neutral-800 p-4 md:block">
               <div className="mb-2 flex items-center gap-2">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
@@ -151,7 +153,7 @@ export default function App() {
             <span className="text-orange-500">{selectedSection.label}</span>
           </p>
           <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-            {activeSection !== "tv" && activeSection !== "memo" && <>
+            {activeSection !== "tv" && activeSection !== "memo" && activeSection !== "calendar" && <>
               <span title="Sample data. Proxmox is not connected." className="rounded border border-orange-500/30 px-2 py-1 text-[10px] tracking-wider text-orange-400">SAMPLE DATA</span>
               <span className="hidden text-xs text-neutral-500 2xl:block">SAMPLE: 2026-09-05 16:45 UTC</span>
               <Button disabled title="Visual preview only" variant="ghost" size="icon" aria-label="Notifications (preview)" className="hidden text-neutral-400 sm:inline-flex">
@@ -178,7 +180,7 @@ export default function App() {
 
         <main id="dashboard-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-auto focus:outline-none">
           {activeSection === "overview" && <h1 className="sr-only">Homelab overview</h1>}
-          {activeSection === "memo" ? <Memo onEscape={fullscreenView ? exitFullscreen : undefined} /> : <Page />}
+          {activeSection === "memo" ? <Memo onEscape={fullscreenView ? exitFullscreen : undefined} /> : activeSection === "calendar" ? <Calendar onEscape={fullscreenView ? exitFullscreen : undefined} /> : <Page />}
         </main>
       </div>
       {fullscreenView && <Button

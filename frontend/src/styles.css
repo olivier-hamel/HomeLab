@@ -480,3 +480,10 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
 .memo-status h1 { font-size: 24px; color: #fff; }
 .memo-status p { color: #a3a3a3; }
 .memo-status button { display: flex; align-items: center; gap: 10px; border: 1px solid #525252; border-radius: 6px; padding: 12px 18px; color: #fff; }
+
+.calendar-page { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.calendar-frame { display: block; width: 100%; height: 100%; min-height: 0; flex: 1; border: 0; background: #f7f8f5; }
+.calendar-status { display: grid; justify-items: center; align-content: center; flex: 1; padding: 32px; text-align: center; gap: 16px; }
+.calendar-status h1 { font-size: 24px; color: #fff; }
+.calendar-status p { color: #a3a3a3; }
+.calendar-status button { display: flex; align-items: center; gap: 10px; border: 1px solid #525252; border-radius: 6px; padding: 12px 18px; color: #fff; }

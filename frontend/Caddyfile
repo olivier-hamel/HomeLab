@@ -33,6 +33,16 @@
 		}
 		respond @publicMemo "Memo access requires a trusted network" 403
 
+		@publicCalendar {
+			path /calendar /calendar/*
+			not remote_ip 127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7
+		}
+		respond @publicCalendar "Calendar access requires a trusted network" 403
+		redir /calendar /calendar/ 308
+		handle_path /calendar/* {
+			reverse_proxy calendar:4173
+		}
+
 		@memoHttp {
 			path /memo /memo/*
 			protocol http
