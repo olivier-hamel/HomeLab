@@ -26,7 +26,7 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
   const [nextPosition, setNextPosition] = useState(resumeAt);
   const [nativeSession] = useState(() => `${Date.now()}-${Math.random()}`);
   const qualityInfo = chosen?.assessment?.method === "gemini"
-    ? `Gemini quality review: ${chosen.assessment.verdict === "good" ? "Good choice" : chosen.assessment.verdict === "sketchy" ? "Caution" : "Uncertain"}\n\n${chosen.source.quality.length ? chosen.source.quality.join(" · ") : "Quality not identified"} · ${chosen.source.seeders === null ? "Unknown seeders" : `${chosen.source.seeders.toLocaleString()} seeders`}\n\n${chosen.assessment.review ?? chosen.assessment.reason}`
+    ? `Quality review: ${chosen.assessment.verdict === "good" ? "Good choice" : chosen.assessment.verdict === "sketchy" ? "Caution" : "Uncertain"}\n\n${chosen.source.quality.length ? chosen.source.quality.join(" · ") : "Quality not identified"} · ${chosen.source.seeders === null ? "Unknown seeders" : `${chosen.source.seeders.toLocaleString()} seeders`}\n\n${chosen.assessment.review ?? chosen.assessment.reason}`
     : undefined;
 
   const next = async (failed = false, manual = false) => {

@@ -4,6 +4,7 @@ import { database } from "../database.ts";
 import { MediaError, record } from "../media/core.ts";
 import { eventId, validateEvent, type EventInput } from "./events.ts";
 import { CalendarFolderStore } from "./folders.ts";
+import { publicAnalysisError } from "../ai/messages.ts";
 
 // Keep PDFs below MongoDB's 16 MiB document limit, including analysis metadata.
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
@@ -32,7 +33,7 @@ function owner(username: string) {
 }
 function publicDocument(row: StoredDocument, folderId: string | null = null): CalendarDocument {
   return { id: row.id, name: row.name, size: row.size, createdAt: row.createdAt, updatedAt: row.updatedAt,
-    analysisState: row.analysisState, analysisError: row.analysisError, summary: row.summary, proposals: row.proposals, folderId };
+    analysisState: row.analysisState, analysisError: publicAnalysisError(row.analysisError), summary: row.summary, proposals: row.proposals, folderId };
 }
 export function validatePdf(name: unknown, bytes: Uint8Array) {
   if (typeof name !== "string" || !name.trim() || name.length > 240 || [...name].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 || char === "/" || char === "\\") || !/\.pdf$/i.test(name)) throw new MediaError("input", "Choisis un document PDF avec un nom de 240 caractères maximum.", 400);
@@ -49,7 +50,7 @@ export function validateAnalysis(value: unknown) {
     if (typeof proposal.note !== "string" || proposal.note.length > 500) throw new Error("Invalid note");
     const event = validateEvent(proposal.event);
     // A first session spanning the entire bounded weekly series is ambiguous:
-    // Gemini likely put the semester ending in endDate. Do not import it or
+    // The analysis likely put the semester ending in endDate. Do not import it or
     // guess a duration. This check is specific to PDF extraction; manually
     // entered events still support overlapping, multi-day occurrences.
     if (event.recurrence?.frequency === "weekly" && event.endDate === event.recurrence.until &&

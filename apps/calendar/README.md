@@ -136,9 +136,8 @@ Renseigne `MONGODB_URI` et `OPENAI_API_KEY` dans `backend/.env` (voir
 [le modèle](../../backend/.env.example)). La clé reste exclusivement sur le serveur.
 `MONGODB_DATABASE` vaut `homelab` par défaut; `MONGODB_USERNAME` et
 `MONGODB_PASSWORD` remplacent les marqueurs dans une URI si nécessaire.
-La création depuis une description utilise `gpt-6.1-sol` via l’API Responses
-d’OpenAI. `OPENAI_MODEL` est facultatif; une valeur vide conserve ce modèle.
-Les scans PDF/PowerPoint utilisent `GEMINI_API_KEY` et `GEMINI_MODEL`.
+La création depuis une description et les scans PDF/PowerPoint utilisent le
+modèle fixe `gpt-6.1-sol` via l’API Responses d’OpenAI et la même `OPENAI_API_KEY`.
 Mémo, qui tourne dans un service Python distinct, conserve sa configuration `MEMO_*`.
 
 Les collections `calendar_events`, `calendar_event_types` et leurs index sont créés automatiquement.
@@ -182,7 +181,7 @@ correspondent aux entiers 1 à 5. Les noms sont limités à 80 caractères et so
 uniques par compte sans distinction de casse. Le type système ne peut pas être
 supprimé. Les créations réessayées avec le même `requestId` sont idempotentes.
 OpenAI reçoit les noms, importances et identifiants du compte pour choisir le
-type le plus approprié au titre. Gemini reçoit la même liste lors des scans PDF/PowerPoint; les IDs
+type le plus approprié au titre, également lors des scans PDF/PowerPoint; les IDs
 possibles sont limités par le schéma et vérifiés par le serveur.
 
 GPT-6.1 Sol comprend par exemple « Souper tous les dimanches à 19 h pendant deux
@@ -204,7 +203,7 @@ sans texte d’événement, corps d’erreur privé ni clé API.
 
 Tempo utilise maintenant [Bibliothèque](../../docs/library.md#tempo-et-mémo) pour
 les documents PDF et PowerPoint. La section Documents est supprimée du menu.
-Chaque nouveau fichier, quelle que soit son origine, déclenche un scan Gemini
+Chaque nouveau fichier, quelle que soit son origine, déclenche un scan Tempo
 en arrière-plan. Une carte persistante dans la barre de gauche de Tempo permet
 d’accepter ou d’ignorer les propositions, avec modification des détails. Sur
 mobile, un compteur sur le bouton du menu signale les propositions à vérifier.
@@ -222,14 +221,14 @@ ambiguë; le document est conservé et le scan peut être relancé.
 acceptés conservent leur lien vers Bibliothèque et la page source. Les archives
 Tempo existantes sont migrées sans scan, avec leurs dossiers et propositions.
 
-Pour tester avec Gemini réel, configure la clé privée dans `backend/.env`, puis
+Pour tester avec le service réel, configure `OPENAI_API_KEY` dans `backend/.env`, puis
 lance `npm run test:pdf` depuis `backend/`. Le test ne crée aucune donnée. Voir
 le [guide local](../../docs/calendar-local.md).
 
 Le parcours commun est vérifié avec
 `node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-library-tempo-ui.mjs`
 depuis la racine, frontend local démarré. Il utilise une bibliothèque temporaire,
-Gemini et un calendrier simulés. Les captures sont dans `artifacts/library/`.
+le service d’analyse et un calendrier simulés. Les captures sont dans `artifacts/library/`.
 Les tests des archives historiques restent dans `backend/tests/calendar-documents.test.mjs`.
 
 Pour l’API, lance `npm test`, `npm run lint`, `npm run typecheck` et `npm run build`

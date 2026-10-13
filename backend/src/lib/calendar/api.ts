@@ -1,5 +1,4 @@
 import { createAccountVerifier, type AccountVerifier } from "../accounts.ts";
-import { geminiApiKey, GeminiProviderError } from "../ai/gemini.ts";
 import { openaiApiKey, generateOpenAIObject, OpenAIProviderError } from "../ai/openai.ts";
 import { BoundedCache, MediaError, record, type Fetcher } from "../media/core.ts";
 import { readLimited } from "../media/http.ts";
@@ -63,7 +62,7 @@ export function createCalendarApi(fetcher: Fetcher = fetch, store = new Calendar
         if (request.method !== "GET") throw new MediaError("library", "Les documents sont maintenant gérés dans Bibliothèque.", 410);
         if (path.length === 1) {
           const data = publicLibrary(await libraryStore.snapshot(user.username), moodleAuthorized(user.username));
-          return json({ documents: data.files, folders: data.folders, aiAvailable: !!geminiApiKey() });
+          return json({ documents: data.files, folders: data.folders, aiAvailable: !!openaiApiKey() });
         }
         const file = (await libraryStore.snapshot(user.username)).files.find(row => row.id === path[1]);
         if (file && path.length === 3 && path[2] === "file") {
@@ -75,7 +74,7 @@ export function createCalendarApi(fetcher: Fetcher = fetch, store = new Calendar
       }
       if (request.method === "GET" && path.join("/") === "events") {
         const [events, eventTypes] = await Promise.all([store.list(user.username), store.types.list(user.username)]);
-        // Preserve existing PDFs/proposals without making any Gemini request.
+        // Preserve existing PDFs/proposals without making any analysis request.
         if (process.env.MONGODB_URI) await importTempoArchive(user.username, events, archive).catch(() => {});
         return json({ events, eventTypes, aiAvailable: !!openaiApiKey() });
       }
@@ -105,7 +104,7 @@ export function createCalendarApi(fetcher: Fetcher = fetch, store = new Calendar
           const event = validateEvent(result.event);
           assertEventType(event.typeId, eventTypes);
           return json({ event, clarification: null });
-        } catch { throw new MediaError("ai_output", "OpenAI n’a pas proposé de type, de date ou d’horaire valide. Précise ta demande ou saisis les détails manuellement.", 502); }
+        } catch { throw new MediaError("ai_output", "L’analyse n’a pas proposé de type, de date ou d’horaire valide. Précise ta demande ou saisis les détails manuellement.", 502); }
       }
       if (path[0] !== "events") throw new MediaError("not_found", "Page introuvable.", 404);
       if (path.length === 1 && request.method === "POST") return json({ event: await store.create(user.username, validateEvent(body.event), eventId(body.requestId)) }, 201);
@@ -119,7 +118,6 @@ export function createCalendarApi(fetcher: Fetcher = fetch, store = new Calendar
       throw new MediaError("method", "Cette action n’est pas disponible.", 405);
     } catch (error) {
       if (error instanceof OpenAIProviderError) console.warn("calendar.interpret: OpenAI request failed", { status: error.upstreamStatus, code: error.upstreamCode, model: error.model });
-      if (error instanceof GeminiProviderError) console.warn("calendar.interpret: Gemini request failed", { status: error.upstreamStatus, code: error.upstreamCode, model: error.model });
       if (error instanceof MediaError) return json({ error: error.message, code: error.code }, error.status);
       if (error instanceof SyntaxError) return json({ error: "La demande est invalide.", code: "input" }, 400);
       return json({ error: "Le calendrier est momentanément indisponible. Réessaie dans un instant.", code: "unavailable" }, 503);

@@ -40,7 +40,7 @@ export class MediaRecommendations {
     const key = createHash("sha256").update(apiKey).update(JSON.stringify(input)).digest("hex");
     const cached = this.cache.get(key);
     if (cached) return cached;
-    const data = await bounded("Gemini media recommendations", envNumber("MEDIA_AI_TIMEOUT_MS", 20_000, 1000, 60_000), signal, async boundedSignal => {
+    const data = await bounded("Personalized recommendations", envNumber("MEDIA_AI_TIMEOUT_MS", 20_000, 1000, 60_000), signal, async boundedSignal => {
       const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
         method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, signal: boundedSignal, cache: "no-store", redirect: "manual",
         body: JSON.stringify({

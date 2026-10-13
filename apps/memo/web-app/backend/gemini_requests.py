@@ -39,12 +39,12 @@ def quota_details(response):
 def quota_error(response):
     kind, _ = quota_details(response)
     if kind == "daily":
-        return DeckError(429, "Le quota quotidien Gemini du projet est épuisé. Réessaie après sa réinitialisation ou vérifie le niveau de facturation dans Google AI Studio.")
+        return DeckError(429, "Le quota quotidien du service est épuisé. Réessaie après sa réinitialisation ou contacte l’administrateur.")
     if kind == "unavailable":
-        return DeckError(429, "Aucun quota Gemini n’est disponible pour ce modèle. Vérifie l’accès au modèle et le niveau du projet dans Google AI Studio.")
+        return DeckError(429, "Le service n’a aucun quota disponible. L’administrateur doit vérifier sa configuration.")
     if kind == "minute":
-        return DeckError(429, "La limite Gemini par minute est atteinte. Attends un peu puis réessaie.")
-    return DeckError(429, "Gemini a atteint une limite de quota. Vérifie les limites du projet dans Google AI Studio avant de réessayer.")
+        return DeckError(429, "La limite du service par minute est atteinte. Attends un peu puis réessaie.")
+    return DeckError(429, "Le service a atteint une limite de quota. Contacte l’administrateur avant de réessayer.")
 
 
 class GeminiRequests:
@@ -61,7 +61,7 @@ class GeminiRequests:
 
     async def reserve(self, tokens):
         if self.tpm and tokens > self.tpm:
-            raise DeckError(413, "Une étape dépasse le budget de tokens Gemini configuré. Ajuste MEMO_GEMINI_TPM aux limites réelles du projet.")
+            raise DeckError(413, "Cette étape dépasse la capacité configurée du service. L’administrateur doit vérifier sa configuration.")
         while True:
             async with self.lock:
                 now = self.now()

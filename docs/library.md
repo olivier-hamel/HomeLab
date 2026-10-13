@@ -26,7 +26,7 @@ et l’interface indique que l’aperçu est indisponible.
 Bibliothèque est le point d’entrée commun des documents. Tempo ouvre directement
 le calendrier et n’a plus de section Documents. Chaque **nouveau** fichier
 PDF/PPT/PPTX, importé à la main ou téléchargé depuis Moodle, entre dans une file
-de scans persistante. Gemini recherche des dates explicites et propose jusqu’à
+de scans persistante. Tempo recherche des dates explicites et propose jusqu’à
 100 événements. Les fichiers déjà présents lors de l’intégration et les archives
 migrées depuis Tempo/Mémo ne sont pas analysés automatiquement.
 
@@ -40,9 +40,10 @@ les reprises après une erreur d’enregistrement évitent les doublons.
 Chaque fichier enregistré dispose de **Scanner pour Tempo** ou **Relancer le
 scan Tempo**, dans son menu et ses informations, y compris les anciens fichiers
 Moodle. Les scans interrompus reprennent après expiration du verrou. Les échecs
-restent visibles et peuvent être relancés. Sans `GEMINI_API_KEY`, les nouveaux
+restent visibles et peuvent être relancés. Sans `OPENAI_API_KEY`, les nouveaux
 fichiers attendent dans la file; la consultation fonctionne. Les scans utilisent
-la configuration Gemini privée du backend. MongoDB reste nécessaire pour
+la configuration OpenAI privée du backend, avec le modèle fixe `gpt-6.1-sol`.
+MongoDB reste nécessaire pour
 enregistrer les événements acceptés, tandis que les notifications restent dans
 le stockage Bibliothèque.
 

@@ -154,8 +154,8 @@ Start all four local services from the repository root with:
 
 The launcher prepares dependencies, sets up a local development account and
 prints `http://localhost:3000` once everything is ready. `Ctrl+C` stops all
-services. Configure OpenAI (`OPENAI_API_KEY`) for Tempo event creation,
-Gemini for document scans, and MongoDB in the private `backend/.env`; local
+services. Configure OpenAI (`OPENAI_API_KEY`) for Tempo event creation and document
+scans, and MongoDB in the private `backend/.env`; local
 database names and account setup are described in the
 [local testing guide](docs/calendar-local.md#interface-complète-dans-le-navigateur).
 
@@ -196,9 +196,9 @@ For Tempo, run `npm run dev` or `npm test` in `apps/calendar/`.
 For Memo, run `./start.sh --dev` in `apps/memo/web-app/`; see its
 [README](apps/memo/web-app/README.md) for Python dependencies and checks.
 
-To verify real Gemini PDF extraction before deploying, run `npm run test:pdf`
+To verify real Tempo PDF extraction before deploying, run `npm run test:pdf`
 in `backend/`, or `npm run test:pdf -- "/path/document.pdf"` for your own PDF.
-Configure `GEMINI_API_KEY` in the private `backend/.env` first. This uses the
+Configure `OPENAI_API_KEY` in the private `backend/.env` first. This uses the
 production extractor and performs no database writes. See the
 [local Tempo testing guide](docs/calendar-local.md) for the full browser setup.
 

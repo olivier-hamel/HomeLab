@@ -62,7 +62,7 @@ const routeHandler=async route=>{
   if(action==='file')return route.fulfill({contentType:'application/pdf',body:document.bytes});
   if(action==='analyze'){
    analyses++;
-   if(failAnalysis){document.analysisState='error';document.analysisError='Gemini est occupé. Le PDF est conservé.';return json(route,{error:document.analysisError},429);}
+   if(failAnalysis){document.analysisState='error';document.analysisError='L’analyse est occupée. Le PDF est conservé.';return json(route,{error:document.analysisError},429);}
    document.analysisState='ready';document.analysisError='';document.summary=document.name.includes('Horaire')?'Les dates importantes de ta session : un examen et une remise de travail.':'Deux moments repérés dans ton itinéraire.';
    document.proposals=[{id:randomUUID(),event:{...draft,title:document.name.includes('Horaire')?draft.title:'Départ pour Montréal'},page:1,note:''},{id:randomUUID(),event:{...draft,title:document.name.includes('Horaire')?'Remise du travail':'Visite du musée',date:'2026-10-23',endDate:'2026-10-23',allDay:true,startTime:null,endTime:null},page:1,note:'Aucune heure indiquée : proposé pour toute la journée.'}];
   }

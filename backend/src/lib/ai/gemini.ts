@@ -2,7 +2,7 @@ import { MediaError, list, record, string, type Fetcher } from "../media/core.ts
 import { bounded, readLimited } from "../media/http.ts";
 import { setTimeout as delay } from "node:timers/promises";
 
-// Server-only Gemini configuration for document scans and media AI features.
+// Server-only Gemini configuration for media AI features.
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 export function geminiApiKey() { return process.env.GEMINI_API_KEY?.trim() || ""; }
 export function geminiModel() { return process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL; }
@@ -54,10 +54,10 @@ export async function generateGeminiObject(options: {
         const envelope = await readLimited(response, 16 * 1024).then(bytes => record(JSON.parse(new TextDecoder().decode(bytes)))).catch(() => ({}));
         const reported = record(record(envelope).error).status;
         const upstreamCode = typeof reported === "string" && ["INVALID_ARGUMENT", "UNAUTHENTICATED", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "NOT_FOUND", "UNAVAILABLE", "INTERNAL", "DEADLINE_EXCEEDED"].includes(reported) ? reported : "UNKNOWN";
-        const [code, message] = response.status === 400 ? ["ai_request", "Gemini a refusé la requête d’analyse (HTTP 400). Vérifie sa compatibilité avec le modèle configuré."]
-          : [401, 403].includes(response.status) ? ["ai_credentials", "Gemini refuse la clé API ou ses autorisations. Vérifie la configuration du serveur."]
-          : response.status === 404 ? ["ai_model", "Le modèle Gemini configuré n’est pas disponible. Vérifie GEMINI_MODEL sur le serveur."]
-          : ["ai_unavailable", response.status === 429 ? "La limite de requêtes ou le quota Gemini est atteint. Patiente ou saisis les détails manuellement." : "Gemini est temporairement indisponible. Réessaie dans un instant ou saisis les détails manuellement."];
+        const [code, message] = response.status === 400 ? ["ai_request", "La demande d’analyse a été refusée. Vérifie la configuration du serveur."]
+          : [401, 403].includes(response.status) ? ["ai_credentials", "Le service d’analyse n’est pas autorisé. Vérifie la configuration du serveur."]
+          : response.status === 404 ? ["ai_model", "Le service d’analyse n’est pas disponible. Vérifie la configuration du serveur."]
+          : ["ai_unavailable", response.status === 429 ? "La limite de requêtes ou le quota du service d’analyse est atteint. Patiente ou saisis les détails manuellement." : "L’analyse est temporairement indisponible. Réessaie dans un instant ou saisis les détails manuellement."];
         const retryAfter = response.headers.get("retry-after");
         const retryAfterMs = retryAfter === null ? 0 : /^\d+(?:\.\d+)?$/.test(retryAfter.trim()) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now();
         const wait = Math.max(backoff, Number.isFinite(retryAfterMs) ? retryAfterMs : 0);
@@ -79,12 +79,12 @@ export async function generateGeminiObject(options: {
         if (!output || output.includes(key)) throw new Error("Invalid response");
         return JSON.parse(output);
       } catch {
-        throw new MediaError("ai_output", "La réponse de Gemini est incomplète. Précise ta demande ou saisis les détails manuellement.", 502);
+        throw new MediaError("ai_output", "L’analyse est incomplète. Précise ta demande ou saisis les détails manuellement.", 502);
       }
     }
   }).catch(error => {
-    if (error instanceof MediaError && error.code === "timeout") throw new MediaError("timeout", "Gemini prend trop de temps. Réessaie ou saisis les détails manuellement.", 504);
-    if (error instanceof MediaError && error.code === "unavailable") throw new MediaError("ai_unavailable", "La connexion à Gemini est indisponible. Réessaie ou saisis les détails manuellement.", 502);
+    if (error instanceof MediaError && error.code === "timeout") throw new MediaError("timeout", "L’analyse prend trop de temps. Réessaie ou saisis les détails manuellement.", 504);
+    if (error instanceof MediaError && error.code === "unavailable") throw new MediaError("ai_unavailable", "Le service d’analyse est injoignable. Réessaie ou saisis les détails manuellement.", 502);
     throw error;
   });
 }

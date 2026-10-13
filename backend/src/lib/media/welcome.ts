@@ -41,7 +41,7 @@ export class Welcome {
 
   private async generate(apiKey: string): Promise<void> {
     try {
-      const data = await bounded("Gemini welcome", 8000, new AbortController().signal, async signal => {
+      const data = await bounded("Welcome message", 8000, new AbortController().signal, async signal => {
         const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
           method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, signal, cache: "no-store", redirect: "manual",
           body: JSON.stringify({

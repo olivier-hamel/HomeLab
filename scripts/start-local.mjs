@@ -118,8 +118,7 @@ async function main() {
     const memoEnv={...settings,...await envFile(resolve(memo,'.env.memo-local')),...process.env,MEMO_ENV:'development',FLASHCARD_WEB_AUTH:'1',FLASHCARD_WEB_REQUIRE_HTTPS:'0',MEMO_COOKIE_PATH:'/',FLASHCARD_WEB_IMPORT_DESKTOP:'0',FLASHCARD_WEB_DATA:data,MEMO_MONGODB_DATABASE:process.env.HOMELAB_LOCAL_MEMO_DATABASE||'homelab_memo_dev',HOMELAB_LIBRARY_URL:'http://127.0.0.1:3001'};
     const backendEnv={...settings,NODE_ENV:'development',MEMO_AUTH_URL:'http://127.0.0.1:8000',MONGODB_DATABASE:localDatabase,MEDIA_ALLOWED_ORIGINS:'http://localhost:3000,http://127.0.0.1:3000'};
     if(!settings.MONGODB_URI?.trim())log('À configurer dans backend/.env : MONGODB_URI pour enregistrer les événements Tempo et les ensembles Mémo.');
-    if(!settings.OPENAI_API_KEY?.trim())log('À configurer dans backend/.env : OPENAI_API_KEY pour créer les événements Tempo depuis une description.');
-    if(!settings.GEMINI_API_KEY?.trim())log('À configurer dans backend/.env : GEMINI_API_KEY pour analyser les PDF.');
+    if(!settings.OPENAI_API_KEY?.trim())log('À configurer dans backend/.env : OPENAI_API_KEY pour créer les événements Tempo et scanner les documents.');
     log(`Base Tempo de développement : ${localDatabase}`);
 
     await manager.run('Prérequis npm','npm',['--version'],{cwd:root},signal);

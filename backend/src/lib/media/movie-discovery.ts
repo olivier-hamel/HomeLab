@@ -104,24 +104,24 @@ export class MovieDiscovery {
       });
       if (!response.ok) {
         await response.body?.cancel();
-        if (response.status === 429) throw new MediaError("discovery_quota", "Movie suggestions have reached Gemini's request limit or quota. Wait a little before trying again; you can keep your current choices.", 429);
-        if ([400, 401, 403, 404].includes(response.status)) throw new MediaError("discovery_configuration", "The movie suggestion service needs its Gemini configuration checked before it can continue.", 503);
-        throw new MediaError("discovery_unavailable", "Gemini is temporarily unavailable. Please try again; you can keep your current choices.", 503);
+        if (response.status === 429) throw new MediaError("discovery_quota", "Movie suggestions have reached the request limit or quota. Wait a little before trying again; you can keep your current choices.", 429);
+        if ([400, 401, 403, 404].includes(response.status)) throw new MediaError("discovery_configuration", "The movie suggestion service needs its configuration checked before it can continue.", 503);
+        throw new MediaError("discovery_unavailable", "The suggestion service is temporarily unavailable. Please try again; you can keep your current choices.", 503);
       }
       const envelope = record(JSON.parse(new TextDecoder().decode(await readLimited(response, 48 * 1024))));
       const candidate = record(list(envelope.candidates)[0]);
-      if (candidate.finishReason !== "STOP" && candidate.finishReason !== "MAX_TOKENS") throw new MediaError("discovery_response", "Gemini couldn't finish these suggestions. Please try again; you can keep your current choices.", 503);
+      if (candidate.finishReason !== "STOP" && candidate.finishReason !== "MAX_TOKENS") throw new MediaError("discovery_response", "The suggestion service could not finish these suggestions. Please try again; you can keep your current choices.", 503);
       const output = list(record(candidate.content).parts).map(record).filter(part => part.thought !== true).map(part => string(part.text, 48 * 1024)).join("");
       let parsed: unknown;
       try { parsed = JSON.parse(output); }
-      catch { throw new MediaError("discovery_response", "Gemini sent incomplete suggestions. Please try again; you can keep your current choices.", 503); }
+      catch { throw new MediaError("discovery_response", "The suggestions are incomplete. Please try again; you can keep your current choices.", 503); }
       const movies = list(record(parsed).movies);
-      if (movies.length !== DISCOVERY_COUNT) throw new MediaError("discovery_response", "Gemini didn't return a complete set of 16 movies. Please try again; your choices are kept.", 503);
+      if (movies.length !== DISCOVERY_COUNT) throw new MediaError("discovery_response", "The suggestion service did not return a complete set of 16 movies. Please try again; your choices are kept.", 503);
       const suggestions = movies.map(record).flatMap(row => {
         if (typeof row.title !== "string" || row.title.length > 200 || !row.title.trim() || /[\r\n<>]|https?:|www\./i.test(row.title) || row.title.includes(apiKey) || typeof row.year !== "string" || !/^\d{4}$/.test(row.year) || Number(row.year) > new Date().getUTCFullYear()) return [];
         return [{ title: row.title.trim(), year: row.year }];
       });
-      if (suggestions.length !== DISCOVERY_COUNT) throw new MediaError("discovery_response", "Gemini sent invalid movie suggestions. Please try again; your choices are kept.", 503);
+      if (suggestions.length !== DISCOVERY_COUNT) throw new MediaError("discovery_response", "The movie suggestions are invalid. Please try again; your choices are kept.", 503);
       return suggestions;
     });
   }

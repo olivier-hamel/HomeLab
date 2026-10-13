@@ -26,7 +26,6 @@ function fixture(fetcher = async () => {throw new Error('Unexpected provider cal
   const call = (path, method = 'GET', body, username = 'oli', extra = {}) => api(new Request(`${origin}/api/calendar/${path}`, {method, headers:{Origin:origin, 'X-Test-Account':username, ...(body ? {'Content-Type':'application/json', 'X-Calendar-Request':'1'} : {}), ...extra}, ...(body ? {body:JSON.stringify(body)} : {})}));
   return {types, catalogs, store, rows, call};
 }
-const geminiProvider = data => Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(data)}]}}]});
 const provider = data => Response.json({status:'completed', output:[{type:'message', role:'assistant', status:'completed', content:[{type:'output_text', text:JSON.stringify(data)}]}]});
 async function withKey(work, variable = 'OPENAI_API_KEY') {
   const previous = process.env[variable]; process.env[variable] = 'type-test-canary';
@@ -119,10 +118,10 @@ test('PDF extraction supplies the same types and validates each proposed classif
   const options = {name:'examens.pdf', pdf:new Uint8Array(Buffer.from('%PDF-1.7\nfixture')), signal:new AbortController().signal, eventTypes,
     fetcher:async (_url, init) => {
       const body = JSON.parse(init.body);
-      assert.deepEqual(JSON.parse(body.contents[0].parts[0].text).eventTypes, eventTypes);
-      assert.deepEqual(body.generationConfig.responseJsonSchema.properties.events.items.properties.event.properties.typeId.enum, ['none', type.id]);
-      return geminiProvider({summary:'Un examen.', events:[{event:{...draft, typeId}, page:1, note:''}]});
+      assert.deepEqual(JSON.parse(body.input[0].content[0].text).eventTypes, eventTypes);
+      assert.deepEqual(body.text.format.schema.properties.events.items.properties.event.properties.typeId.enum, ['none', type.id]);
+      return provider({summary:'Un examen.', events:[{event:{...draft, typeId}, page:1, note:''}]});
     }};
   assert.equal((await analyseCalendarPdf(options)).proposals[0].event.typeId, type.id);
   typeId = randomUUID(); await assert.rejects(analyseCalendarPdf(options), error => error.code === 'ai_output');
-}, 'GEMINI_API_KEY'));
+}));

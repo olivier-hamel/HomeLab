@@ -33,8 +33,8 @@ test('Responses requests use the exact default model, server-side bearer key and
     }});
     assert.deepEqual(result, {ready:true});
     process.env.OPENAI_MODEL = ' custom-model ';
-    assert.equal(openaiModel(), 'custom-model');
-    await generateOpenAIObject({...input, fetcher:async (_url, init) => {assert.equal(JSON.parse(init.body).model, 'custom-model'); return success();}});
+    assert.equal(openaiModel(), 'gpt-6.1-sol');
+    await generateOpenAIObject({...input, fetcher:async (_url, init) => {assert.equal(JSON.parse(init.body).model, 'gpt-6.1-sol'); return success();}});
   } finally {if (previous === undefined) delete process.env.OPENAI_MODEL; else process.env.OPENAI_MODEL = previous;}
 }));
 
@@ -48,6 +48,22 @@ test('provider failures distinguish request, credentials, model and quota errors
       return true;
     });
   }
+}));
+
+test('document scans send a base64 PDF and allow a bounded response larger than text event drafts', async () => withKey(async () => {
+  const pdf = new Uint8Array(Buffer.from('%PDF-1.7\nfixture'));
+  const result = {summary:'x'.repeat(40000)};
+  const options = {...input, pdf, filename:'cours.pdf', schemaName:'calendar_document', maxOutputTokens:24000, maxResponseBytes:768 * 1024};
+  assert.deepEqual(await generateOpenAIObject({...options, fetcher:async (_url, init) => {
+    const body = JSON.parse(init.body), content = body.input[0].content;
+    assert.equal(body.model, 'gpt-6.1-sol'); assert.equal(body.max_output_tokens, 24000);
+    assert.equal(body.text.format.name, 'calendar_document'); assert.equal(body.store, false);
+    assert.deepEqual(content[0], {type:'input_text', text:JSON.stringify(input.input)});
+    assert.equal(content[1].filename, 'cours.pdf'); assert.equal(content[1].type, 'input_file');
+    assert.deepEqual(Buffer.from(content[1].file_data.split(',')[1], 'base64'), Buffer.from(pdf));
+    return Response.json({status:'completed', output:[message(JSON.stringify(result))]});
+  }}), result);
+  await assert.rejects(generateOpenAIObject({...options, maxResponseBytes:1024, fetcher:async () => Response.json({status:'completed', output:[message(JSON.stringify(result))]})}), error => error.code === 'ai_output');
 }));
 
 test('refusals, truncation, invalid JSON and leaked credentials never produce an event draft', async () => withKey(async () => {

@@ -10,12 +10,13 @@ import { analyseCalendarPdf } from '../src/lib/calendar/pdf-analysis.ts';
 import { validateAnalysis } from '../src/lib/calendar/documents.ts';
 import { eventsOnDate, eventsInRange } from '../../apps/calendar/dist/js/events.js';
 import { MediaError } from '../src/lib/media/core.ts';
+import { publicLibrary } from '../src/lib/library/model.ts';
 
-process.env.GEMINI_API_KEY='scan-test-key';process.env.MOODLE_ALLOWED_USERS='oli';
+process.env.OPENAI_API_KEY='scan-test-key';process.env.MOODLE_ALLOWED_USERS='oli';
 const pdf=new Uint8Array(Buffer.from('%PDF-1.7\nscan test'));
 const event={title:'Examen final',description:'Salle 204',date:'2026-12-10',endDate:'2026-12-10',allDay:false,startTime:'09:00',endTime:'11:00',recurrence:null,typeId:"none"};
 const course={...event,title:'Cours du lundi',description:'',date:'2026-08-03',endDate:'2026-08-03',startTime:'13:30',endTime:'14:30',recurrence:{frequency:'weekly',interval:1,weekdays:[1],until:'2026-12-14',count:null}};
-const provider=event=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({summary:'Cours du 1er août au 14 décembre 2026, chaque lundi à 13 h 30.',events:[{event,page:1,note:'Durée supposée : une heure.'}]})}]}}]});
+const provider=event=>Response.json({status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({summary:'Cours du 1er août au 14 décembre 2026, chaque lundi à 13 h 30.',events:[{event,page:1,note:'Durée supposée : une heure.'}]})}]}]});
 function fixture(analyse=async()=>({summary:'Un examen repéré.',proposals:[{id:randomUUID(),event,page:1,note:''}]}), types=eventTypeFixture().types){
  const libraries=new Map(),blobs=new Map();
  const rows={async findOne({username}){return structuredClone(libraries.get(username)||null);},async insertOne(data){if(libraries.has(data.username))throw Object.assign(new Error('duplicate'),{code:11000});libraries.set(data.username,structuredClone(data));},async updateOne({username,version},{$set}){if(libraries.get(username)?.version!==version)return{modifiedCount:0};libraries.set(username,structuredClone({username,...$set}));return{modifiedCount:1};}};
@@ -24,6 +25,29 @@ function fixture(analyse=async()=>({summary:'Un examen repéré.',proposals:[{id
  const scans=new TempoScans(store,async input=>{analyses++;return analyse(input);},undefined,types);
  return{store,scans,types,analyses:()=>analyses};
 }
+
+test('scan availability requires the Tempo key and legacy provider failures are hidden without changing stored documents', async () => {
+ const previous={openai:process.env.OPENAI_API_KEY,gemini:process.env.GEMINI_API_KEY};
+ const f=fixture();
+ try {
+  delete process.env.OPENAI_API_KEY;process.env.GEMINI_API_KEY='unrelated-media-key';
+  await f.store.upload('oli','old-failure','examen.pdf',null,pdf);
+  await f.scans.kick('oli');assert.equal(f.analyses(),0);
+  assert.equal((await f.scans.notifications('oli')).aiAvailable,false);
+  await assert.rejects(f.scans.request('oli','old-failure'),error=>error.code==='ai_setup');
+  await f.store.mutate('oli',library=>{library.files[0].tempoScan.error='Gemini ne peut pas analyser ce PDF pour le moment.';library.files[0].tempoScan.state='error';});
+  const stored=await f.store.snapshot('oli'),visible=publicLibrary(stored,true);
+  assert.match(visible.files[0].tempoScan.error,/relance le scan/);
+  assert.equal(stored.files[0].tempoScan.error,'Gemini ne peut pas analyser ce PDF pour le moment.');
+  process.env.OPENAI_API_KEY='scan-test-key';delete process.env.GEMINI_API_KEY;
+  assert.equal((await f.scans.notifications('oli')).aiAvailable,true);
+  await f.scans.request('oli','old-failure');await f.scans.wait();
+  assert.equal((await f.store.get('oli','old-failure')).tempoScan.state,'ready');
+ } finally {
+  if(previous.openai===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous.openai;
+  if(previous.gemini===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=previous.gemini;
+ }
+});
 test('scans receive account types, persist classification, and accept old proposals after their type is deleted',async()=>{
  const {types}=eventTypeFixture(),type=await types.create('oli',randomUUID(),{name:'Examen',importance:5});
  const f=fixture(async input=>{
@@ -40,10 +64,10 @@ test('scans receive account types, persist classification, and accept old propos
 });
 test('a scanned semester schedule saves one series and appears only on Mondays at 13:30',async()=>{
  const f=fixture(input=>analyseCalendarPdf({...input,fetcher:async(_url,init)=>{
-  const body=JSON.parse(init.body),instruction=body.systemInstruction.parts[0].text;
+  const body=JSON.parse(init.body),instruction=body.instructions;
   assert.match(instruction,/date\/endDate describe only the FIRST occurrence/);
   assert.match(instruction,/Mondays at 13:30/);
-  const schema=body.generationConfig.responseJsonSchema.properties.events.items.properties.event;
+  const schema=body.text.format.schema.properties.events.items.properties.event;
   assert.match(schema.properties.endDate.description,/first occurrence/i);
   return provider(course);
  }}));

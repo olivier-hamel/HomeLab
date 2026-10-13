@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { geminiApiKey } from "../ai/gemini.ts";
+import { openaiApiKey } from "../ai/openai.ts";
 import { analyseCalendarPdf } from "../calendar/pdf-analysis.ts";
 import { validateEvent } from "../calendar/events.ts";
 import { CalendarEventStore } from "../calendar/store.ts";
@@ -24,7 +24,7 @@ export class TempoScans {
   constructor(store: LibraryStore = libraryStore, analyse = analyseCalendarPdf, convert = powerpointPreview, types = new CalendarEventTypeStore()) { this.store = store; this.analyse = analyse; this.convert = convert; this.types = types; }
   async request(username: string, id: string) {
     const file = await this.store.get(username, id); accessible(username, file);
-    if (!geminiApiKey()) throw new MediaError("ai_setup", "Configure Gemini pour rechercher des événements dans ce document.", 503);
+    if (!openaiApiKey()) throw new MediaError("ai_setup", "L’analyse doit être configurée sur le serveur pour rechercher des événements dans ce document.", 503);
     await this.store.mutate(username, library => {
       const current = library.files.find(row => row.id === id)!;
       if (current.tempoScan?.state === "scanning" && Date.parse(current.tempoScan.leaseUntil) > Date.now()) return;
@@ -33,7 +33,7 @@ export class TempoScans {
     await this.kick(username);
   }
   async kick(username: string) {
-    if (!geminiApiKey()) return;
+    if (!openaiApiKey()) return;
     const library = await this.store.snapshot(username);
     for (const file of library.files) {
       if (this.active.size >= 2) break;
@@ -88,7 +88,7 @@ export class TempoScans {
     return { documents: data.files.filter(file => file.tempoScan?.state === "ready" && file.tempoScan.proposals.some(row => row.decision === "pending")),
       files: data.files.map(file => ({ id: file.id, name: file.name, ready: file.ready })),
       scanning: data.files.filter(file => file.tempoScan && ["queued", "scanning"].includes(file.tempoScan.state)).length,
-      failures: data.files.filter(file => file.tempoScan?.state === "error"), aiAvailable: !!geminiApiKey() };
+      failures: data.files.filter(file => file.tempoScan?.state === "error"), aiAvailable: !!openaiApiKey() };
   }
   async decide(username: string, id: string, scanId: unknown, selection: unknown, ignored: unknown, events = new CalendarEventStore()) {
     const file = await this.store.get(username, id); accessible(username, file);
@@ -128,6 +128,6 @@ export const tempoScans = new TempoScans();
 let scheduler: ReturnType<typeof setInterval> | undefined;
 export function startTempoScanScheduler() {
   if (scheduler) return;
-  const tick = async () => { if (!geminiApiKey()) return; for (const username of await libraryRows.usernames()) await tempoScans.kick(username).catch(() => {}); };
+  const tick = async () => { if (!openaiApiKey()) return; for (const username of await libraryRows.usernames()) await tempoScans.kick(username).catch(() => {}); };
   scheduler = setInterval(() => { void tick().catch(() => {}); }, 5000); scheduler.unref();
 }

@@ -1,4 +1,4 @@
-import { geminiApiKey } from "../ai/gemini.ts";
+import { openaiApiKey } from "../ai/openai.ts";
 import { BoundedCache, MediaError, record, type Fetcher } from "../media/core.ts";
 import { readLimited } from "../media/http.ts";
 import { CalendarDocumentStore, MAX_PDF_BYTES, MAX_PROPOSALS } from "./documents.ts";
@@ -13,7 +13,7 @@ const rates = new BoundedCache<{ count: number; startedAt: number }>(1024, 60_00
 export async function handleDocumentRequest(request: Request, path: string[], username: string, documents: CalendarDocumentStore, events: CalendarEventStore, fetcher: Fetcher): Promise<Response> {
   const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
   if (path.length === 1 && request.method === "GET") {
-    return json({ ...await documents.library(username), aiAvailable: !!geminiApiKey() });
+    return json({ ...await documents.library(username), aiAvailable: !!openaiApiKey() });
   }
   if (path.length === 1 && request.method === "POST") {
     let name: string;
@@ -60,7 +60,7 @@ export async function handleDocumentRequest(request: Request, path: string[], us
   if (request.method === "POST" && path.length === 3 && path[2] === "analyze") {
     const existing = await documents.get(username, id);
     if (existing.analysisState === "ready") return json({ document: existing });
-    if (!geminiApiKey()) throw new MediaError("ai_setup", "Le PDF est conservé. Configure Gemini pour y rechercher des événements.", 503);
+    if (!openaiApiKey()) throw new MediaError("ai_setup", "Le PDF est conservé. L’analyse doit être configurée sur le serveur pour y rechercher des événements.", 503);
     const key = `documents:${username}`;
     const previous = rates.get(key);
     const window = previous && Date.now() - previous.startedAt < 60_000 ? previous : { count: 0, startedAt: Date.now() };
