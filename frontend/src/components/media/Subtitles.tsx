@@ -1,13 +1,15 @@
 import { useEffect, useEffectEvent, useId, useRef, useState, type RefObject } from "react";
 import { Captions, Search, Upload } from "lucide-react";
 import { Button } from "../ui/button";
-import { mediaApi, type SearchIntent, type TorrentFile } from "../../lib/media";
-import { MAX_SUBTITLE_BYTES, rankEnglishSubtitles, rankSubtitleFiles, subtitleFormat, subtitleSearch, subtitleTiming, subtitleVtt, type SubtitleDownload, type SubtitleSearch } from "../../lib/subtitles";
+import { type SearchIntent, type TorrentFile } from "../../lib/media";
+import { MAX_SUBTITLE_BYTES, subtitleFormat, subtitleTiming, subtitleVtt } from "../../lib/subtitles";
+import { loadEnglishSubtitles } from "../../lib/automatic-subtitles";
 import OnlineSubtitles from "./OnlineSubtitles";
 import Switch from "../ui/switch";
 import SubtitleTimingControls from "./SubtitleTimingControls";
 
 type Subtitle = { key: string; name: string; content: string };
+export type NativeSubtitleState = { status: "off" | "loading" } | { status: "ready"; subtitle: { name: string; language: string; content: string; offset: number } };
 
 function disableSubtitles(element: HTMLVideoElement | null) {
   for (const track of element?.textTracks ?? []) {
@@ -15,7 +17,7 @@ function disableSubtitles(element: HTMLVideoElement | null) {
   }
 }
 
-export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0, simple = false, englishEnabled = false, onEnglishChange }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number; simple?: boolean; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void }) {
+export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0, simple = false, englishEnabled = false, onEnglishChange, onNativeSubtitleChange }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number; simple?: boolean; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void; onNativeSubtitleChange?: (state: NativeSubtitleState) => void }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const active = useRef<AbortController | null>(null);
@@ -32,8 +34,14 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
   const [error, setError] = useState("");
   const subtitles = files.filter(file => file.kind === "subtitle" && subtitleFormat(file.path));
   const changedEnglish = useEffectEvent((enabled: boolean) => onEnglishChange?.(enabled));
+  const changedNativeSubtitle = useEffectEvent((state: NativeSubtitleState) => onNativeSubtitleChange?.(state));
 
   useEffect(() => () => active.current?.abort(), []);
+  useEffect(() => {
+    if (busy || (simple && englishEnabled && !error && (!loaded || loaded.key !== selected))) changedNativeSubtitle({ status: "loading" });
+    else if ((!simple || englishEnabled) && loaded && loaded.key === selected) changedNativeSubtitle({ status: "ready", subtitle: { name: loaded.name, language: simple ? "en" : "und", content: loaded.content, offset } });
+    else changedNativeSubtitle({ status: "off" });
+  }, [busy, loaded, selected, offset, simple, englishEnabled, error]);
   useEffect(() => {
     offsetValue.current = offset - timelineStart;
     applyOffset.current?.(offset - timelineStart);
@@ -68,42 +76,16 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     };
   }, [loaded, selected, video, simple]);
 
-  const readTorrentSubtitle = async (file: TorrentFile, signal: AbortSignal) => {
-    const response = await fetch(`/api/media/subtitles/${playbackId}/${file.id}`, { signal, credentials: "same-origin", cache: "no-store" });
-    if (!response.ok) throw new Error("The included subtitles couldn't be downloaded.");
-    return response.arrayBuffer();
-  };
-
   const loadEnglish = async () => {
     active.current?.abort();
     const controller = new AbortController(); active.current = controller;
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]);
     setBusy(true); setError(""); setSelected("auto");
     try {
-      let subtitle: Subtitle | null = loaded?.key === "auto" ? loaded : null;
-      // Bundled English subtitles are already packaged with this release.
-      const bundled = rankSubtitleFiles(subtitles.map(file => ({ ...file, name: file.path })), filename, search, true);
-      for (const file of subtitle ? [] : bundled.slice(0, 3)) {
-        try { subtitle = { key: "auto", name: file.path, content: subtitleVtt(await readTorrentSubtitle(file, AbortSignal.any([signal, AbortSignal.timeout(15_000)])), file.path) }; break; }
-        catch { signal.throwIfAborted(); }
-      }
-      if (!subtitle) {
-        const query = subtitleSearch(filename, search);
-        const result = await mediaApi<SubtitleSearch>("subtitles/search", AbortSignal.any([signal, AbortSignal.timeout(20_000)]), { id: playbackId, ...query, language: "EN" });
-        const ranked = rankEnglishSubtitles(result.results, filename, search);
-        for (const choice of ranked.slice(0, 3)) {
-          try {
-            const download = await mediaApi<SubtitleDownload>("subtitles/download", AbortSignal.any([signal, AbortSignal.timeout(30_000)]), { id: playbackId, choice: choice.id });
-            for (const file of rankSubtitleFiles(download.files, filename, search)) {
-              try { subtitle = { key: "auto", name: file.name, content: subtitleVtt(Uint8Array.from(atob(file.content), c => c.charCodeAt(0)).buffer, file.name) }; break; }
-              catch { /* Try the next usable English file in this archive. */ }
-            }
-            if (subtitle) break;
-          } catch { signal.throwIfAborted(); }
-        }
-      }
+      const subtitle = loaded?.key === "auto" ? loaded : {
+        key: "auto", ...await loadEnglishSubtitles(playbackId, filename, files, search, signal),
+      };
       signal.throwIfAborted();
-      if (!subtitle) throw new Error("No matching English subtitles found.");
       if (subtitle !== loaded) setOffset(0);
       setLoaded(subtitle);
     } catch {

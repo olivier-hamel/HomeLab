@@ -1,0 +1,7 @@
+*
+!Dockerfile
+!package.json
+!scripts/
+!scripts/**
+!dist/
+!dist/**

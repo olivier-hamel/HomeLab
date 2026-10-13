@@ -8,6 +8,8 @@ test('automatic playback respects AI order and never starts uncertain, wrong, du
   assert.deepEqual(automaticSources(results, advice, new Set()).map(s => s.id), ['first', 'second']);
   assert.deepEqual(automaticSources(results, advice, new Set([sourceFingerprint(results[3])])).map(s => s.id), ['second']);
   assert.deepEqual(automaticSources(results, { ranking: [] }, new Set()), []);
+  const mixed = { provider: 'gemini', ranking: [{ id: 'first', identity: 'match', method: 'gemini' }, { id: 'second', identity: 'match', method: 'heuristic' }] };
+  assert.deepEqual(automaticSources(results, mixed, new Set()).map(s => s.id), ['first'], 'successful AI playback only selects reviewed sources');
 });
 
 test('automatic file selection takes the largest main video, ignoring samples, extras and non-video files', () => {

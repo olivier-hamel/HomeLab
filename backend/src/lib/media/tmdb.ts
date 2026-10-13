@@ -3,6 +3,7 @@ import { jsonRequest } from "./http.ts";
 
 export type Title = { id: number; kind: Kind; title: string; year: string; overview: string; poster: string | null };
 export type Catalogue = { provider: "TMDB"; availability: "metadata-only"; page: number; pages: number; titles: Title[] };
+export type CatalogueKind = Kind | "all";
 function normalize(value: unknown, kind: Kind): Title {
   const row = record(value);
   const poster = string(row.poster_path);
@@ -22,9 +23,15 @@ export class Tmdb {
     this.cache.set(url.href, data);
     return record(data);
   }
-  async browse(kind: Kind, query: string, page: number, signal: AbortSignal): Promise<Catalogue> {
-    const data = await this.get(query ? `search/${kind}` : `${kind}/popular`, { page: String(page), language: "en-US", include_adult: "false", ...(query ? { query } : {}) }, signal);
-    return { provider: "TMDB", availability: "metadata-only", page, pages: Math.min(count(data.total_pages) ?? 1, 500), titles: list(data.results).slice(0, 20).map(v => normalize(v, kind)) };
+  async browse(kind: CatalogueKind, query: string, page: number, signal: AbortSignal): Promise<Catalogue> {
+    const path = kind === "all" ? query ? "search/multi" : "trending/all/day" : query ? `search/${kind}` : `${kind}/popular`;
+    const data = await this.get(path, { page: String(page), language: "en-US", include_adult: "false", ...(query ? { query } : {}) }, signal);
+    const titles = list(data.results).flatMap(value => {
+      if (kind !== "all") return [normalize(value, kind)];
+      const mediaType = string(record(value).media_type);
+      return mediaType === "movie" || mediaType === "tv" ? [normalize(value, mediaType)] : [];
+    }).slice(0, 20);
+    return { provider: "TMDB", availability: "metadata-only", page, pages: Math.min(count(data.total_pages) ?? 1, 500), titles };
   }
   async details(kind: Kind, id: number, signal: AbortSignal) {
     const data = await this.get(`${kind}/${id}`, { append_to_response: "external_ids,alternative_titles", language: "en-US" }, signal);

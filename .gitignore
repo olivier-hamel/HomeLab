@@ -1,11 +1,22 @@
 # Dependencies and generated output
 node_modules/
+.tools/
+artifacts/
 .next/
 out/
 dist/
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/build/
 next-env.d.ts
 *.tsbuildinfo
 coverage/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+test-results/
+playwright-report/
 
 # Local configuration and logs
 .env*
@@ -21,10 +32,27 @@ id_ecdsa*
 id_dsa*
 *.pem
 *.key
+*.crt
+*.sqlite3*
+*.sqlite*
+*.db
+**/progress.json
+**/.progress-*
+**/bootstrap/
 secrets/
 data/
 volumes/
 backups/
+deployment-private/
+.worktrees/
+.local-data/
+.gemini-api-key
+flashcard_progress.json
+**/users/
+
+# Calendar dist is authored source, not generated output.
+!/apps/calendar/dist/
+!/apps/calendar/dist/**
 
 # Operating system files
 .DS_Store

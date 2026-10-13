@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_SUBTITLE_BYTES, subtitleFormat, subtitleTiming, subtitleVtt, subtitleSearch, rankEnglishSubtitles, rankSubtitleFiles } from '../src/lib/subtitles.ts';
+import { MAX_SUBTITLE_BYTES, offsetSubtitleVtt, subtitleFormat, subtitleTiming, subtitleVtt, subtitleSearch, rankEnglishSubtitles, rankSubtitleFiles } from '../src/lib/subtitles.ts';
 
 const encode = text => new TextEncoder().encode(text).buffer;
+
+test('native WebVTT offsets follow converted stream time and discard elapsed cues', () => {
+  const source = 'WEBVTT\n\nold\n00:00:01.000 --> 00:00:02.000\nOld\n\nactive\n00:00:09.000 --> 00:00:12.000 align:start\nActive\n\n00:01:00.000 --> 00:01:02.500\nLater\n';
+  assert.equal(offsetSubtitleVtt(source, -10), 'WEBVTT\n\nactive\n00:00:00.000 --> 00:00:02.000 align:start\nActive\n\n00:00:50.000 --> 00:00:52.500\nLater\n');
+  assert.equal(offsetSubtitleVtt(source, 0), source);
+});
 
 test('automatic English subtitles favor matching release details and exclude other languages and episodes', () => {
   const subtitle = (id, release, language = 'EN', episode = null) => ({ id, release, name: release + '.srt', language, season: null, episode, hearingImpaired: false });

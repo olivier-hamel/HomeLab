@@ -104,6 +104,22 @@ test('metadata browsing has no torrent side effects or availability claim; cache
   assert.equal(f.requests.some(request => request.url.hostname === 'generativelanguage.googleapis.com'), false, 'autocomplete stays TMDB-only');
   const cache = new BoundedCache(1, 1000); cache.set('a', 1); cache.set('b', 2); assert.equal(cache.get('a'), undefined);
 });
+test('mixed catalogue keeps movies and TV shows while excluding people', async () => {
+  const requests = [];
+  const tmdb = new Tmdb(async input => {
+    const url = new URL(input); requests.push(url);
+    return json({ total_pages: 3, results: [
+      { id: 1, media_type: 'movie', title: 'Fixture movie', release_date: '2024-01-01' },
+      { id: 2, media_type: 'person', name: 'Fixture person' },
+      { id: 3, media_type: 'tv', name: 'Fixture show', first_air_date: '2025-01-01' },
+    ] });
+  });
+  const popular = await tmdb.browse('all', '', 1, AbortSignal.timeout(1000));
+  assert.equal(requests[0].pathname, '/3/trending/all/day');
+  assert.deepEqual(popular.titles.map(title => [title.kind, title.title]), [['movie', 'Fixture movie'], ['tv', 'Fixture show']]);
+  await tmdb.browse('all', 'Fixture', 1, AbortSignal.timeout(1000));
+  assert.equal(requests[1].pathname, '/3/search/multi');
+});
 test('catalogue matching tolerates spacing and small typos without accepting unrelated containing titles', () => {
   assert.equal(closeTitleMatch('lalaland', 'La La Land'), true);
   assert.equal(closeTitleMatch('interstelar', 'Interstellar'), true);

@@ -2,7 +2,7 @@
 
 The optional TV page browses TMDB metadata, displays IMDb ratings through OMDb, searches existing Prowlarr indexers,
 selects TorrServer files, and plays same-origin video. Other dashboard sections
-still show sample data. Browsing the catalogue never starts a torrent; selecting
+are not included in the three-app dashboard. Browsing the catalogue never starts a torrent; selecting
 a movie in Simple mode starts automatic source selection and playback.
 
 ## Simple and Advanced mode
@@ -57,8 +57,8 @@ between Continue Watching and the popular catalogue. The backend sends Gemini
 only the metadata from the profile's 25 latest watch-history rows (never file
 paths, torrent links, or credentials), asks for a mix of movies and TV shows,
 then resolves and validates those suggestions through TMDB. Watched and duplicate
-TMDB titles are removed. Gemini 2.5 Flash-Lite produces 18 candidates with
-thinking disabled for lower latency and cost. Results are cached for six hours
+TMDB titles are removed. Gemini produces up to 18 candidates using the same
+model as the other media AI features. Results are cached for six hours
 and refresh immediately when the latest 25 history rows change.
 
 Turn on **English subtitles** to load matching bundled English SRT/VTT captions
@@ -67,6 +67,8 @@ release group and format details, excludes known different episodes, and selects
 the matching English file from ZIP packs. Failed downloads try up to three
 releases. SubDL requires the existing `SUBDL_API_KEY`; bundled subtitles do not.
 The **Earlier/Later 0.5 s** and **Reset timing** controls remain available.
+In the native Fire TV player, **Subtitle timing** opens a calibration popup with
+0.5-second and 5-second adjustments while the movie continues playing.
 Turning captions off cancels pending work; turning them back on reuses the
 downloaded file and timing. Changing sources keeps English subtitles enabled
 and finds captions for the new video, with a fresh offset.
@@ -410,8 +412,9 @@ identity decision and can reject ambiguous candidates. **Not a match** and
 **Uncertain match** listings are never highlighted, even if every correct
 release is dismissed. A failed Gemini request uses the same identity checks.
 
-Among matching releases, prioritize 1080p, at least **3,000 reported seeders**,
-reasonable sizes and suspicious release details. Below 3,000 (or with an unknown
+Among matching releases, prefer 1080p when otherwise comparable, while allowing
+healthy 4K releases, and consider at least **100 reported seeders**, reasonable
+sizes, the seeder-to-leecher ratio and suspicious release details. Below 100 (or with an unknown
 count), a release is at most **Unsure** and receives a streaming warning, even
 if Gemini calls it Good. A healthy 720p swarm can outrank 1080p below the target;
 if every matching swarm is weak, the least weak choice remains available with
@@ -426,19 +429,18 @@ matching option without another Gemini call or starting a torrent. Dismissals
 survive a refreshed search and tab reload; **Restore hidden sources** clears them.
 This does not remove torrents from TorrServer or report failures to an indexer.
 
-Gemini reviews at most the 60 most promising matching listings in each loaded batch;
-the rest retain basic assessments. Missing keys, timeouts, quota errors and
+Gemini reviews at most the 10 most promising matching listings in each loaded batch;
+automatic playback chooses from those reviewed listings, and the rest retain basic
+assessments in Advanced mode. Missing keys, timeouts, quota errors and
 invalid model output retain usable basic advice. Both modes show the reason when
-a review falls back. The Gemini output schema stays fixed in size; exact result
+a review falls back. The Gemini output schema stays compact; result
 counts and source IDs are validated on the backend to avoid provider rejection
 of large enumerated schemas. Reviews and session-owned
 search snapshots are bounded to 40 entries for two minutes, with 12 review
 requests per session per minute and 60 globally. Responses enforce supplied
 source IDs, known verdicts and a single short explanation; listing text is
-treated as untrusted data. A live Obsession (2026) review on September 9 returned
-Gemini assessments for 58 matching releases in both Simple and Advanced mode
-after the schema correction. The automated browser fixture mocks Gemini as
-well as the existing providers.
+treated as untrusted data. The automated browser fixture mocks Gemini as well as
+the existing providers.
 
 ## 8. Playback and external players
 

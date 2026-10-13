@@ -2,8 +2,19 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_MEMO_HTTPS_PORT: "${FRONTEND_HTTPS_PORT:-3443}"
     ports:
       - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:8080"
+      - "${TAILSCALE_BIND_ADDRESS:-127.0.0.1}:${TAILSCALE_PORT:-3002}:8080"
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_HTTPS_PORT:-3443}:8443"
+      - "${TAILSCALE_BIND_ADDRESS:-127.0.0.1}:${TAILSCALE_HTTPS_PORT:-3444}:8444"
+    environment:
+      HTTPS_LAN_HOST: "${HTTPS_LAN_HOST:-localhost}"
+      HTTPS_TAILSCALE_HOST: "${HTTPS_TAILSCALE_HOST:-localhost}"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       backend:
         condition: service_healthy
@@ -65,6 +76,66 @@ services:
         max-file: "3"
     networks:
       - app
+
+  calendar:
+    build:
+      context: ./apps/calendar
+    image: calendar-app:local
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/healthz', { signal: AbortSignal.timeout(3000) }).then(async r => { if (!r.ok || (await r.text()).trim() !== 'ok') process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app
+
+  memo:
+    build:
+      context: ./apps/memo/web-app
+    image: memo-app:local
+    env_file:
+      - path: "${MEMO_MONGODB_ENV_FILE:-./.env.memo-mongodb}"
+        required: false
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - memo_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app
+
+volumes:
+  memo_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   app:
