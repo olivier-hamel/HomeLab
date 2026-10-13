@@ -2,7 +2,7 @@
 
 The optional TV page browses TMDB metadata, displays IMDb ratings through OMDb, searches existing Prowlarr indexers,
 selects TorrServer files, and plays same-origin video. Other dashboard sections
-still show sample data. Browsing the catalogue never starts a torrent; selecting
+are not included in the three-app dashboard. Browsing the catalogue never starts a torrent; selecting
 a movie in Simple mode starts automatic source selection and playback.
 
 ## Simple and Advanced mode

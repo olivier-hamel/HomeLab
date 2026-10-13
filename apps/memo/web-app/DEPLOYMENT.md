@@ -7,29 +7,24 @@ reçoit `--root-path /memo`. Les API HomeLab `/api/*` conservent leur routage.
 
 ## Déployer avec Git
 
-Conserver chaque application dans son propre checkout Git. Préparer les commits,
-vérifier les tests et examiner `git diff --check` avant de transférer les sources.
-Sur le serveur, récupérer la branche validée avec `git fetch`, puis avancer
-uniquement avec `git merge --ff-only` ; ne pas réécrire l'historique ni écraser
-un checkout qui contient des changements locaux. Le `.env` privé et les volumes
-restent en dehors des commits.
-
-Un transfert direct peut utiliser `git bundle create application.bundle <branche>`
-puis `git fetch /chemin/prive/application.bundle <branche>`. Ce transfert conserve
-les commits et permet de déployer avant une publication GitHub. Un push vers
-un dépôt public demande l'accord de son propriétaire.
+Mémo fait partie du dépôt unique HomeLab, branche `feat/memo-integration`.
+Préparer et vérifier les changements, créer un commit et pousser cette branche,
+puis récupérer le même commit sur le serveur avec `git pull --ff-only` avant
+de reconstruire les services concernés. Voir le
+[guide court de mise à jour](../../../SERVER-UPDATE.md).
+Les fichiers privés et les volumes restent hors Git. Il n’y a pas d’étape
+de sauvegarde ou de transfert direct des sources.
 
 ## Sources et configuration
 
-Placer les deux dépôts côte à côte : `homelab/` et `memo/`. La variable Compose
-`MEMO_SOURCE_DIR` permet de choisir un autre emplacement. Le build de Mémo
-utilise son propre Dockerfile, Node 24 pour la compilation et Python 3.12 pour
-le serveur. Aucun port du backend Mémo n'est publié.
+Les sources sont dans `apps/memo/web-app/` du checkout HomeLab. Compose utilise
+ce Dockerfile, Node 24 pour la compilation et Python 3.12 pour le serveur.
+Aucun port du backend Mémo n’est publié. Les anciens checkouts séparés ne sont
+plus utilisés pour les mises à jour.
 
 Dans le `.env` privé de HomeLab, adapter ces paramètres à son serveur :
 
 ```dotenv
-MEMO_SOURCE_DIR=../memo
 FRONTEND_BIND_ADDRESS=192.168.1.10
 FRONTEND_PORT=3000
 FRONTEND_HTTPS_PORT=3443
@@ -139,18 +134,12 @@ et refuse de remplacer une progression existante. La version déployée n'import
 jamais automatiquement un fichier desktop dans un nouveau compte. Ne pas lancer
 l'import pendant qu'une personne utilise déjà sa session d'étude.
 
-## Sauvegarde et retour arrière
+## Mise à jour et vérification
 
-Conserver des copies privées du `.env`, de la configuration Compose et des
-images précédentes avant une mise à jour. Sauvegarder les volumes `memo_data`
-et `caddy_data` lorsque Mémo et le frontend sont arrêtés, pour obtenir une copie
-cohérente de SQLite et des fichiers. Redémarrer ensuite les deux services.
-
-Pour revenir en arrière, restaurer les fichiers de configuration et l'image
-frontend précédente, puis recréer seulement le frontend. Une panne de Mémo ne
-doit pas nécessiter de reconstruire ni de redémarrer le backend cinéma.
-Ne jamais utiliser `docker compose down --volumes` pour une mise à jour ou un
-retour arrière : cette commande effacerait les comptes, les progrès et l'autorité.
+Les mises à jour ordinaires ne créent pas de sauvegarde. Conserver le `.env`,
+la configuration privée MongoDB et les volumes `memo_data` et `caddy_data`.
+Reconstruire puis recréer seulement les services concernés. Ne jamais utiliser
+`docker compose down --volumes` pour une mise à jour.
 
 Vérifier `/healthz`, `/api/health` et `/memo/api/health`, puis ouvrir le navigateur
 avec l'autorité installée. Vérifier la connexion, deux comptes indépendants,

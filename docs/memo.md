@@ -6,14 +6,13 @@ from HomeLab and the movie app. Fire TV/native navigation remains unchanged.
 
 On desktop with a mouse, HomeLab navigation collapses to an icon rail and
 expands on hover or keyboard focus. Mobile retains its menu button. The
-fullscreen-view button in the dashboard header hides the HomeLab header and
-sidebar for any section. Use the floating exit button or Escape to restore
-them. The current section stays mounted, including Memo's iframe, so changing
+fullscreen-view button in the sidebar hides HomeLab navigation for any section.
+Use the floating exit button or Escape to restore it. There is no dashboard top bar. The current section stays mounted, including Memo's iframe, so changing
 the view preserves the app. Escape also works inside Memo; an open app dialog
 closes before leaving fullscreen view.
 
-Clone Memo beside this checkout as `memo`, or set `MEMO_SOURCE_DIR` in `.env`.
-The `memo` Compose service builds `memo/web-app/Dockerfile` and publishes no
+Memo lives in `apps/memo/` inside this checkout.
+The `memo` Compose service builds `apps/memo/web-app/Dockerfile` and publishes no
 backend ports. Caddy strips `/memo` before proxying to that service. Memo's
 frontend build and ASGI root path both account for the prefix.
 
@@ -55,8 +54,9 @@ atomic progress file for each user. Import an existing save explicitly before
 the user's first study request; existing progress is never overwritten by an
 import or image update.
 
-Full commands, certificate instructions, tests, backups, and rollback are in
-[Memo's deployment guide](https://github.com/olivier-hamel/Memo/blob/main/web-app/DEPLOYMENT.md).
+Full commands, certificate instructions, tests, and deployment details are in
+[Memo's deployment guide](../apps/memo/web-app/DEPLOYMENT.md).
+Updates use the root [SERVER-UPDATE.md](../SERVER-UPDATE.md).
 
 The optional MongoDB library adds private card sets and a French editor. Configure
 `MEMO_MONGODB_URI` and `MEMO_MONGODB_DATABASE` in the ignored `.env.memo-mongodb` file.
@@ -65,8 +65,8 @@ server's outbound connections to your existing database. Accounts and study
 progress continue to use `memo_data`; the database stores immutable card-set
 versions. Import the shared original deck once with
 `docker compose run --rm --no-deps memo python -m backend.decks --owner oli` before
-recreating Memo. Full setup and migration details are in Memo's `web-app/MONGODB.md`.
+recreating Memo. Full setup and migration details are in
+[Memo’s MongoDB guide](../apps/memo/web-app/MONGODB.md).
 
-Keep previous frontend images and configuration for rollback. Recreate only
-the changed services; preserve the movie backend. Never remove the data volumes
-as part of an update.
+Routine updates create no backups. Recreate only changed services and keep
+the existing environment files and named volumes.

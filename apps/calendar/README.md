@@ -14,7 +14,7 @@ Open http://localhost:4173. Use `PORT=3000 npm run dev` for another port. Run `n
 
 ## Server
 
-HomeLab serves this app at `/calendar/` through a separate Docker service. Calendar is the dashboard's default browser section. See [SERVER-UPDATE.md](SERVER-UPDATE.md) for the commit → push → pull → update procedure.
+HomeLab serves this app at `/calendar/` through a separate Docker service. Calendar is the dashboard's default browser section. This app is part of the unified HomeLab repository. See [SERVER-UPDATE.md](../../SERVER-UPDATE.md) for the single commit → push → pull → update procedure.
 
 ## Structure
 

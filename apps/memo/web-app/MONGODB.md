@@ -38,7 +38,7 @@ Le backend peut aussi lire une URI brute depuis `MEMO_MONGODB_URI_FILE`.
 ## Migrer et déployer
 
 Sauvegarder les fichiers privés et le volume Mémo, puis récupérer les commits
-validés des deux dépôts. Depuis HomeLab :
+validés du dépôt HomeLab. Depuis HomeLab :
 
 ```sh
 docker compose config --quiet
@@ -91,7 +91,7 @@ d'étude existants avec `?set_id=<id>&version=<numéro>`. Les identités viennen
 sessions authentifiées, avec les mêmes protections HTTPS et d'origine. Les
 formats des réponses d'étude restent identiques.
 
-## Vérifier et sauvegarder
+## Vérifier
 
 ```sh
 .venv/bin/python -m pip install -r backend/requirements-dev.txt
@@ -108,14 +108,7 @@ environnement privé avant de lancer `test_decks.py`. Les tests créent des
 collections `memo_validation_<uuid>` et suppriment seulement ces collections.
 Les tests navigateur utilisent des comptes et une base temporaires isolés.
 
-Sauvegarder la collection MongoDB **et** le volume `memo_data`. La collection
-conserve les cartes/versionnements ; le volume conserve les identités, sessions
-et acquis associés. Les sauvegardes Atlas ou les outils de sauvegarde MongoDB
-peuvent protéger la collection selon le déploiement. Pour revenir à l'image
-antérieure, garder les données et retirer la configuration MongoDB du service ;
-la progression du deck d'origine reste compatible. Les ensembles créés dans
-MongoDB redeviendront accessibles quand l'intégration sera réactivée.
-
-Références : [pilote Python](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/connect/mongoclient/),
-[utilisateurs Atlas](https://www.mongodb.com/docs/atlas/security-add-mongodb-users/),
-[accès réseau Atlas](https://www.mongodb.com/docs/atlas/security/ip-access-list/).
+Les mises à jour du code utilisent le dépôt HomeLab et ne créent pas de
+sauvegarde. Elles conservent la configuration MongoDB, ses collections et le
+volume `memo_data`, qui contient les identités, sessions et acquis associés.
+Voir le [guide de mise à jour](../../../SERVER-UPDATE.md).
