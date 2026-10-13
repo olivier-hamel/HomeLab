@@ -1,11 +1,11 @@
 # HomeLab
 
-One repository contains the dashboard, TV & Movies, Tempo, and Mémo.
+One repository contains the dashboard, TV & Movies, Tempo, Mémo, and Bibliothèque.
 Use `feat/memo-integration` for development and server deployment. All changes
 use one commit → push → pull workflow; see [SERVER-UPDATE.md](SERVER-UPDATE.md).
 
 **HomeLab** opens with its own HTTPS login page and lists the existing Mémo accounts.
-One Mémo session opens Tempo, TV & Movies, and Mémo; no duplicate accounts are created.
+One Mémo session opens Tempo, TV & Movies, Mémo, and Bibliothèque; no duplicate accounts are created.
 The cinema profile can switch without a password while the HomeLab login stays unchanged.
 See [shared accounts](docs/accounts.md).
 
@@ -17,7 +17,12 @@ password-protected accounts. See [Memo setup](docs/memo.md) for private HTTPS
 and persistent data. Original Git histories are preserved; see
 [repository structure and history](docs/repository.md).
 
-The browser dashboard contains only Tempo, TV & Movies, and Mémo. The apps
+**Bibliothèque** is the French document app: nested folders, PDF/PowerPoint
+imports and previews, and automatic A26 Moodle downloads every 30 minutes.
+Its UI lives in `frontend/src/pages/Library.tsx`; its API and durable file
+storage live in `backend/src/lib/library/`. See [Bibliothèque setup](docs/library.md).
+
+The browser dashboard contains Tempo, TV & Movies, Mémo, and Bibliothèque. The apps
 fill the content area; fullscreen is available from the sidebar.
 
 **TV & Movies** adds an optional TMDB catalogue,
@@ -202,7 +207,7 @@ compose.yml                  Production services and network
 .env.example                 Compose settings for your local copy
 docs/deployment.md           Home-server setup and operations guide
 frontend/
-  src/                       Dashboard navigation and TV & Movies UI
+  src/                       Dashboard navigation, TV & Movies, and Bibliothèque UI
   vite.config.ts             Development server and API proxy
   Caddyfile                  Production static serving and API proxy
   Dockerfile                 Node build and non-root Caddy runtime

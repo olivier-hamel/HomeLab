@@ -113,7 +113,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       <p className="homelab-auth-brand">HOMELAB</p>
       <div className="homelab-auth-icon"><LockKeyhole aria-hidden="true" /></div>
       <h1 id="auth-heading">{!secure || !ready ? "Ton espace se prépare…" : passwordForm ? "Un espace bien à toi." : "Heureux de te retrouver."}</h1>
-      <p>{passwordForm ? "Choisis un nouveau mot de passe pour ton compte HomeLab." : "Un seul compte pour Tempo, les films et Mémo."}</p>
+      <p>{passwordForm ? "Choisis un nouveau mot de passe pour ton compte HomeLab." : "Un seul compte pour Tempo, les films, Mémo et ta bibliothèque."}</p>
       {error && <p className="homelab-auth-error" role="alert">{error}</p>}
       {!ready ? error && <button type="button" onClick={() => void load()}>Réessayer</button> : !passwordForm && !selected ? <>
         <div className="homelab-auth-accounts" aria-label="Comptes existants">

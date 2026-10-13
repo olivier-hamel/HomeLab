@@ -6,9 +6,8 @@ export function renderShell() {
 }
 export function renderBreadcrumb(state) {
   const separator = `<span class="breadcrumb-separator">${icon("chevronRight")}</span>`;
-  if (state.page === "home") return '<span class="breadcrumb-current" aria-current="page">Accueil</span>';
-  if (state.page === "documents") return `<button class="breadcrumb-parent" data-action="home">Accueil</button>${separator}<span class="breadcrumb-current" aria-current="page">Documents</span>`;
-  const crumbs = [{label: "Accueil", action: "home"}, {label: "Calendrier", action: "month"}];
+  if (state.page === "documents") return `<button class="breadcrumb-parent" data-action="month">Calendrier</button>${separator}<span class="breadcrumb-current" aria-current="page">Documents</span>`;
+  const crumbs = [{label: "Calendrier", action: "month"}];
   if (state.view === "week" || state.view === "day") crumbs.push({label: VIEW_LABELS.week, action: "week"});
   if (state.view === "day") crumbs.push({label: VIEW_LABELS.day, action: "day"});
   return crumbs.map((crumb, index) => index === crumbs.length - 1 ? `<span class="breadcrumb-current" aria-current="page">${crumb.label}</span>` : `<button class="breadcrumb-parent" data-action="${crumb.action}">${crumb.label}</button>`).join(separator);

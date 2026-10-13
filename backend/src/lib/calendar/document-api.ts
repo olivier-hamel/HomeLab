@@ -5,12 +5,15 @@ import { CalendarDocumentStore, MAX_PDF_BYTES, MAX_PROPOSALS } from "./documents
 import { eventId, validateEvent } from "./events.ts";
 import { CalendarEventStore } from "./store.ts";
 import { analyseCalendarPdf } from "./pdf-analysis.ts";
+import { folderId } from "./folders.ts";
 
 const rates = new BoundedCache<{ count: number; startedAt: number }>(1024, 60_000);
 
 export async function handleDocumentRequest(request: Request, path: string[], username: string, documents: CalendarDocumentStore, events: CalendarEventStore, fetcher: Fetcher): Promise<Response> {
   const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
-  if (path.length === 1 && request.method === "GET") return json({ documents: await documents.list(username), aiAvailable: !!geminiApiKey() });
+  if (path.length === 1 && request.method === "GET") {
+    return json({ ...await documents.library(username), aiAvailable: !!geminiApiKey() });
+  }
   if (path.length === 1 && request.method === "POST") {
     let name: string;
     try { name = decodeURIComponent(request.headers.get("x-document-name") || ""); }
@@ -18,10 +21,24 @@ export async function handleDocumentRequest(request: Request, path: string[], us
     let bytes: Uint8Array;
     try { bytes = await readLimited(request, MAX_PDF_BYTES); }
     catch (error) { if (error instanceof MediaError && error.code === "too_large") throw new MediaError("too_large", "Chaque PDF doit faire 10 Mo maximum.", 413); throw error; }
-    const result = await documents.upload(username, eventId(request.headers.get("x-document-id")), name, bytes);
+    const result = await documents.upload(username, eventId(request.headers.get("x-document-id")), name, bytes, folderId(request.headers.get("x-document-folder")));
     return json(result, result.existing ? 200 : 201);
   }
   if (path.length < 2) throw new MediaError("method", "Cette action n’est pas disponible.", 405);
+  if (path[1] === "folders") {
+    const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 4096))));
+    if (path.length === 2 && request.method === "POST") {
+      return json({ folder: await documents.folders.create(username, eventId(body.requestId), body.name, folderId(body.parentId)) }, 201);
+    }
+    if (path.length === 3 && ["PATCH", "DELETE"].includes(request.method)) {
+      const id = eventId(path[2]);
+      if (typeof body.updatedAt !== "string" || !Number.isFinite(Date.parse(body.updatedAt))) throw new MediaError("input", "La version du dossier est manquante.", 400);
+      if (request.method === "DELETE") { await documents.removeFolder(username, id, body.updatedAt); return json({ removed: true }); }
+      if (body.name === undefined && body.parentId === undefined) throw new MediaError("input", "Choisis un nom ou un emplacement.", 400);
+      return json({ folder: await documents.folders.update(username, id, { ...(body.name !== undefined ? { name: body.name } : {}), ...(body.parentId !== undefined ? { parentId: folderId(body.parentId) } : {}) }, body.updatedAt) });
+    }
+    throw new MediaError("method", "Cette action n’est pas disponible.", 405);
+  }
   const id = eventId(path[1]);
   if (request.method === "GET" && path.length === 2) return json({ document: await documents.get(username, id) });
   if (request.method === "GET" && path.length === 3 && path[2] === "file") {
@@ -33,6 +50,7 @@ export async function handleDocumentRequest(request: Request, path: string[], us
       "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; frame-ancestors 'self'", "Referrer-Policy": "no-referrer" } });
   }
   const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 768 * 1024))));
+  if (request.method === "PATCH" && path.length === 2) return json({ document: await documents.move(username, id, folderId(body.folderId), folderId(body.previousFolderId)) });
   if (request.method === "DELETE" && path.length === 2) {
     if (typeof body.updatedAt !== "string" || !Number.isFinite(Date.parse(body.updatedAt))) throw new MediaError("input", "La version du document est manquante.", 400);
     await documents.remove(username, id, body.updatedAt);

@@ -13,10 +13,9 @@ export function renderMiniCalendar(state) {
   </section>`;
 }
 export function renderSidebar(state) {
-  if (state.page === "home") state = {...state, date: state.today};
   const today = sameDay(state.date, state.today);
-  return `<div class="sidebar-top"><a class="brand" href="./" data-action="home" aria-label="Accueil de Tempo"><span class="brand-icon">${icon("calendar")}</span><span>Tempo<span class="brand-period">.</span></span></a><button class="icon-button sidebar-close" data-action="close-sidebar" aria-label="Fermer le menu">${icon("close")}</button></div>
-    <nav class="sidebar-navigation" aria-label="Navigation principale"><button class="calendar-nav" data-action="home" ${state.page === "home" ? 'aria-current="page"' : ""}>${icon("home")}<span>Accueil</span><span class="nav-dot"></span></button><button class="calendar-nav" data-action="calendar-home" ${state.page === "calendar" ? 'aria-current="page"' : ""}>${icon("calendar")}<span>Mon calendrier</span><span class="nav-dot"></span></button>
+  return `<div class="sidebar-top"><a class="brand" href="./" data-action="month" aria-label="Calendrier Tempo"><span class="brand-icon">${icon("calendar")}</span><span>Tempo<span class="brand-period">.</span></span></a><button class="icon-button sidebar-close" data-action="close-sidebar" aria-label="Fermer le menu">${icon("close")}</button></div>
+    <nav class="sidebar-navigation" aria-label="Navigation principale"><button class="calendar-nav" data-action="calendar-home" ${state.page === "calendar" ? 'aria-current="page"' : ""}>${icon("calendar")}<span>Mon calendrier</span><span class="nav-dot"></span></button>
     <button class="calendar-nav documents-nav" data-action="documents" ${state.page === "documents" ? 'aria-current="page"' : ""}>${icon("document")}<span>Documents</span>${state.documents.length ? `<span class="document-nav-count">${state.documents.length}</span>` : '<span class="nav-dot"></span>'}</button></nav>
     ${renderMiniCalendar(state)}
     <div class="sidebar-divider"></div>

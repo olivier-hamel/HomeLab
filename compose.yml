@@ -55,6 +55,9 @@ services:
       # Local .env may contain Windows executable paths; the image uses apt's binaries.
       FFMPEG_PATH: /usr/bin/ffmpeg
       FFPROBE_PATH: /usr/bin/ffprobe
+      LIBRARY_STORAGE_PATH: /data/library
+    volumes:
+      - library_data:/data/library
     depends_on:
       memo:
         condition: service_healthy
@@ -144,6 +147,7 @@ volumes:
   memo_data:
   caddy_data:
   caddy_config:
+  library_data:
 
 networks:
   app:

@@ -8,7 +8,7 @@ export type EventInput = {
   title: string; description: string; date: string; endDate: string;
   startTime: string | null; endTime: string | null; allDay: boolean; recurrence: Recurrence | null;
 };
-export type EventSource = { documentId: string; documentName: string; proposalId: string; page: number | null };
+export type EventSource = { documentId: string; documentName: string; proposalId: string; page: number | null; origin?: "library" };
 export type CalendarEvent = EventInput & { id: string; createdAt: string; updatedAt: string; source?: EventSource };
 export const eventSchema = {
   type: "object", additionalProperties: false,
