@@ -61,3 +61,28 @@ nouveau cluster si ceux utilisés par HomeLab conviennent déjà. Le compte
 MongoDB du backend doit avoir accès à la base configurée.
 
 Voir le [contrat des événements et les vérifications](../apps/calendar/README.md#mongodb-et-gemini).
+
+## Documents
+
+La bibliothèque « Documents » permet de conserver plusieurs PDF dans Tempo,
+avec recherche, aperçu de première page, téléchargement et suppression.
+L’import accepte plusieurs fichiers et le glisser-déposer, avec une limite
+de 10 Mo par PDF. Les événements détectés par Gemini sont présentés dans une
+fenêtre de revue : sélectionne les propositions, ajuste leurs détails, puis
+confirme l’ajout au calendrier. La revue reste accessible depuis la bibliothèque.
+
+Les événements issus d’un PDF affichent leur document d’origine et un lien
+vers sa page. La suppression d’un document conserve les événements déjà
+ajoutés et remplace l’accès au fichier par une mention de suppression.
+
+MongoDB conserve les fichiers et les analyses dans `calendar_documents`,
+séparément par compte. Les index sont créés automatiquement; aucun nouveau
+volume ni changement de configuration n’est nécessaire. Les PDF sont envoyés
+à Gemini pendant l’analyse et conservés durablement dans HomeLab. Un échec de
+Gemini ne supprime pas le PDF. Sans clé Gemini, l’import et la consultation
+restent disponibles.
+
+Reconstruis les services `calendar` et `backend` pour activer cette fonctionnalité.
+Le build Docker de Tempo prépare automatiquement PDF.js; en local, exécute
+`npm ci --omit=optional --ignore-scripts` dans `apps/calendar` avant `npm run dev`.
+Consulte les [détails et vérifications des PDF](../apps/calendar/README.md#documents-pdf).

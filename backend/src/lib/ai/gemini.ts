@@ -9,6 +9,7 @@ export function geminiModel() { return process.env.GEMINI_MODEL?.trim() || DEFAU
 export async function generateGeminiObject(options: {
   instruction: string; input: unknown; schema: object; signal: AbortSignal;
   fetcher?: Fetcher; timeout?: number;
+  pdf?: Uint8Array; maxOutputTokens?: number; maxResponseBytes?: number;
 }): Promise<unknown> {
   const key = geminiApiKey();
   if (!key) throw new MediaError("ai_setup", "La création assistée est indisponible. Tu peux remplir les détails manuellement.", 503);
@@ -18,8 +19,8 @@ export async function generateGeminiObject(options: {
       signal, cache: "no-store", redirect: "error",
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: options.instruction }] },
-        contents: [{ role: "user", parts: [{ text: JSON.stringify(options.input) }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 2000, responseMimeType: "application/json", responseJsonSchema: options.schema },
+        contents: [{ role: "user", parts: [{ text: JSON.stringify(options.input) }, ...(options.pdf ? [{ inlineData: { mimeType: "application/pdf", data: Buffer.from(options.pdf).toString("base64") } }] : [])] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: options.maxOutputTokens ?? 2000, responseMimeType: "application/json", responseJsonSchema: options.schema },
       }),
     });
     if (!response.ok) {
@@ -27,10 +28,11 @@ export async function generateGeminiObject(options: {
       throw new MediaError("ai_unavailable", response.status === 429 ? "Gemini est occupé. Réessaie dans un instant ou saisis les détails manuellement." : "Gemini n’a pas pu préparer l’événement. Réessaie ou saisis les détails manuellement.", response.status === 429 ? 429 : 502);
     }
     try {
-      const envelope = record(JSON.parse(new TextDecoder().decode(await readLimited(response, 32 * 1024))));
+      const limit = options.maxResponseBytes ?? 32 * 1024;
+      const envelope = record(JSON.parse(new TextDecoder().decode(await readLimited(response, limit))));
       const candidate = record(list(envelope.candidates)[0]);
       if (candidate.finishReason !== "STOP") throw new Error("Incomplete response");
-      const output = list(record(candidate.content).parts).map(record).filter(part => part.thought !== true).map(part => string(part.text, 32 * 1024)).join("");
+      const output = list(record(candidate.content).parts).map(record).filter(part => part.thought !== true).map(part => string(part.text, limit)).join("");
       if (!output || output.includes(key)) throw new Error("Invalid response");
       return JSON.parse(output);
     } catch {

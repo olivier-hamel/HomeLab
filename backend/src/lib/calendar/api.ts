@@ -4,6 +4,8 @@ import { BoundedCache, MediaError, record, type Fetcher } from "../media/core.ts
 import { readLimited } from "../media/http.ts";
 import { eventId, eventSchema, validateEvent, validDate } from "./events.ts";
 import { CalendarEventStore } from "./store.ts";
+import { CalendarDocumentStore } from "./documents.ts";
+import { handleDocumentRequest } from "./document-api.ts";
 
 const rates = new BoundedCache<number>(1024, 60_000);
 const instruction = `Extract ONE calendar event or recurring series from the user's text, in the user's language.
@@ -36,18 +38,20 @@ function boundary(request: Request) {
     } catch { /* Invalid origin. */ }
     if (!allowed) throw new MediaError("origin", "Cette origine n’est pas autorisée.", 403);
   }
-  if (request.method !== "GET" && (!origin || request.headers.get("x-calendar-request") !== "1" || request.headers.get("content-type")?.split(";")[0] !== "application/json")) throw new MediaError("csrf", "Utilise le calendrier pour modifier un événement.", 403);
+  const pdfUpload = request.method === "POST" && new URL(request.url).pathname === "/api/calendar/documents";
+  if (request.method !== "GET" && (!origin || request.headers.get("x-calendar-request") !== "1" || request.headers.get("content-type")?.split(";")[0] !== (pdfUpload ? "application/pdf" : "application/json"))) throw new MediaError("csrf", "Utilise Tempo pour modifier le calendrier et ses documents.", 403);
 }
 function currentDate() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
-export function createCalendarApi(fetcher: Fetcher = fetch, store = new CalendarEventStore(), authenticate: AccountVerifier = createAccountVerifier(fetcher)) {
+export function createCalendarApi(fetcher: Fetcher = fetch, store = new CalendarEventStore(), authenticate: AccountVerifier = createAccountVerifier(fetcher), documents = new CalendarDocumentStore()) {
   return async (request: Request) => {
     const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
     try {
       boundary(request);
       const { user } = await authenticate(request);
       const path = new URL(request.url).pathname.replace(/^\/api\/calendar\/?/, "").split("/").filter(Boolean);
+      if (path[0] === "documents") return await handleDocumentRequest(request, path, user.username, documents, store, fetcher);
       if (request.method === "GET" && path.join("/") === "events") return json({ events: await store.list(user.username), aiAvailable: !!geminiApiKey() });
       const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 24 * 1024))));
       if (request.method === "POST" && path.join("/") === "interpret") {
