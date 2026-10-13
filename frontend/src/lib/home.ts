@@ -4,12 +4,22 @@ export type CalendarEvent = {
   id: string; title: string; description: string; date: string; endDate: string;
   allDay: boolean; startTime: string; endTime: string; occurrenceDate?: string;
   updatedAt: string; kind?: "event" | "task"; completed?: boolean; completedAt?: string | null;
+  recurrence?: { frequency: "daily" | "weekly" | "monthly" | "yearly"; interval: number; weekdays: number[]; until: string | null; count: number | null } | null;
+  completedOccurrences?: Record<string, string>;
   deadline?: { date: string; time: string | null } | null; notes?: string; links?: string[]; documentIds?: string[];
   context?: { kind: "course" | "project"; name: string; courseId?: number } | null;
 };
-export function plannerTasks(events: CalendarEvent[], today: string, includeCompleted = false) {
-  return events.filter(event => event.kind === "task" && (includeCompleted || !event.completed || event.completedAt && todayKey(new Date(event.completedAt)) === today))
+export function plannerTasks(events: CalendarEvent[], today: string, includeCompleted = false, model?: CalendarModel) {
+  const tasks = model ? model.taskOccurrencesForHome(events, today, includeCompleted) : events.filter(event => !event.recurrence);
+  return tasks.filter(event => event.kind === "task" && (includeCompleted || !event.completed || event.completedAt && todayKey(new Date(event.completedAt)) === today))
     .sort((a, b) => Number(a.completed) - Number(b.completed) || (a.deadline?.date || "9999-12-31").localeCompare(b.deadline?.date || "9999-12-31") || (a.deadline?.time || "").localeCompare(b.deadline?.time || "") || a.title.localeCompare(b.title));
+}
+export function applyTaskCompletion(event: CalendarEvent, completed: boolean, completedAt: string | null, occurrenceDate?: string): CalendarEvent {
+  if (!event.recurrence || !occurrenceDate) return { ...event, completed, completedAt };
+  const completedOccurrences = { ...event.completedOccurrences };
+  if (completed && completedAt) completedOccurrences[occurrenceDate] = completedAt;
+  else delete completedOccurrences[occurrenceDate];
+  return { ...event, completedOccurrences, completed: !!completedOccurrences[event.date], completedAt: completedOccurrences[event.date] || null };
 }
 export async function writeHomeTask(path: string, method: string, body: unknown): Promise<{ event: CalendarEvent }> {
   const response = await fetch(`/api/calendar/${path}`, { method, credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(30_000),
@@ -34,6 +44,7 @@ export async function migrateHomeTasks(store: ReturnType<typeof createHomeStore>
   return added;
 }
 export type CalendarModel = {
+  taskOccurrencesForHome: (events: CalendarEvent[], today: string, includeCompleted: boolean) => CalendarEvent[];
   eventsOnDate: (events: CalendarEvent[], date: string) => CalendarEvent[];
   eventsInRange: (events: CalendarEvent[], start: string, end: string) => CalendarEvent[];
   eventTime: (event: CalendarEvent, format: string) => string;

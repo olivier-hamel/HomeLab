@@ -3,6 +3,7 @@ import { database } from "../database.ts";
 import { MediaError } from "../media/core.ts";
 import { DEFAULT_EVENT_TYPE_ID, eventId, validateEvent, type CalendarEvent, type EventInput, type EventSource, type MoodleSource } from "./events.ts";
 import { CalendarEventTypeStore, assertEventType, resolveEventType } from "./event-types.ts";
+import { isOccurrenceDate } from "./occurrences.ts";
 
 export type StoredEvent = CalendarEvent & { username: string; removedAt?: string };
 let collectionPromise: Promise<Collection<StoredEvent>> | null = null;
@@ -16,7 +17,9 @@ async function eventCollection() {
   return collectionPromise;
 }
 function publicEvent(event: StoredEvent): CalendarEvent {
-  return { ...validateEvent(event), id: event.id, createdAt: event.createdAt, updatedAt: event.updatedAt, ...(event.source ? { source: event.source } : {}), ...(event.moodle ? { moodle: event.moodle } : {}) };
+  const completedOccurrences = event.completedOccurrences || {};
+  return { ...validateEvent(event), id: event.id, createdAt: event.createdAt, updatedAt: event.updatedAt, ...(event.source ? { source: event.source } : {}), ...(event.moodle ? { moodle: event.moodle } : {}),
+    ...(event.kind === "task" && event.recurrence ? { completedOccurrences, completed: !!completedOccurrences[event.date], completedAt: completedOccurrences[event.date] || null } : {}) };
 }
 function owner(username: string) {
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(username)) throw new MediaError("account", "Compte invalide.", 403);
@@ -36,11 +39,12 @@ export class CalendarEventStore {
     input = { ...validateEvent(input), typeId: assertEventType(input.typeId, await this.types.list(username)) };
     if (input.kind === "task") input.completedAt = input.completed ? new Date().toISOString() : null;
     const now = new Date().toISOString();
+    const completedOccurrences = input.kind === "task" && input.recurrence && input.completed ? { [input.date]: input.completedAt! } : {};
     const collection = await this.collection();
     const filter = { username: owner(username), id };
     // The unique compound index and setOnInsert make interrupted retries safe.
     try {
-      await collection.updateOne(filter, { $setOnInsert: { ...input, ...filter, ...(source ? { source } : {}), createdAt: now, updatedAt: now } }, { upsert: true });
+      await collection.updateOne(filter, { $setOnInsert: { ...input, ...filter, completedOccurrences, ...(source ? { source } : {}), createdAt: now, updatedAt: now } }, { upsert: true });
     } catch (error) {
       if ((error as { code?: number }).code !== 11000) throw error;
     }
@@ -53,9 +57,16 @@ export class CalendarEventStore {
     const collection = await this.collection();
     const current = await collection.findOne({ username: owner(username), id });
     if (current?.removedAt || current?.moodle?.available === false) throw new MediaError("not_found", "Cet élément n’est plus disponible.", 404);
-    if (input.kind === "task") input.completedAt = input.completed ? current?.completedAt || new Date().toISOString() : null;
+    const completedOccurrences = input.kind === "task" && input.recurrence ? { ...current?.completedOccurrences } : {};
+    if (input.kind === "task") {
+      input.completedAt = input.completed ? completedOccurrences[input.date] || (current?.date === input.date ? current.completedAt : null) || new Date().toISOString() : null;
+      if (input.recurrence) {
+        if (input.completed) completedOccurrences[input.date] = input.completedAt!;
+        else delete completedOccurrences[input.date];
+      }
+    }
     const updatedAt = new Date(Math.max(Date.now(), Date.parse(version) + 1)).toISOString();
-    const event = await collection.findOneAndUpdate({ username: owner(username), id, updatedAt: version }, { $set: { ...input, updatedAt } }, { returnDocument: "after" });
+    const event = await collection.findOneAndUpdate({ username: owner(username), id, updatedAt: version }, { $set: { ...input, completedOccurrences, updatedAt } }, { returnDocument: "after" });
     if (!event) await this.explainMissing(collection, username, id);
     return { ...publicEvent(event!), typeId: resolveEventType(event!.typeId, await this.types.list(username)) };
   }
@@ -81,13 +92,20 @@ export class CalendarEventStore {
     const result = await collection.deleteOne({ username: owner(username), id, updatedAt: version });
     if (!result.deletedCount && await collection.findOne({ username, id })) throw new MediaError("conflict", "Cet événement a changé. Ferme cette fenêtre et actualise le calendrier.", 409);
   }
-  async complete(username: string, id: string, completed: boolean, version: string) {
+  async complete(username: string, id: string, completed: boolean, version: string, occurrenceDate?: unknown) {
     const collection = await this.collection();
     const current = await collection.findOne({ username: owner(username), id });
     if (!current || current.removedAt || current.moodle?.available === false) throw new MediaError("not_found", "Cette tâche n’existe plus.", 404);
     if (current.kind !== "task") throw new MediaError("input", "Seule une tâche peut être cochée.", 400);
+    if (current.recurrence ? !isOccurrenceDate(current, occurrenceDate) : occurrenceDate !== undefined && occurrenceDate !== current.date) throw new MediaError("input", "Choisis une occurrence valide de cette tâche.", 400);
     const updatedAt = new Date(Math.max(Date.now(), Date.parse(version) + 1)).toISOString();
-    const event = await collection.findOneAndUpdate({ username, id, updatedAt: version }, { $set: { completed, completedAt: completed ? updatedAt : null, updatedAt } }, { returnDocument: "after" });
+    const completedOccurrences = { ...current.completedOccurrences };
+    if (current.recurrence) {
+      if (completed) completedOccurrences[occurrenceDate as string] = updatedAt;
+      else delete completedOccurrences[occurrenceDate as string];
+    }
+    const state = current.recurrence ? { completedOccurrences, completed: !!completedOccurrences[current.date], completedAt: completedOccurrences[current.date] || null } : { completed, completedAt: completed ? updatedAt : null };
+    const event = await collection.findOneAndUpdate({ username, id, updatedAt: version }, { $set: { ...state, updatedAt } }, { returnDocument: "after" });
     if (!event) await this.explainMissing(collection, username, id);
     return publicEvent(event!);
   }
@@ -113,6 +131,9 @@ export class CalendarEventStore {
       if (current.kind === "task" && current.moodle.personalDeadlineChecked && !moodle.personalDeadlineChecked) {
         Object.assign(remote, { deadline: current.deadline, date: current.date, endDate: current.endDate, startTime: current.startTime, endTime: current.endTime, allDay: current.allDay });
       }
+      // A manually configured task series keeps its schedule across Moodle
+      // refreshes; source details and availability still follow Moodle.
+      if (current.kind === "task" && current.recurrence) Object.assign(remote, { recurrence: current.recurrence, deadline: current.deadline, date: current.date, endDate: current.endDate, startTime: current.startTime, endTime: current.endTime, allDay: current.allDay });
       const updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
       const changed = await collection.findOneAndUpdate({ ...filter, updatedAt: current.updatedAt }, { $set: { ...remote, moodle, updatedAt } }, { returnDocument: "after" });
       if (changed) return;

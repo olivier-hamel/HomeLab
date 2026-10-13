@@ -1,16 +1,32 @@
-import {dateKey} from "./date.js";
-import {occurrencesBetween} from "./recurrence.js";
+import {dateKey, addDays, parseDate, todayInZone} from "./date.js";
+import {occurrencesBetween, nextOccurrence} from "./recurrence.js";
 import {eventImportance} from "./event-types.js";
 
 export const eventCount = count => `${count} événement${count > 1 ? "s" : ""}`;
 export function eventsOnDate(events = [], date) {
   const key = typeof date === "string" ? date : dateKey(date);
-  return events.flatMap(event => event.kind === "task" ? event.deadline?.date === key ? [event] : [] : occurrencesBetween(event, key, key))
+  return events.flatMap(event => event.kind === "task" && !event.deadline ? [] : occurrencesBetween(event, key, key))
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || (a.startTime || "").localeCompare(b.startTime || "") || a.title.localeCompare(b.title));
 }
 export function eventsInRange(events = [], start, end) {
-  return events.flatMap(event => event.kind === "task" ? event.deadline?.date >= start && event.deadline?.date <= end ? [event] : [] : occurrencesBetween(event, start, end))
+  return events.flatMap(event => event.kind === "task" && !event.deadline ? [] : occurrencesBetween(event, start, end))
     .sort((a, b) => a.date.localeCompare(b.date) || Number(b.allDay) - Number(a.allDay) || (a.startTime || "").localeCompare(b.startTime || "") || a.title.localeCompare(b.title));
+}
+export function taskOccurrencesForHome(events = [], today, includeCompleted = false) {
+  return events.filter(event => event.kind === "task").flatMap(event => {
+    if (!event.recurrence) return [event];
+    const done = event.completedOccurrences || {};
+    let pending = nextOccurrence(event, event.date);
+    while (pending && done[pending.date]) {
+      if (pending.date === "9999-12-31") {pending = null; break;}
+      pending = nextOccurrence(event, dateKey(addDays(parseDate(pending.date), 1)));
+    }
+    const completed = Object.entries(done).flatMap(([date, timestamp]) => {
+      if (!includeCompleted && dateKey(todayInZone("America/Toronto", new Date(timestamp))) !== today) return [];
+      return occurrencesBetween(event, date, date);
+    });
+    return [...(pending ? [pending] : []), ...completed];
+  });
 }
 export function timeLabel(time, format = "24") {
   if (!time) return "Toute la journée";
@@ -81,7 +97,7 @@ export function createEventRepository(fetcher = fetch) {
     interpret: (text, selectedDate, signal) => request("interpret", "POST", {text, selectedDate}, signal),
     addEvent: (event, requestId, signal) => request("events", "POST", {event, requestId}, signal),
     updateEvent: (event, input, signal) => request(`events/${event.id}`, "PATCH", {event: input, updatedAt: event.updatedAt}, signal),
-    completeTask: (event, completed, signal) => request(`events/${event.id}`, "PATCH", {completed, updatedAt: event.updatedAt}, signal),
+    completeTask: (event, completed, signal) => request(`events/${event.id}`, "PATCH", {completed, updatedAt: event.updatedAt, ...(event.recurrence ? {occurrenceDate: event.occurrenceDate} : {})}, signal),
     syncMoodle: signal => request("moodle-sync", "POST", {}, signal),
     deleteEvent: (event, signal) => request(`events/${event.id}`, "DELETE", {updatedAt: event.updatedAt}, signal),
   };

@@ -19,6 +19,13 @@ le titre ouvre le dialogue complet, avec échéance, notes, liens, documents de
 Bibliothèque et cours ou projet facultatif. L’ajout rapide crée une tâche pour
 aujourd’hui; « Créer avec le dialogue » ouvre la création assistée de Tempo.
 
+Une tâche récurrente affiche sa première échéance non terminée, même en retard,
+puis la suivante après la coche. Chaque date a son propre état. Les occurrences
+terminées aujourd’hui restent affichées; « Voir les terminées » donne accès aux
+autres. La suppression d’une tâche récurrente ouvre Tempo pour confirmer la
+suppression de toute la série. Les règles, notes et ressources se modifient dans
+le même dialogue que les événements.
+
 Les anciennes tâches du navigateur (`tempo:tasks:v1:<compte>`) sont transférées
 une à une, avec un identifiant stable pour reprendre un transfert interrompu
 sans doublons. Elles sont retirées du stockage local seulement après réussite.

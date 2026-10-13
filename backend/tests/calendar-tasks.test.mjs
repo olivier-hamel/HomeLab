@@ -30,7 +30,7 @@ function memoryCollection() {
   return { rows, collection, store: new CalendarEventStore(async () => collection, eventTypeFixture().types) };
 }
 
-test('tasks have point deadlines, optional course/project, validated resources and no duration or recurrence', () => {
+test('tasks have point deadlines, optional course/project, validated resources and no reserved duration', () => {
   assert.equal(task.date, '2026-10-18'); assert.equal(task.endTime, '23:59'); assert.equal(task.startTime, task.endTime);
   assert.equal(validateEvent({ ...task, deadline: null }).allDay, true);
   assert.equal(validateEvent({ ...task, context: null }).context, null);
@@ -120,4 +120,65 @@ test('API can toggle a task without sending or overwriting all its details', asy
   const request = completed => new Request(`https://homelab.test/api/calendar/events/${saved.id}`, { method: 'PATCH', headers: { Origin: 'https://homelab.test', 'Content-Type': 'application/json', 'X-Calendar-Request': '1' }, body: JSON.stringify({ completed, updatedAt: saved.updatedAt }) });
   assert.equal((await api(request('yes'))).status, 400);
   const response = await api(request(true)); assert.equal(response.status, 200); assert.equal((await response.json()).event.notes, task.notes);
+});
+
+const daily = { frequency: 'daily', interval: 1, weekdays: [], until: null, count: 3 };
+test('recurring tasks store independent server-owned checkmarks, preserve resources and reopen only the selected occurrence', async () => {
+  const { store } = memoryCollection();
+  const saved = await store.create('oli', { ...task, recurrence: daily, completed: true, completedOccurrences: { '2026-10-19': 'forged' } }, randomUUID());
+  assert.deepEqual(Object.keys(saved.completedOccurrences), ['2026-10-18']);
+  await assert.rejects(store.complete('oli', saved.id, true, saved.updatedAt), error => error.status === 400);
+  for (const date of ['2026-10-17', '2026-10-21', '2026-02-30', 19]) await assert.rejects(store.complete('oli', saved.id, true, saved.updatedAt, date), error => error.status === 400);
+  let done = await store.complete('oli', saved.id, true, saved.updatedAt, '2026-10-19');
+  assert.deepEqual(Object.keys(done.completedOccurrences), ['2026-10-18', '2026-10-19']);
+  await assert.rejects(store.complete('oli', saved.id, true, saved.updatedAt, '2026-10-20'), error => error.status === 409);
+  done = await store.complete('oli', saved.id, false, done.updatedAt, '2026-10-18');
+  assert.equal(done.completed, false); assert.equal(done.completedAt, null);
+  assert.deepEqual(Object.keys((await store.list('oli'))[0].completedOccurrences), ['2026-10-19']);
+  done = await store.update('oli', saved.id, { ...done, title: 'Nouveau titre', completedOccurrences: {} }, done.updatedAt);
+  assert(done.completedOccurrences['2026-10-19']);
+  for (const field of ['notes', 'links', 'documentIds', 'deadline', 'context']) assert.deepEqual(done[field], saved[field]);
+  const changed = await store.update('oli', saved.id, { ...done, recurrence: null, completed: false }, done.updatedAt);
+  assert.equal(changed.completedOccurrences, undefined);
+  assert.throws(() => validateEvent({ ...task, deadline: null, recurrence: daily }));
+});
+
+test('Moodle refresh preserves a manually recurring assignment and its completion dates', async () => {
+  const { store } = memoryCollection();
+  const imported = moodleImports([course], [], [assignment], 'A26')[0];
+  await store.importMoodle('oli', imported.id, imported.input, imported.moodle);
+  let saved = (await store.list('oli'))[0];
+  saved = await store.update('oli', saved.id, { ...saved, recurrence: daily }, saved.updatedAt);
+  saved = await store.complete('oli', saved.id, true, saved.updatedAt, saved.date);
+  const changed = moodleImports([course], [], [{ ...assignment, name: 'TP2 mis à jour', effective_due_at: '2026-10-30T03:59:00Z' }], 'A26')[0];
+  await store.importMoodle('oli', changed.id, changed.input, changed.moodle);
+  const refreshed = (await store.list('oli'))[0];
+  assert.equal(refreshed.title, 'TP2 mis à jour'); assert.deepEqual(refreshed.recurrence, daily);
+  assert.deepEqual(refreshed.deadline, saved.deadline); assert.deepEqual(refreshed.completedOccurrences, saved.completedOccurrences);
+});
+
+test('completion API requires a real occurrence date for a recurring task', async () => {
+  const f = memoryCollection(), saved = await f.store.create('oli', { ...task, recurrence: daily }, randomUUID());
+  const api = createCalendarApi(async () => { throw new Error('No AI'); }, f.store, async () => ({ user: { username: 'oli' }, accounts: [] }));
+  const request = occurrenceDate => new Request(`https://homelab.test/api/calendar/events/${saved.id}`, { method: 'PATCH', headers: { Origin: 'https://homelab.test', 'Content-Type': 'application/json', 'X-Calendar-Request': '1' }, body: JSON.stringify({ completed: true, occurrenceDate, updatedAt: saved.updatedAt }) });
+  assert.equal((await api(request())).status, 400);
+  assert.equal((await api(request('2026-10-21'))).status, 400);
+  const response = await api(request('2026-10-19')); assert.equal(response.status, 200);
+  const result = (await response.json()).event; assert.equal(result.completed, false); assert(result.completedOccurrences['2026-10-19']);
+});
+
+test('chat prepares a recurring task with a first deadline and never saves the draft', async () => {
+  const original = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = 'recurrence-test-only';
+  const f = memoryCollection(); let prompt;
+  const expected = { ...task, recurrence: { frequency: 'weekly', interval: 2, weekdays: [0], count: 4, until: null } };
+  const fetcher = async (_url, init) => {
+    prompt = JSON.parse(init.body).instructions;
+    return Response.json({ status: 'completed', output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify({ event: expected, clarification: null }) }] }] });
+  };
+  const api = createCalendarApi(fetcher, f.store, async () => ({ user: { username: 'oli' }, accounts: [] }));
+  try {
+    const response = await api(new Request('https://homelab.test/api/calendar/interpret', { method: 'POST', headers: { Origin: 'https://homelab.test', 'Content-Type': 'application/json', 'X-Calendar-Request': '1' }, body: JSON.stringify({ text: 'Préparer mon cours un dimanche sur deux à 23 h 59, quatre fois', selectedDate: task.date }) }));
+    assert.equal(response.status, 200); assert.deepEqual((await response.json()).event.recurrence, expected.recurrence);
+    assert.match(prompt, /Tasks support the same recurrence rules as events/); assert.equal(f.rows.length, 0);
+  } finally { if (original === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = original; }
 });

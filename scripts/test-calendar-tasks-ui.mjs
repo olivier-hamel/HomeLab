@@ -29,7 +29,13 @@ await page.route('**/*', async route => {
     if (req.method() === 'DELETE') { events = events.filter(event => event.id !== id); return json(route, { removed: true }); }
     const previous = events.find(event => event.id === id);
     const event = { ...previous, ...body.event, id, createdAt: previous?.createdAt || '2026-10-13T12:00:00Z', updatedAt: new Date(Date.parse('2026-10-13T12:00:00Z') + ++revision).toISOString() };
-    if (body.completed !== undefined) Object.assign(event, { completed: body.completed, completedAt: body.completed ? '2026-10-13T16:00:00Z' : null });
+    if (body.completed !== undefined) {
+      if (event.recurrence) {
+        assert(body.occurrenceDate); const done = { ...event.completedOccurrences };
+        if (body.completed) done[body.occurrenceDate] = '2026-10-13T16:00:00Z'; else delete done[body.occurrenceDate];
+        Object.assign(event, { completedOccurrences: done, completed: !!done[event.date], completedAt: done[event.date] || null });
+      } else Object.assign(event, { completed: body.completed, completedAt: body.completed ? '2026-10-13T16:00:00Z' : null });
+    }
     events = [...events.filter(row => row.id !== id), event]; return json(route, { event });
   }
   if (path.startsWith('/api/')) return json(route, { error: 'Unused fixture route' }, 503);
@@ -75,6 +81,8 @@ try {
   await expect(page.locator('.start-task-list li')).toHaveClass('is-complete');
   await page.reload(); await expect(page.locator('.start-task-list input[type="checkbox"]')).toBeChecked();
   await page.locator('.start-task-list input[type="checkbox"]').uncheck();
+  await expect(page.locator('.start-task-list input[type="checkbox"]')).not.toBeChecked();
+  await expect(page.locator('.start-task-list input[type="checkbox"]')).toBeEnabled();
   failWrites = true;
   await page.locator('.start-task-list input[type="checkbox"]').click();
   await expect(page.locator('.start-task-error')).toContainText('Connexion interrompue');
@@ -111,6 +119,53 @@ try {
   await expect(page.locator('.calendar-task-open').filter({ hasText: 'Organiser les photos' })).toHaveCount(0);
   await page.goto('https://planner.test/?section=home');
   await expect(page.locator('.start-task-details').filter({ hasText: 'Organiser les photos' })).toContainText('Sans échéance');
+  await page.goto(`https://planner.test/calendar/?date=${date}&view=week`);
+  await page.locator('[data-action="create-event"]').first().click();
+  await page.locator('[data-action="event-manual"]').click();
+  await page.locator('#event-kind').selectOption('task');
+  await page.locator('#event-title').fill('Réviser chaque semaine');
+  await page.locator('#event-date').fill(date);
+  await page.locator('[name="allDay"]').check();
+  await page.locator('[name="hasDeadline"]').uncheck();
+  await page.locator('#event-frequency').selectOption('weekly');
+  await expect(page.locator('[name="hasDeadline"]')).toBeChecked();
+  await expect(page.locator('[name="hasDeadline"]')).toBeDisabled();
+  await expect(page.locator('#event-date-label')).toHaveText('Première échéance');
+  await page.locator('[name="recurrenceWeekdays"][value="2"]').uncheck();
+  await page.locator('[name="recurrenceWeekdays"][value="3"]').check();
+  await page.locator('[name="recurrenceWeekdays"][value="5"]').check();
+  await page.locator('#event-recurrence-end').selectOption('count');
+  await page.locator('#event-count').fill('3');
+  await page.screenshot({ path: resolve(output, 'recurring-task-dialog.png') });
+  await page.locator('#event-save-form button[type="submit"]').click();
+  await expect(page.locator('dialog')).toHaveCount(0);
+  const series = events.find(event => event.title === 'Réviser chaque semaine');
+  assert.equal(series.date, '2026-10-14'); assert.equal(series.deadline.date, series.date);
+  assert.equal(series.recurrence.count, 3); assert.deepEqual(series.recurrence.weekdays, [3, 5]);
+  const check = date => page.locator(`[data-action="toggle-task"][data-event-id="${series.id}"][data-occurrence-date="${date}"]`);
+  await check('2026-10-16').click();
+  await expect(check('2026-10-16')).toHaveAttribute('aria-checked', 'true');
+  await expect(check('2026-10-14')).toHaveAttribute('aria-checked', 'false');
+  await page.reload(); await expect(check('2026-10-16')).toHaveAttribute('aria-checked', 'true');
+  await check('2026-10-16').click(); await expect(check('2026-10-16')).toHaveAttribute('aria-checked', 'false');
+  await page.goto('https://planner.test/?section=home');
+  const recurring = page.locator('.start-task-list li').filter({ hasText: 'Réviser chaque semaine' });
+  await expect(recurring).toHaveCount(1); await expect(recurring).toContainText('14 oct.');
+  await recurring.locator('input[type="checkbox"]').check();
+  await expect(recurring).toHaveCount(2);
+  await expect(recurring.filter({ hasText: '16 oct.' }).locator('input')).not.toBeChecked();
+  await page.reload(); await expect(recurring).toHaveCount(2);
+  await recurring.filter({ hasText: '14 oct.' }).locator('input').uncheck();
+  await expect(recurring).toHaveCount(1); await expect(recurring).toContainText('14 oct.');
+  await page.getByLabel('Gérer la suppression de la série : Réviser chaque semaine').click();
+  const seriesFrame = page.frameLocator('iframe[title="Tempo — calendrier"]');
+  await expect(seriesFrame.locator('#event-frequency')).toHaveValue('weekly');
+  await expect(seriesFrame.locator('[name="completed"]')).not.toBeChecked();
+  await seriesFrame.locator('[data-action="event-delete"]').click();
+  await expect(seriesFrame.locator('#event-delete-confirm')).toContainText('Supprimer toute la série?');
+  await seriesFrame.locator('[data-action="event-delete-confirm"]').click();
+  await expect(seriesFrame.locator('dialog')).toHaveCount(0);
+  assert(!events.some(event => event.id === series.id));
   assert.deepEqual(errors, []);
-  console.log('Task UI passed: chat classification, timed deadline, notes/links/documents/course, save/reload/reopen, HomeLab completion, failed writes, deep links, deletion and desktop/mobile layouts.');
+  console.log('Task UI passed: chat classification, timed deadline, notes/links/documents/course, save/reload/reopen, HomeLab completion, failed writes, deep links, deletion recurrence alignment/counts, independent checkmarks, next Home occurrence, series deletion and desktop/mobile layouts.');
 } finally { await browser.close(); }

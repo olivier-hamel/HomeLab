@@ -132,6 +132,28 @@ accès à la base configurée.
 
 Voir le [contrat des événements et les vérifications](../apps/calendar/README.md#mongodb-et-openai).
 
+## Tâches et Moodle
+
+Le dialogue permet aussi de créer une tâche avec échéance facultative, coche,
+notes, liens, documents de Bibliothèque et association facultative à un cours ou
+projet. Le chat choisit entre tâche et événement selon la demande. Les tâches
+apparaissent dans les trois vues et sur l’accueil.
+
+Le champ « Répétition » applique les mêmes fréquences et limites aux tâches.
+Une première échéance est nécessaire. Chaque occurrence se coche séparément;
+les notes, liens et documents sont communs. Le dialogue modifie la série et
+sa première coche. L’accueil affiche la première échéance non terminée puis
+la suivante. La suppression concerne toute la série et demande confirmation.
+
+Le backend importe les événements et boîtes de remise Moodle de la session
+actuelle, sans IA, à l’ouverture puis périodiquement toutes les 30 minutes.
+Les boîtes de remise deviennent des tâches; leurs prolongations personnelles
+sont utilisées quand le connecteur les fournit et vérifie. Le statut signale
+les réponses incomplètes. Le bouton de synchronisation permet un rafraîchissement
+manuel. Les coches et ressources locales sont conservées. Une tâche Moodle
+rendue récurrente conserve aussi son calendrier personnalisé lors des mises à
+jour. Une suppression conserve un marqueur durable pour empêcher la réimportation.
+
 ## Documents de Bibliothèque
 
 Tempo utilise les PDF et PowerPoint de [Bibliothèque](library.md#tempo-et-mémo).
