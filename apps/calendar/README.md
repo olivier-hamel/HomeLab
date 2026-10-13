@@ -98,8 +98,11 @@ Si une date de fin sur plusieurs jours a été saisie avec une série sans fin,
 une action permet d’utiliser cette date comme fin de série et de ramener
 l’occurrence à une journée (ou à une nuit pour un horaire qui traverse minuit).
 
-Le calendrier adapte sa hauteur à l’espace disponible pour afficher le mois ou
-les 24 heures de la semaine et de la journée sans défilement de la grille.
+Le mois adapte sa hauteur à l’espace disponible. Les vues semaine et jour
+gardent 64 pixels par heure et défilent verticalement pour conserver des cartes
+lisibles. Elles s’ouvrent à 8 h et préservent le défilement pendant les mises à
+jour. Les événements courts gardent une hauteur minimale; leurs cartes occupent
+des colonnes distinctes lorsque cette hauteur crée un chevauchement visuel.
 La vue semaine conserve ses sept jours visibles sur les petits écrans.
 
 Dans la vue mois, les événements sans type qui se répètent toutes les trois

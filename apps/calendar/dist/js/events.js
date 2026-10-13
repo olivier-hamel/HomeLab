@@ -22,20 +22,22 @@ export function eventTime(event, format = "24") {
   return event.allDay ? "Toute la journée" : `${timeLabel(event.startTime, format)} – ${timeLabel(event.endTime, format)}`;
 }
 const minutes = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
-export function layoutTimedEvents(events, date, types = []) {
+export function layoutTimedEvents(events, date, types = [], minimumDuration = 0) {
   const key = dateKey(date);
   const rows = eventsOnDate(events, key).filter(event => !event.allDay).map(event => ({event,
     start: event.date === key ? minutes(event.startTime) : 0,
     end: event.kind === "task" ? Math.min(1440, minutes(event.startTime) + 15) : event.endDate === key ? minutes(event.endTime) : 1440,
-  })).sort((a, b) => a.start - b.start || b.end - a.end);
-  // Assign lanes to intersecting groups so no event obscures another event.
+  })).map(row => ({...row, displayStart: Math.min(row.start, 1440 - minimumDuration), displayEnd: Math.min(1440, Math.max(row.end, Math.min(row.start, 1440 - minimumDuration) + minimumDuration))}))
+    .sort((a, b) => a.displayStart - b.displayStart || b.displayEnd - a.displayEnd);
+  // Include each card's readable minimum height when assigning overlap lanes,
+  // while preserving start/end as the event's actual time and duration.
   let group = [], groupEnd = -1;
   function finish() {
     const lanes = [];
     for (const row of group) {
-      let lane = lanes.findIndex(end => end <= row.start);
+      let lane = lanes.findIndex(end => end <= row.displayStart);
       if (lane < 0) lane = lanes.length;
-      lanes[lane] = row.end;
+      lanes[lane] = row.displayEnd;
       row.lane = lane;
     }
     for (const row of group) row.lanes = lanes.length;
@@ -47,8 +49,8 @@ export function layoutTimedEvents(events, date, types = []) {
     }
   }
   for (const row of rows) {
-    if (row.start >= groupEnd) {finish(); group = []; groupEnd = -1;}
-    group.push(row); groupEnd = Math.max(groupEnd, row.end);
+    if (row.displayStart >= groupEnd) {finish(); group = []; groupEnd = -1;}
+    group.push(row); groupEnd = Math.max(groupEnd, row.displayEnd);
   }
   finish();
   return rows;

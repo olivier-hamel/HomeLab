@@ -18,6 +18,19 @@ test('overlapping events get separate lanes and back-to-back events use full wid
  const rows=layoutTimedEvents([base,{...base,id:'two',startTime:'14:30',endTime:'15:30'},{...base,id:'three',startTime:'16:00',endTime:'17:00'}],civilDate(2026,9,12));
  assert.equal(rows[0].lanes,2); assert.equal(rows[1].lanes,2); assert.notEqual(rows[0].lane,rows[1].lane); assert.equal(rows[2].lanes,1);
 });
+
+test('short cards get readable non-overlapping lanes without changing their actual times',()=>{
+ const events=[{...base,id:'first',startTime:'14:00',endTime:'14:05'},{...base,id:'second',startTime:'14:05',endTime:'14:10'},{...base,id:'late',startTime:'23:59',endTime:'00:00',endDate:'2026-10-13'}];
+ const rows=layoutTimedEvents(events,civilDate(2026,9,12),[],30);
+ assert.equal(rows[0].end-rows[0].start,5);
+ assert.equal(rows[1].start,845);
+ assert.notEqual(rows[0].lane,rows[1].lane);
+ assert.equal(rows[0].lanes,2);
+ assert.equal(rows[2].start,1439);
+ assert.equal(rows[2].displayStart,1410);
+ assert.equal(rows[2].displayEnd,1440);
+ assert.equal(events[0].endTime,'14:05');
+});
 test('events render safely in all calendar views',()=>{
  const store=createCalendarStore(); store.setEvents([{...base,title:'<img src=x onerror=alert(1)>',description:'<script>bad</script>'}],{eventsStatus:'ready'});
  for(const view of ['month','week','day']) {

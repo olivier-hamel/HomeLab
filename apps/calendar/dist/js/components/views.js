@@ -34,8 +34,8 @@ function renderTimedEvents(state, date) {
   const events = (state.events || []).filter(event => event.kind !== "task");
   const regular = events.filter(event => !discreet(event, state, true));
   const recurring = layoutTimedEvents(events.filter(event => discreet(event, state, true)), date);
-  const position = (row, minimumHeight) => `top:${row.start / 1440 * 100}%;height:min(${(1440 - row.start) / 1440 * 100}%, max(${minimumHeight}px, calc(${(row.end - row.start) / 1440 * 100}% - 2px)))`;
-  const buttons = layoutTimedEvents(regular, date, state.eventTypes).map(row => eventButton(row.event, state, `time-event ${row.end - row.start < 60 ? "short-event" : ""}`, `${position(row, 16)};left:calc(${row.offset * 100}% + 3px);width:calc(${row.width * 100}% - 6px)`)).join("");
+  const position = (row, minimumHeight) => `top:${row.displayStart / 1440 * 100}%;height:min(${(1440 - row.displayStart) / 1440 * 100}%, max(${minimumHeight}px, calc(${(row.displayEnd - row.displayStart) / 1440 * 100}% - 2px)))`;
+  const buttons = layoutTimedEvents(regular, date, state.eventTypes, 30).map(row => eventButton(row.event, state, `time-event ${row.end - row.start < 60 ? "short-event" : ""}`, `${position(row, 24)};left:calc(${row.offset * 100}% + 3px);width:calc(${row.width * 100}% - 6px)`)).join("");
   if (!recurring.length) return buttons;
   // Discreet event types keep a separate gutter alongside the visible cards.
   const gutter = `min(25%, ${Math.max(...recurring.map(row => row.lanes)) * 12}px)`;
