@@ -47,6 +47,13 @@ existante. La collection `calendar_events` et les index sont créés automatique
 Les requêtes de lecture et d’écriture utilisent le compte vérifié par Mémo.
 Les modifications concurrentes sont détectées avant l’écriture.
 
+Le champ « Répétition » propose les fréquences quotidienne, hebdomadaire,
+mensuelle et annuelle, un intervalle réglable et une fin facultative (date
+incluse ou nombre d’occurrences). Une série reste un seul document MongoDB ;
+les vues calculent ses occurrences pour les dates affichées, à l’heure locale
+de Toronto. La modification et la suppression concernent toute la série.
+Gemini peut préparer ces mêmes règles depuis une description en langage naturel.
+
 La création assistée réutilise `GEMINI_API_KEY`, exclusivement côté serveur;
 `GEMINI_MODEL` est optionnel. Mémo conserve ses variables `MEMO_*` dans son
 service distinct. Il n’est pas nécessaire de créer une nouvelle clé ou un

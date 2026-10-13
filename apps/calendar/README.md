@@ -75,8 +75,20 @@ le bouton + d’une date prépare cette date; dans la vue jour, cliquer une heur
 préremplit son horaire. Clique sur un événement pour modifier ses détails.
 La suppression demande une confirmation; fermer un brouillon modifié protège
 les détails non enregistrés. Les événements sur plusieurs jours et toute
-la journée sont pris en charge. Une série récurrente doit être saisie comme
-des événements distincts.
+la journée sont pris en charge. Le champ « Répétition » permet de répéter un
+événement chaque jour, semaine, mois ou année, avec un intervalle de 1 à 99.
+Par exemple, choisis « Chaque semaine », un intervalle de 2 et dimanche pour
+un souper un dimanche sur deux. Tu peux sélectionner plusieurs jours de la
+semaine et terminer la série à une date (incluse) ou après 1 à 1 000 occurrences.
+Sans fin, les occurrences continuent lors de la navigation vers les dates futures.
+
+Une série est enregistrée comme un seul événement. Cliquer sur une occurrence
+ouvre les détails de la première occurrence ; la modification ou la suppression
+s’applique à toute la série, comme indiqué dans la fenêtre. Les heures restent
+locales à Toronto, y compris lors des changements d’heure. Les semaines de
+répétition commencent le lundi, quelle que soit la préférence d’affichage.
+Pour les répétitions mensuelles, les mois sans le jour choisi sont sautés
+(ex. le 31) ; le 29 février annuel se répète seulement les années bissextiles.
 
 Les raccourcis existants sont conservés : `H` pour l’accueil, `M` pour le mois,
 `W` pour la semaine, `D` pour le jour, `T` pour aujourd’hui, `G` pour choisir
@@ -115,13 +127,25 @@ L’objet retourné par Gemini et accepté par `addEvent` suit ce même contrat 
   endDate: "2026-10-16",
   startTime: "19:00",
   endTime: "21:00",
-  allDay: false
+  allDay: false,
+  recurrence: null // ou { frequency: "weekly", interval: 2, weekdays: [5], until: null, count: 6 }
 }
 ```
 
 Les heures sont des valeurs locales à Toronto; pour toute la journée, les
 heures valent `null` et la date de fin est inclusive. Le backend valide
-chaque objet. Gemini prépare seulement un brouillon : l’ajout nécessite
+chaque objet, y compris la règle de récurrence. `frequency` vaut `daily`,
+`weekly`, `monthly` ou `yearly`. `weekdays` contient les jours de la semaine
+(`0` = dimanche, `6` = samedi) seulement pour `weekly`, sinon `[]`. Le jour de
+la première occurrence doit être sélectionné. `until` et `count` sont exclusifs,
+ou tous deux `null` pour une série sans fin. `date` et `endDate` décrivent la
+première occurrence, pas la durée de la série. Les événements existants sans
+`recurrence` restent compatibles.
+
+Gemini comprend par exemple « Souper tous les dimanches à 19 h pendant deux
+heures » ou « Yoga un mardi sur deux à 18 h, six fois ». Il demande une précision
+pour les règles non prises en charge, comme le dernier dimanche du mois.
+Gemini prépare seulement un brouillon : l’ajout nécessite
 l’action de l’utilisateur. Les dates relatives suivent la date actuelle
 à Toronto, même lorsqu’un autre mois est affiché.
 

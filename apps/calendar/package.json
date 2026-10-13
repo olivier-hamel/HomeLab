@@ -6,6 +6,6 @@
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check dist/js/app.js && node --check dist/js/components/views.js && node --check dist/js/components/home.js && node --check dist/js/components/shell.js && node --check dist/js/state.js && node --check dist/js/account.js && node --check dist/js/events.js && node --check dist/js/event-controller.js && node --check dist/js/components/event-dialog.js"
+    "check": "node --check dist/js/app.js && node --check dist/js/components/views.js && node --check dist/js/components/home.js && node --check dist/js/components/shell.js && node --check dist/js/state.js && node --check dist/js/account.js && node --check dist/js/events.js && node --check dist/js/recurrence.js && node --check dist/js/event-controller.js && node --check dist/js/components/event-dialog.js"
   }
 }

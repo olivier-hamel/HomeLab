@@ -4,7 +4,7 @@ import {escapeHtml as esc} from "../account.js";
 import {icon} from "./icons.js";
 
 function eventButton(event, state, className = "event-chip", style = "") {
-  const label = `${event.title}, ${eventTime(event, state.preferences.timeFormat)}. Modifier l’événement`;
+  const label = `${event.title}, ${eventTime(event, state.preferences.timeFormat)}${event.recurrence ? ", récurrent" : ""}. ${event.recurrence ? "Modifier toute la série" : "Modifier l’événement"}`;
   return `<button class="${className} ${event.allDay ? "is-all-day" : ""}" data-action="open-event" data-event-id="${event.id}" ${style ? `style="${style}"` : ""} aria-label="${esc(label)}" title="${esc(label)}"><span class="event-chip-time">${event.allDay ? "" : esc(timeLabel(event.startTime, state.preferences.timeFormat))}</span><span class="event-chip-title">${esc(event.title)}</span></button>`;
 }
 export function renderMonth(state) {
