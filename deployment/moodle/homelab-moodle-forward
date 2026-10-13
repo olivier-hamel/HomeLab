@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode=${MOODLE_FORWARD_MODE:-docker}
+container=${MOODLE_BACKEND_CONTAINER:-homelab-backend-1}
+host=${MOODLE_SSH_HOST:-192.168.0.196}
+case "$host" in ''|-*|*[!a-zA-Z0-9._-]*) echo 'Invalid Moodle SSH host' >&2; exit 1 ;; esac
+
+ssh_command=(/usr/bin/setpriv --reuid=homelab-moodle --regid=homelab-moodle --init-groups
+  /usr/bin/ssh -F /dev/null -N -T -p 22
+  -o BatchMode=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=10
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3
+  -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o IdentityAgent=none
+  -o UserKnownHostsFile=/var/lib/homelab-moodle/.ssh/known_hosts
+  -i /var/lib/homelab-moodle/.ssh/id_ed25519
+  -L 127.0.0.1:18000:127.0.0.1:8000 "agent@$host")
+
+if [[ "$mode" == native ]]; then
+  exec "${ssh_command[@]}"
+fi
+if [[ "$mode" != docker ]]; then echo 'Invalid Moodle forward mode' >&2; exit 1; fi
+
+backend_pid() {
+  /usr/bin/docker inspect --format '{{if .State.Running}}{{.State.Pid}}{{end}}' "$container" 2>/dev/null || true
+}
+pid=$(backend_pid)
+if [[ ! "$pid" =~ ^[1-9][0-9]*$ || ! -e "/proc/$pid/ns/net" ]]; then
+  echo 'Waiting for the HomeLab backend container' >&2
+  exit 1
+fi
+
+# Only enter the network namespace; use the VM's SSH binary, account and key.
+# The forward binds to container loopback and has no host/LAN listener.
+/usr/bin/nsenter --net="/proc/$pid/ns/net" -- "${ssh_command[@]}" &
+forward_pid=$!
+cleanup() {
+  kill "$forward_pid" 2>/dev/null || true
+  wait "$forward_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT
+while kill -0 "$forward_pid" 2>/dev/null; do
+  # A container recreation changes its network namespace. Restart the forward
+  # there as well, rather than leaving SSH running in the old namespace.
+  if [[ "$(backend_pid)" != "$pid" ]]; then
+    echo 'HomeLab backend restarted; reconnecting the Moodle forward' >&2
+    exit 1
+  fi
+  sleep 2 &
+  wait $! || true
+done
+wait "$forward_pid"
