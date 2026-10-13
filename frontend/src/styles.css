@@ -93,7 +93,7 @@
 }
 html, body, #root { min-height: 100%; }
 
-.media-profile-gate { display: grid; min-height: calc(100svh - 4rem); place-items: center; padding: 3rem 1rem; background: radial-gradient(circle at 50% 15%, #2b1a10 0, #0a0a0a 45%); }
+.media-profile-gate { display: grid; min-height: 100%; place-items: center; padding: 3rem 1rem; background: radial-gradient(circle at 50% 15%, #2b1a10 0, #0a0a0a 45%); }
 .media-profile-panel { width: min(100%, 52rem); text-align: center; }
 .media-profile-kicker { margin-bottom: .75rem; color: #fb923c; font-size: .75rem; font-weight: 700; letter-spacing: .24em; }
 .media-profile-panel h1 { color: #fff; font-size: clamp(2rem, 6vw, 4rem); font-weight: 650; letter-spacing: -.04em; }
@@ -202,8 +202,7 @@ html[data-tv-mode="true"] {
   background: #171717;
 }
 
-[data-tv-mode="true"] .tv-footer label { color: #a3a3a3; }
-[data-tv-mode="true"] .tv-footer select { border: 1px solid #525252; border-radius: .375rem; background: #171717; color: #d4d4d4; }
+[data-tv-mode="true"] .media-profile-gate { min-height: 100svh; }
 [data-tv-mode="true"] .tv-footer [data-build-tag] { border: 1px solid #c2410c99; border-radius: .25rem; padding: .5rem .75rem; background: #431407; color: #fed7aa; font-size: .85rem; font-weight: 600; letter-spacing: .025em; }
 html[data-tv-mode="true"][data-tv-profile-chooser="true"] .tv-footer { display: none; }
 html[data-tv-mode="true"][data-tv-discovery="true"] .tv-footer { display: none; }
@@ -466,7 +465,7 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
 @media (min-width: 768px) and (hover: hover) {
   .dashboard-sidebar[data-keyboard-focus] { width: 4rem; overflow-x: clip; }
   .dashboard-sidebar:is(:hover, [data-keyboard-focus="true"]) { width: 17.5rem; }
-  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) :is(.dashboard-sidebar-brand, .dashboard-sidebar-label, .dashboard-sidebar-sample) { display: none; }
+  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) :is(.dashboard-sidebar-brand, .dashboard-sidebar-label) { display: none; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-mark { display: block; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-header { justify-content: center; padding-inline: .5rem; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-content { padding-inline: .5rem; }
