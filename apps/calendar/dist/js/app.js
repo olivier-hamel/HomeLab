@@ -24,6 +24,8 @@ let renderedPeriod = null;
 let renderedView = null;
 let renderedPage = null;
 let renderedToday = null;
+let homeSearchQuery = "";
+let homeTaskDraft = "";
 
 app.innerHTML = renderShell();
 const eventController = createEventController(store, dialogRoot);
@@ -36,10 +38,17 @@ function render(state, reason = "initial") {
   const focusWasMonth = active?.classList.contains("month-date");
   const focusWasMini = active?.classList.contains("mini-day");
   const focusDocumentId = active?.closest("[data-document-id]")?.dataset.documentId;
+  const focusTaskId = active?.dataset.taskId;
+  const taskFocusIndex = focusTaskId ? Array.from(app.querySelectorAll('.home-task')).findIndex(row => row.contains(active)) : -1;
+  const homeControlId = ["home-search-input", "home-task-title", "search-google", "search-duckduckgo"].includes(active?.id) ? active.id : null;
+  const homeSelection = homeControlId && active.type !== "radio" ? [active.selectionStart, active.selectionEnd] : null;
+  homeSearchQuery = document.getElementById("home-search-input")?.value ?? homeSearchQuery;
+  homeTaskDraft = document.getElementById("home-task-title")?.value ?? homeTaskDraft;
   const searchFocused = active?.id === "document-search";
   const searchSelection = searchFocused ? [active.selectionStart, active.selectionEnd] : null;
   const content = document.getElementById("calendar-content");
   const oldScroll = document.querySelector(".time-scroll")?.scrollTop;
+  const oldTaskScroll = app.querySelector(".home-task-list")?.scrollTop;
   const previousPage = renderedPage;
   if (reason !== "clock" || renderedToday !== dateKey(state.today)) document.getElementById("sidebar").innerHTML = renderSidebar(state);
   renderedToday = dateKey(state.today);
@@ -56,6 +65,7 @@ function render(state, reason = "initial") {
   }
   const isHome = state.page === "home";
   const isDocuments = state.page === "documents";
+  app.querySelector("main").classList.toggle("is-home-page", isHome);
   document.getElementById("workspace-breadcrumb").innerHTML = renderBreadcrumb(state);
   app.querySelector(".calendar-workspace").classList.toggle("is-home", isHome);
   app.querySelector(".calendar-workspace").classList.toggle("is-documents", isDocuments);
@@ -77,6 +87,10 @@ function render(state, reason = "initial") {
   if (isDocuments) {content.innerHTML = renderDocuments(state); void renderPdfPreview(content);}
   else if (isHome) {
     content.innerHTML = renderHome(state);
+    document.getElementById("home-search-input").value = homeSearchQuery;
+    document.getElementById("home-task-title").value = homeTaskDraft;
+    const taskList = content.querySelector(".home-task-list");
+    if (taskList) taskList.scrollTop = reason === "task-add" ? taskList.scrollHeight : oldTaskScroll || 0;
     content.querySelector(".home-page").classList.toggle("entering", previousPage !== "home");
   }
   else if (retainMonth) {
@@ -97,7 +111,15 @@ function render(state, reason = "initial") {
   if (previousPage !== state.page) content.scrollTop = 0;
   const scroll = app.querySelector(".time-scroll");
   if (scroll) scroll.scrollTop = oldScroll !== undefined && !["view", "drilldown"].includes(reason) ? oldScroll : 7 * 64 - 16;
-  if (isDocuments && searchFocused) {const input = document.getElementById("document-search"); input?.focus({preventScroll: true}); if (input && searchSelection) input.setSelectionRange(...searchSelection);}
+  if (isHome && homeControlId) {const input = document.getElementById(homeControlId); input?.focus({preventScroll: true}); if (input && homeSelection) input.setSelectionRange(...homeSelection);}
+  else if (isHome && focusTaskId) {
+    const taskControls = Array.from(app.querySelectorAll('[data-task-id]'));
+    const target = taskControls.find(element => element.dataset.taskId === focusTaskId && element.tagName === active.tagName)
+      || app.querySelectorAll('.home-task input')[Math.max(0, taskFocusIndex - 1)] || document.getElementById("home-task-title");
+    target?.focus({preventScroll: true});
+  }
+  else if (isHome && reason === "initial" && window.matchMedia("(pointer: fine)").matches) document.getElementById("home-search-input").focus({preventScroll: true});
+  else if (isDocuments && searchFocused) {const input = document.getElementById("document-search"); input?.focus({preventScroll: true}); if (input && searchSelection) input.setSelectionRange(...searchSelection);}
   else if (reason === "documents-open") document.getElementById("documents-title")?.focus({preventScroll: true});
   else if (isDocuments && reason === "document-select" && state.documentDetailsOpen) {content.scrollTop = 0; app.querySelector('.inspector-back')?.focus({preventScroll: true});}
   else if (isDocuments && reason === "document-back") app.querySelector(`[data-action="document-select"][data-document-id="${state.selectedDocumentId}"]`)?.focus();
@@ -152,13 +174,41 @@ const actions = {
   "open-day": element => store.openDate(parseDate(element.dataset.date), "day"),
   "today-day": () => store.openDate(store.getState().today, "day"),
   "today-week": () => store.openDate(store.getState().today, "week"),
+  "remove-task": element => {store.removeTask(element.dataset.taskId); document.getElementById("announcement").textContent = "Tâche supprimée.";},
   jump: () => openDialog("jump"), settings: () => openDialog("settings"), shortcuts: () => openDialog("shortcuts"),
   "close-dialog": closeDialog, "jump-today": () => {closeDialog(); store.goToday();},
   "toggle-sidebar": () => store.toggleSidebar(), "close-sidebar": () => store.closeSidebar(),
   "calendar-home": () => store.setView(store.getState().view)
 };
 document.addEventListener("click", event => {const element = event.target.closest("[data-action]"); if (element) {event.preventDefault(); actions[element.dataset.action]?.(element);}});
+document.addEventListener("change", event => {
+  if (event.target.matches('.search-engines input')) store.setPreferences({searchEngine: event.target.value});
+  if (event.target.matches('.home-task input')) {
+    const completed = event.target.checked;
+    store.toggleTask(event.target.dataset.taskId);
+    document.getElementById("announcement").textContent = completed ? "Tâche terminée." : "Tâche remise à faire.";
+  }
+});
+document.addEventListener("input", event => {
+  if (["home-search-input", "home-task-title"].includes(event.target.id)) event.target.setCustomValidity("");
+});
 document.addEventListener("submit", event => {
+  if (event.target.id === "home-search-form") {
+    const input = event.target.elements.q;
+    input.value = input.value.trim();
+    if (!input.value) {event.preventDefault(); input.setCustomValidity("Écris quelque chose à rechercher."); input.reportValidity();}
+  }
+  if (event.target.id === "home-task-form") {
+    event.preventDefault();
+    const input = event.target.elements.title;
+    const title = input.value.trim();
+    if (!title) {input.setCustomValidity("Écris le titre de ta tâche."); input.reportValidity(); return;}
+    input.value = "";
+    homeTaskDraft = "";
+    store.addTask(title);
+    document.getElementById("home-task-title").focus({preventScroll: true});
+    document.getElementById("announcement").textContent = "Tâche ajoutée.";
+  }
   if (event.target.id === "jump-form") {
     event.preventDefault();
     const date = parseDate(new FormData(event.target).get("date"));
@@ -167,7 +217,7 @@ document.addEventListener("submit", event => {
   if (event.target.id === "preferences-form") {
     event.preventDefault();
     const fields = new FormData(event.target);
-    store.setPreferences({weekStart: Number(fields.get("weekStart")), timeFormat: fields.get("timeFormat")});
+    store.setPreferences({weekStart: Number(fields.get("weekStart")), timeFormat: fields.get("timeFormat"), searchEngine: fields.get("searchEngine")});
     closeDialog();
   }
 });
@@ -187,11 +237,12 @@ document.addEventListener("keydown", event => {
     store.selectDate(addDays(parseDate(dateButton.dataset.date), delta), "keyboard-date");
     return;
   }
-  const shortcuts = {n: eventController.openCreate, h: actions.home, m: actions.month, w: actions.week, d: actions.day, t: actions.today, g: actions.jump, "?": actions.shortcuts, ArrowLeft: actions.prev, ArrowRight: actions.next};
+  const shortcuts = {n: eventController.openCreate, h: actions.home, m: actions.month, w: actions.week, d: actions.day, t: actions.today, g: actions.jump, "/": () => {store.goHome(); document.getElementById("home-search-input").focus();}, "?": actions.shortcuts, ArrowLeft: actions.prev, ArrowRight: actions.next};
   const action = shortcuts[event.key.length === 1 ? event.key.toLowerCase() : event.key];
   if (action) {event.preventDefault(); action();}
 });
 store.subscribe(render);
+window.addEventListener("storage", event => {if (event.storageArea === storage) store.syncLocalStorage(event.key);});
 render(store.getState());
 void eventController.loadEvents();
 void documentController.loadDocuments();

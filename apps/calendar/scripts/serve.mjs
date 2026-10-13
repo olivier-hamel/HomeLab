@@ -24,4 +24,4 @@ createServer(async (request, response) => {
     response.writeHead(200, {"Content-Type": (types[path.extname(file)] || "application/octet-stream") + "; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"});
     response.end(body);
   } catch {response.writeHead(404); response.end("Not found");}
-}).listen(port, "0.0.0.0", () => console.log(`Tempo est prêt. Adresse locale : http://localhost:${port}`));
+}).listen(port, process.env.CALENDAR_HOST || "0.0.0.0", () => console.log(`Tempo est prêt. Adresse locale : http://localhost:${port}`));

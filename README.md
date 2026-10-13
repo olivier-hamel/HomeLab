@@ -135,6 +135,18 @@ Install [Node.js 24](https://nodejs.org/en/download), including npm. The root
 `.nvmrc` selects Node 24. Each app keeps its own dependencies and npm lockfile;
 Tempo uses locally served PDF.js assets, prepared by `npm run dev`.
 
+Start all four local services from the repository root with:
+
+```sh
+./start-local.sh
+```
+
+The launcher prepares dependencies, sets up a local development account and
+prints `http://localhost:3000` once everything is ready. `Ctrl+C` stops all
+services. Configure Gemini and MongoDB in the private `backend/.env`; local
+database names and account setup are described in the
+[local testing guide](docs/calendar-local.md#interface-complète-dans-le-navigateur).
+
 From the repository root, start the frontend in one terminal:
 
 ```sh
