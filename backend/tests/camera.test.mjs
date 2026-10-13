@@ -113,12 +113,13 @@ test('C200 movement omits unsupported optical zoom, uses its minimum one-second 
   await control.stop(config);
   assert.match(bodies[2], /<Stop\b/);
 });
-test('a real FFmpeg relay shares one encoder between viewers and produces playable HLS assets', async () => {
+test('a real FFmpeg relay shares one encoder and aligns absolute audio/video clocks in playable short segments', async () => {
   let starts = 0;
   const streams = new TapoStreams((_binary, args, options) => {
     starts++;
     const output = args.slice(args.indexOf('-map'));
-    return spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=20[out0];sine=frequency=440:sample_rate=8000[out1]', ...output], options);
+    const clock = args.slice(args.indexOf('-copyts'), args.indexOf('-i'));
+    return spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-use_wallclock_as_timestamps', '1', ...clock, '-re', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=20[out0];sine=frequency=440:sample_rate=8000[out1]', ...output], options);
   });
   try {
     const [first, second] = await Promise.all([streams.asset(config, 'hd', 'index.m3u8', AbortSignal.timeout(15_000)), streams.asset(config, 'hd', 'index.m3u8', AbortSignal.timeout(15_000))]);
@@ -131,12 +132,16 @@ test('a real FFmpeg relay shares one encoder between viewers and produces playab
     const segment = manifest.match(/segment-\d{9}\.ts/)[0];
     const bytes = await streams.asset(config, 'hd', segment, AbortSignal.timeout(1000)); assert.equal(bytes[0], 0x47); assert.ok(bytes.length > 1000);
     const tracks = await new Promise((resolve, reject) => {
-      const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name', '-of', 'json', 'pipe:0']);
+      const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,start_time,duration', '-of', 'json', 'pipe:0']);
       let result = ''; child.stdout.on('data', chunk => { result += chunk; }); child.stderr.resume();
       child.on('error', reject); child.on('close', code => code ? reject(new Error('Segment probe failed')) : resolve(JSON.parse(result).streams)); child.stdin.end(bytes);
     });
     assert.ok(tracks.some(track => track.codec_name === 'h264'));
     assert.ok(tracks.some(track => track.codec_name === 'aac'), 'The initial short segment must include audio so the player creates both buffers');
+    const video = tracks.find(track => track.codec_type === 'video');
+    const audio = tracks.find(track => track.codec_type === 'audio');
+    assert.ok(Number(video.start_time) < 10 && Number(audio.start_time) < 10, 'Absolute input clocks must be rebased before MPEG-TS timestamp rollover');
+    assert.ok(Math.abs(Number(video.start_time) - Number(audio.start_time)) < 0.25, 'Audio and video must share the same playback clock');
     await assert.rejects(streams.asset(config, 'hd', '../account.json', AbortSignal.timeout(1000)), error => error.status === 404);
   } finally { streams.reset(); }
 });
