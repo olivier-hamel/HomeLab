@@ -6,7 +6,7 @@ declare module "onvif" {
     activeSource?: { ptz?: boolean };
     getDeviceInformation(callback: Callback): void;
     getPresets(options: Record<string, never>, callback: Callback<Record<string, { name?: string }>>): void;
-    continuousMove(options: { x: number; y: number; timeout: number }, callback: Callback): void;
+    continuousMove(options: { x: number; y: number; timeout: number; onlySendPanTilt: boolean }, callback: Callback): void;
     stop(options: { panTilt: boolean; zoom: boolean }, callback: Callback): void;
     gotoPreset(options: { preset: string }, callback: Callback): void;
     setPreset(options: { presetName: string }, callback: Callback<string>): void;

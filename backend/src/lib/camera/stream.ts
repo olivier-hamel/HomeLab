@@ -10,9 +10,16 @@ export function rtspInput(config: CameraConfig, quality: Quality) {
   return `rtsp://${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@${cameraHost()}:554/${quality === "hd" ? "stream1" : "stream2"}`;
 }
 export function streamArguments(input: string, directory: string) {
-  return ["-hide_banner", "-loglevel", "error", "-nostdin", "-rtsp_transport", "tcp", "-timeout", "10000000", "-i", input,
-    "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy", "-c:a", "aac", "-ar", "16000", "-b:a", "48k",
-    "-f", "hls", "-hls_time", "1", "-hls_list_size", "5", "-hls_delete_threshold", "2", "-hls_flags", "delete_segments+omit_endlist+temp_file",
+  // The C200 can send backward audio timestamps. Arrival times and asynchronous
+  // resampling keep AAC monotonic, including in the first short segment.
+  return ["-hide_banner", "-loglevel", "error", "-nostdin", "-fflags", "+nobuffer+discardcorrupt", "-flags", "low_delay",
+    "-analyzeduration", "200000", "-probesize", "32768", "-rtsp_transport", "tcp", "-reorder_queue_size", "0", "-use_wallclock_as_timestamps", "1", "-timeout", "10000000", "-i", input,
+    // Copying H.264 keeps the camera's roughly two-second keyframe interval.
+    // A shared, bounded encoder produces independently decodable 600 ms chunks.
+    "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-threads", "2",
+    "-vf", "fps=20", "-fps_mode", "passthrough", "-g", "12", "-keyint_min", "12", "-sc_threshold", "0", "-bf", "0", "-flags", "+cgop", "-crf", "23", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-af", "aresample=async=1000:first_pts=0", "-ar", "16000", "-b:a", "48k", "-max_interleave_delta", "100000", "-max_delay", "0", "-flush_packets", "1",
+    "-f", "hls", "-hls_time", "0.6", "-hls_list_size", "6", "-hls_delete_threshold", "2", "-hls_flags", "delete_segments+omit_endlist+temp_file+independent_segments+program_date_time",
     "-hls_segment_filename", join(directory, "segment-%09d.ts"), join(directory, "index.m3u8")];
 }
 type Job = { directory: string; child: ChildProcess; touched: number; failed: boolean; expired: boolean; timer: ReturnType<typeof setInterval> };

@@ -86,6 +86,7 @@ try {
   await page.getByRole('button', { name: 'Relancer le direct', exact: true }).first().click();
   await expect(page.locator('.camera-live-badge')).toHaveText('DIRECT', { timeout: 20_000 });
   await expect(page.locator('video')).toHaveAttribute('src', /^blob:/);
+  await page.getByRole('button', { name: 'Revenir au direct', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Capture', exact: true })).toBeEnabled();
   await shot('desktop-synthetic-live');
   await page.getByRole('button', { name: 'Orienter vers la gauche' }).click();
