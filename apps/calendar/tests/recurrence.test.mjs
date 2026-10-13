@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {eventsOnDate,eventsInRange,layoutTimedEvents} from '../dist/js/events.js';
 import {civilDate} from '../dist/js/date.js';
-import {renderHome} from '../dist/js/components/home.js';
-import {createCalendarStore} from '../dist/js/state.js';
 import {eventDialog} from '../dist/js/components/event-dialog.js';
 
 const base={id:'series-one',title:'Souper',description:'',date:'2026-10-18',endDate:'2026-10-18',startTime:'19:00',endTime:'21:00',allDay:false,recurrence:{frequency:'weekly',interval:2,weekdays:[0],until:null,count:null}};
@@ -59,11 +57,11 @@ test('series stop at the maximum supported date and work at year 1',()=>{
   assert.deepEqual(dates(weekly,'9999-12-30','9999-12-31'),['9999-12-30']);
 });
 
-test('home counts actual occurrences and editing clearly targets the whole series',()=>{
-  const store=createCalendarStore();store.setEvents([base],{eventsStatus:'ready'});
-  const html=renderHome({...store.getState(),today:civilDate(2026,10,1)});
-  assert(html.includes('1 événement dans les 14 prochains jours'));assert(!html.includes('Aucun événement dans les 14 prochains jours'));
-  assert(html.includes('data-event-id="series-one"'));
+test('agenda ranges count actual occurrences and editing clearly targets the whole series',()=>{
+  const upcoming=eventsInRange([base],'2026-11-02','2026-11-15');
+  assert.equal(upcoming.length,1);
+  assert.equal(upcoming[0].id,'series-one');
+  assert.equal(upcoming[0].date,'2026-11-15');
   const dialog=eventDialog({event:base,date:base.date,aiAvailable:true});
   assert(dialog.includes('Tu modifies toute la série'));assert(dialog.includes('Supprimer toute la série?'));assert(dialog.includes('Toutes les 2 semaines'));
 });

@@ -112,8 +112,9 @@ come from the course list; file IDs are passed unchanged with the same course.
 The backend rechecks both memberships before reading. An unsupported format
 or upstream tool error returns a sanitized error; it never returns the private
 MCP error body. Responses use `Cache-Control: no-store`. Document text is not
-persisted, logged, or sent to Gemini by this connector. There is no new Tempo
-interface or automatic event import in this change.
+persisted, logged, or sent to Gemini by these routes. [Bibliothèque](library.md)
+provides a separate French document explorer and automatically saves A26
+PDF/PowerPoint originals through the additional `download_file` MCP tool.
 
 The current server wraps list outputs in `structuredContent.result` and emits
 one JSON text block per row. `read_file` returns one JSON text block. The client

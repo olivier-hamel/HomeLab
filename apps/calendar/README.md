@@ -200,6 +200,16 @@ Voir le [guide de test local](../../docs/calendar-local.md) pour lancer aussi
 l’interface complète.
 
 « Documents » ouvre une bibliothèque avec recherche et filtre « À vérifier ».
+« Nouveau dossier » crée un dossier à l’emplacement affiché; chaque dossier
+peut contenir des PDF et d’autres dossiers. Le fil d’Ariane permet de remonter
+dans la bibliothèque. Le menu de chaque dossier propose de le renommer, de
+le déplacer avec tout son contenu ou de le supprimer lorsqu’il est vide.
+Dans les détails d’un PDF, « Déplacer » permet de choisir son dossier ou de
+le remettre à la racine. Les imports sont enregistrés dans le dossier ouvert,
+même si tu navigues ailleurs pendant l’import. Un PDF déjà présent conserve
+son emplacement. La recherche et « À vérifier » couvrent toute la bibliothèque
+et affichent l’emplacement des résultats.
+
 Ajoute plusieurs PDF par le bouton ou par glisser-déposer (10 Mo par fichier).
 Sur ordinateur, le panneau de détails présente l’aperçu de première page,
 l’original à ouvrir ou télécharger et les événements associés. Sur téléphone,
@@ -226,6 +236,13 @@ laisse une marge sous la limite BSON de 16 Mio pour les métadonnées. Le même
 PDF importé plusieurs fois dans un compte est reconnu par son empreinte SHA-256.
 Les listes n’incluent jamais les octets PDF. Les originaux et toutes les
 opérations nécessitent la session HomeLab.
+
+La collection `calendar_document_libraries` conserve les dossiers et les
+emplacements des PDF séparément pour chaque compte. Les changements de
+structure sont atomiques pour empêcher les déplacements circulaires, même
+depuis plusieurs onglets. Les documents existants apparaissent à la racine;
+aucune migration manuelle n’est nécessaire. Déplacer ou renommer un dossier
+conserve les analyses, les fichiers originaux et les liens des événements.
 
 Les PDF sont envoyés à Gemini comme données PDF intégrées à la requête
 d’analyse. Leur conservation durable est assurée par HomeLab; elle ne dépend

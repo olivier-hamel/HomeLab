@@ -1,9 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createCalendarStore} from "../dist/js/state.js";
-import {civilDate, dateKey, weekDates, formatDate} from "../dist/js/date.js";
+import {civilDate, dateKey, weekDates} from "../dist/js/date.js";
 import {renderCalendar} from "../dist/js/components/views.js";
-import {renderHome} from "../dist/js/components/home.js";
 import {renderBreadcrumb} from "../dist/js/components/shell.js";
 
 test("Month → week → day preserves the chosen date across a month boundary", () => {
@@ -28,43 +27,20 @@ test("Month → week → day preserves the chosen date across a month boundary",
   assert.equal(dateKey(store.getState().date), "2026-11-01");
 });
 
-test("Home uses today's date after browsing a different year, and its shortcuts open today", () => {
-  const store = createCalendarStore();
-  assert.equal(store.getState().page, "home");
-  store.setEvents([], {eventsStatus: "ready"});
-  const actualToday = dateKey(store.getState().today);
-  store.openDate(civilDate(2031, 4, 17), "day");
-  store.goHome();
-  const state = store.getState();
-  assert.equal(state.page, "home");
-  assert.equal(dateKey(state.today), actualToday);
-  const html = renderHome(state);
-  assert(html.includes(formatDate(state.today, {weekday: "long", month: "long", day: "numeric"})));
-  assert(html.includes(`data-date="${actualToday}"`));
-  assert.match(html, /Tu n’as aucun événement prévu aujourd’hui/);
-  assert.match(html, /0 événement/);
-  assert(!html.includes("2031"));
-  store.setView("month");
-  assert.equal(dateKey(store.getState().date), actualToday);
-  store.goHome();
-  store.openDate(store.getState().today, "day");
-  assert.equal(store.getState().view, "day");
-  assert.equal(dateKey(store.getState().date), actualToday);
-});
-
-test("Home greeting respects Toronto time instead of the host time zone", () => {
-  const state = {...createCalendarStore().getState(), today: civilDate(2026, 9, 12)};
-  assert.match(renderHome(state, new Date("2026-10-12T13:00:00Z")), /Bonjour\./);
-  assert.match(renderHome(state, new Date("2026-10-12T19:00:00Z")), /Bon après-midi\./);
-  assert.match(renderHome(state, new Date("2026-10-12T23:00:00Z")), /Bonsoir\./);
+test("Tempo opens directly on the month calendar", () => {
+  const state = createCalendarStore().getState();
+  assert.equal(state.page, "calendar");
+  assert.equal(state.view, "month");
+  assert.equal(dateKey(state.date), dateKey(state.today));
+  assert.match(renderCalendar(state), /class="month-view calendar-panel" role="grid"/);
 });
 
 test("Every level has a clear breadcrumb back to the wider calendar", () => {
   const store = createCalendarStore();
-  assert.match(renderBreadcrumb(store.getState()), /aria-current="page">Accueil/);
+  assert.match(renderBreadcrumb(store.getState()), /aria-current="page">Calendrier/);
   store.openDate(civilDate(2026, 9, 12), "day");
   const html = renderBreadcrumb(store.getState());
-  assert.match(html, /data-action="home"/);
+  assert(!html.includes("Accueil"));
   assert.match(html, /data-action="month"/);
   assert.match(html, /data-action="week"/);
   assert.match(html, /aria-current="page">Jour/);
@@ -87,9 +63,4 @@ test("Calendar uses the HomeLab account and isolates preferences between account
   createCalendarStore(storage, oli).setPreferences({weekStart: 0, timeFormat: "24"});
   assert.equal(createCalendarStore(storage, max).getState().preferences.weekStart, 1);
   assert.equal(createCalendarStore(storage, oli).getState().preferences.timeFormat, "24");
-  assert.match(renderHome(createCalendarStore(storage, oli).getState()), /, Oli\./);
-  const unsafe = {username: "test", display_name: '<script>alert("x")</script>'};
-  const html = renderHome(createCalendarStore(storage, unsafe).getState());
-  assert(!html.includes("<script>"));
-  assert(html.includes("&lt;script&gt;"));
 });

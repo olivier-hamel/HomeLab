@@ -19,11 +19,13 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     PORT=3001
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg libreoffice-impress fonts-dejavu-core fonts-liberation \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home app \
-    && chown app:app /app
+    && chown app:app /app \
+    && mkdir -p /data/library \
+    && chown app:app /data/library
 COPY --from=build --chown=app:app /app/.next/standalone/ ./
 COPY --from=build --chown=app:app /app/.next/static/ ./.next/static/
 COPY --from=build --chown=app:app /app/public/ ./public/
@@ -31,6 +33,8 @@ COPY --from=build --chown=app:app /app/public/ ./public/
 COPY --from=build --chown=app:app /app/scripts/check-moodle.mjs ./scripts/check-moodle.mjs
 COPY --from=build --chown=app:app /app/src/lib/moodle/client.ts ./src/lib/moodle/client.ts
 COPY --from=build --chown=app:app /app/src/lib/media/core.ts /app/src/lib/media/http.ts ./src/lib/media/
+COPY --from=build --chown=app:app /app/scripts/sync-library.mjs ./scripts/sync-library.mjs
+COPY --from=build --chown=app:app /app/src/lib/library/ ./src/lib/library/
 USER 10001:10001
 EXPOSE 3001
 CMD ["node", "server.js"]

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { calendarFrameUrl } from "../lib/navigation";
 
-export default function Calendar({ onEscape }: { onEscape?: () => void }) {
+export default function Calendar({ onEscape, search = "" }: { onEscape?: () => void; search?: string }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -35,7 +36,7 @@ export default function Calendar({ onEscape }: { onEscape?: () => void }) {
   }, [attempt]);
 
   return <section className="calendar-page" aria-label="Tempo">
-    {status === "ready" ? <iframe ref={iframe} title="Tempo — ta journée en un coup d’œil" src="/calendar/" className="calendar-frame" /> : <div className="calendar-status" role="status">
+    {status === "ready" ? <iframe ref={iframe} title="Tempo — calendrier" src={calendarFrameUrl(search)} className="calendar-frame" /> : <div className="calendar-status" role="status">
       <h1>{status === "error" ? "Tempo est indisponible." : "Ouverture de Tempo…"}</h1>
       {status === "error" && <><p>La connexion est temporairement indisponible. Réessaie dans un instant.</p><button type="button" onClick={() => { setStatus("loading"); setAttempt(value => value + 1); }}><RefreshCw size={18} /> Réessayer</button></>}
     </div>}

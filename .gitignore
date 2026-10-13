@@ -46,6 +46,7 @@ backups/
 deployment-private/
 .worktrees/
 .local-data/
+frontend/public/library-pdf/
 .gemini-api-key
 flashcard_progress.json
 **/users/

@@ -1,5 +1,5 @@
-import {createDocumentRepository, MAX_PDF_BYTES, pendingProposals} from "./documents.js";
-import {reviewDocumentsDialog, deleteDocumentDialog} from "./components/documents.js";
+import {createDocumentRepository, MAX_PDF_BYTES, pendingProposals, folderDescendants} from "./documents.js";
+import {reviewDocumentsDialog, deleteDocumentDialog, folderNameDialog, moveItemDialog, moveDialogContent, deleteFolderDialog} from "./components/documents.js";
 import {parseDate} from "./date.js";
 
 export function createDocumentController(store, dialogRoot, eventController) {
@@ -11,13 +11,17 @@ export function createDocumentController(store, dialogRoot, eventController) {
   function upsert(document) {
     ++loadId;
     const documents = store.getState().documents.filter(row => row.id !== document.id);
-    store.setDocuments([...documents, document].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), {documentsStatus: "ready", documentsError: "", selectedDocumentId: store.getState().selectedDocumentId || document.id});
+    store.setDocuments([...documents, document].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), {documentsStatus: "ready", documentsError: "", selectedDocumentId: store.getState().selectedDocumentId || ((document.folderId ?? null) === store.getState().currentFolderId ? document.id : null)});
   }
   async function loadDocuments() {
     const id = ++loadId;
     try {
       const result = await repository.list();
-      if (id === loadId) store.setDocuments(result.documents, {documentsStatus: "ready", documentsError: "", aiAvailable: result.aiAvailable, selectedDocumentId: result.documents.some(document => document.id === store.getState().selectedDocumentId) ? store.getState().selectedDocumentId : result.documents[0]?.id || null});
+      if (id === loadId) {
+        const folders = result.folders || [];
+        const currentFolderId = folders.some(folder => folder.id === store.getState().currentFolderId) ? store.getState().currentFolderId : null;
+        store.setDocuments(result.documents, {documentFolders: folders, currentFolderId, documentsStatus: "ready", documentsError: "", aiAvailable: result.aiAvailable, selectedDocumentId: result.documents.some(document => document.id === store.getState().selectedDocumentId) ? store.getState().selectedDocumentId : result.documents.find(document => (document.folderId ?? null) === currentFolderId)?.id || null});
+      }
     } catch (error) {if (id === loadId) store.setDocuments(store.getState().documents, {documentsStatus: "error", documentsError: error.message});}
   }
   function readRow(row, original) {
@@ -57,7 +61,7 @@ export function createDocumentController(store, dialogRoot, eventController) {
     if (!current) return;
     current.busy = value;
     current.dialog.setAttribute("aria-busy", String(value));
-    for (const element of current.dialog.querySelectorAll("button, input, textarea")) {
+    for (const element of current.dialog.querySelectorAll("button, input, textarea, select")) {
       if (value) {element.dataset.wasDisabled = String(element.disabled); element.disabled = true;}
       else if (element.dataset.wasDisabled !== undefined) {element.disabled = element.dataset.wasDisabled === "true"; delete element.dataset.wasDisabled;}
     }
@@ -80,7 +84,9 @@ export function createDocumentController(store, dialogRoot, eventController) {
       (document.contains(opener) ? opener : document.querySelector('[data-action="document-add"]') || document.querySelector('[data-action="documents"]'))?.focus({preventScroll: true});
     });
     dialog.showModal();
-    dialog.querySelector('[data-action="document-dialog-close"]')?.focus();
+    const input = dialog.querySelector("#folder-name");
+    (input || dialog.querySelector('[data-action="document-dialog-close"]'))?.focus();
+    input?.select();
     return true;
   }
   function review(ids) {
@@ -115,9 +121,10 @@ export function createDocumentController(store, dialogRoot, eventController) {
         let document = job.documentId ? lookup(job.documentId) : null;
         if (!document) {
           job.status = "uploading"; publishJobs();
-          const result = await repository.upload(job.file, job.id);
+          const result = await repository.upload(job.file, job.id, job.folderId);
           document = result.document; job.documentId = document.id; job.file = null; upsert(document);
-          if (result.existing) job.message = "Ce PDF est déjà dans ta bibliothèque.";
+          job.existing = result.existing;
+          job.folderUnavailable = result.folderUnavailable;
         }
         if (document.analysisState !== "ready" && store.getState().aiAvailable) {
           job.status = "analysing"; job.message = ""; publishJobs();
@@ -125,7 +132,9 @@ export function createDocumentController(store, dialogRoot, eventController) {
           document = (await repository.analyze(document.id)).document; upsert(document);
         }
         job.status = "done";
-        job.message = document.analysisState === "ready" ? document.proposals.length ? `${document.proposals.length} événement${document.proposals.length > 1 ? "s" : ""} détecté${document.proposals.length > 1 ? "s" : ""} · PDF enregistré` : "PDF enregistré · aucun événement détecté" : "PDF enregistré · analyse disponible avec Gemini";
+        job.message = document.analysisState === "ready" ? document.proposals.length ? `${document.proposals.length} événement${document.proposals.length > 1 ? "s" : ""} détecté${document.proposals.length > 1 ? "s" : ""} · PDF enregistré` : "PDF enregistré · aucun événement détecté" : "PDF enregistré · analyse disponible";
+        if (job.existing) job.message += " · Déjà présent, emplacement conservé";
+        if (job.folderUnavailable) job.message += " · Dossier supprimé, PDF conservé dans Documents";
         if (pendingProposals(document, store.getState().events).length) reviewQueue.add(document.id);
       } catch (err) {
         job.status = "error"; job.message = err.message;
@@ -146,7 +155,7 @@ export function createDocumentController(store, dialogRoot, eventController) {
     store.goDocuments();
     for (const file of files) {
       const message = !/\.pdf$/i.test(file.name) ? "Choisis un fichier PDF." : file.size > MAX_PDF_BYTES ? "Ce PDF dépasse la limite de 10 Mo." : !file.size ? "Ce fichier est vide." : "";
-      jobs.push({id: crypto.randomUUID(), name: file.name, file, status: message ? "error" : "waiting", message, retryable: !message});
+      jobs.push({id: crypto.randomUUID(), name: file.name, file, folderId: store.getState().currentFolderId, status: message ? "error" : "waiting", message, retryable: !message});
     }
     publishJobs(); void processJobs();
   }
@@ -201,6 +210,59 @@ export function createDocumentController(store, dialogRoot, eventController) {
       context.busy = false; context.dialog.close(); eventController.toast("PDF supprimé. Les événements restent au calendrier.");
     } catch (err) {error(err.message); busy(false); if (["conflict", "not_found"].includes(err.code)) {await loadDocuments(); context.document = lookup(context.document.id) || context.document;}}
   }
+  const lookupFolder = id => store.getState().documentFolders.find(folder => folder.id === id);
+  function acceptFolder(folder) {
+    ++loadId;
+    const state = store.getState();
+    store.setDocuments(state.documents, {documentFolders: [...state.documentFolders.filter(row => row.id !== folder.id), folder]});
+  }
+  function openMove(item, itemType) {
+    if (!item) return;
+    openDialog(moveItemDialog(item, itemType, store.getState().documentFolders, null), {type: "move", item, itemType, destinationId: null});
+  }
+  async function saveFolder() {
+    const context = current;
+    if (context?.type !== "folder-name" || context.busy) return;
+    const input = context.dialog.querySelector("#folder-name");
+    if (!input.value.trim()) {input.setCustomValidity("Donne un nom à ce dossier."); input.reportValidity(); return;}
+    if (!input.reportValidity()) return;
+    const name = input.value.trim();
+    error(""); busy(true);
+    try {
+      const result = context.folder ? await repository.updateFolder(context.folder, {name}) : await repository.createFolder(name, context.parentId, context.requestId);
+      acceptFolder(result.folder);
+      context.busy = false; context.dialog.close(); eventController.toast(context.folder ? "Dossier renommé." : "Dossier créé.");
+    } catch (err) {error(err.message); busy(false); if (["conflict", "not_found"].includes(err.code)) {await loadDocuments(); if (context.folder) context.folder = lookupFolder(context.folder.id) || context.folder;}}
+  }
+  async function moveItem() {
+    const context = current;
+    if (context?.type !== "move" || context.busy) return;
+    error(""); busy(true);
+    try {
+      if (context.itemType === "folder") acceptFolder((await repository.updateFolder(context.item, {parentId: context.destinationId})).folder);
+      else {
+        const result = await repository.move(context.item, context.destinationId);
+        upsert(result.document);
+        store.setDocuments(store.getState().documents, {selectedDocumentId: null, documentDetailsOpen: false});
+      }
+      context.busy = false; context.dialog.close(); eventController.toast(context.itemType === "folder" ? "Dossier déplacé avec son contenu." : "PDF déplacé.");
+    } catch (err) {
+      error(err.message); busy(false);
+      if (["conflict", "not_found"].includes(err.code)) {await loadDocuments(); context.item = (context.itemType === "folder" ? lookupFolder(context.item.id) : lookup(context.item.id)) || context.item;}
+    }
+  }
+  async function removeFolder() {
+    const context = current;
+    if (context?.type !== "folder-delete" || context.busy) return;
+    error(""); busy(true);
+    try {
+      await repository.removeFolder(context.folder);
+      ++loadId;
+      const state = store.getState();
+      store.setDocuments(state.documents, {documentFolders: state.documentFolders.filter(folder => folder.id !== context.folder.id), ...(state.currentFolderId === context.folder.id ? {currentFolderId: context.folder.parentId, selectedDocumentId: null, documentDetailsOpen: false} : {})});
+      context.busy = false; context.dialog.close(); eventController.toast("Dossier supprimé.");
+    } catch (err) {error(err.message); busy(false); if (["conflict", "not_found", "not_empty"].includes(err.code)) {await loadDocuments(); context.folder = lookupFolder(context.folder.id) || context.folder;}}
+  }
   const actions = {
     documents: () => {store.goDocuments(); if (store.getState().documentsStatus !== "ready") void loadDocuments();},
     "documents-retry": loadDocuments,
@@ -214,10 +276,28 @@ export function createDocumentController(store, dialogRoot, eventController) {
     "document-analyze": element => {const document = lookup(element.dataset.documentId); if (!document || jobs.some(job => job.documentId === document.id && ["waiting", "uploading", "analysing"].includes(job.status))) return; jobs.push({id: crypto.randomUUID(), documentId: document.id, name: document.name, status: "waiting", retryable: true}); publishJobs(); void processJobs();},
     "document-job-retry": element => {const job = jobs.find(job => job.id === element.dataset.jobId); if (job?.status === "error" && job.retryable) {job.status = "waiting"; job.message = ""; publishJobs(); void processJobs();}},
     "document-jobs-dismiss": () => {for (let i = jobs.length - 1; i >= 0; i--) if (["done", "error"].includes(jobs[i].status)) jobs.splice(i, 1); publishJobs();},
+    "folder-open": element => store.openDocumentFolder(element.dataset.folderId || null),
+    "folder-create": () => {const state = store.getState(); openDialog(folderNameDialog(null, state.documentFolders, state.currentFolderId), {type: "folder-name", folder: null, parentId: state.currentFolderId, requestId: crypto.randomUUID()});},
+    "folder-rename": element => {const folder = lookupFolder(element.dataset.folderId); if (folder) openDialog(folderNameDialog(folder, store.getState().documentFolders, folder.parentId), {type: "folder-name", folder});},
+    "folder-delete": element => {const folder = lookupFolder(element.dataset.folderId); if (folder) openDialog(deleteFolderDialog(folder), {type: "folder-delete", folder});},
+    "folder-delete-confirm": removeFolder,
+    "folder-move": element => openMove(lookupFolder(element.dataset.folderId), "folder"),
+    "document-move": element => openMove(lookup(element.dataset.documentId), "document"),
+    "folder-move-browse": element => {
+      if (current?.type !== "move" || current.busy) return;
+      const id = element.dataset.folderId || null, folders = store.getState().documentFolders;
+      if (id && (!lookupFolder(id) || current.itemType === "folder" && folderDescendants(folders, current.item.id).has(id))) return;
+      current.destinationId = id;
+      current.dialog.innerHTML = moveDialogContent(current.item, current.itemType, folders, id);
+      current.dialog.querySelector("#move-destination").focus({preventScroll: true});
+    },
+    "folder-move-confirm": moveItem,
   };
   document.addEventListener("click", event => {const element = event.target.closest("[data-action]"); if (element && !element.disabled && actions[element.dataset.action]) {event.preventDefault(); void actions[element.dataset.action](element);}});
-  document.addEventListener("submit", event => {if (event.target.id === "document-review-form") {event.preventDefault(); void addEvents();}});
-  document.addEventListener("input", event => {if (event.target.id === "document-search") store.setDocumentQuery(event.target.value); if (event.target.closest(".document-proposal")) captureDrafts();});
+  document.addEventListener("submit", event => {if (event.target.id === "document-review-form") {event.preventDefault(); void addEvents();} if (event.target.id === "folder-name-form") {event.preventDefault(); void saveFolder();}});
+  document.addEventListener("input", event => {if (event.target.id === "document-search") store.setDocumentQuery(event.target.value); if (event.target.id === "folder-name") event.target.setCustomValidity(""); if (event.target.closest(".document-proposal")) captureDrafts();});
+  document.addEventListener("click", event => {for (const menu of document.querySelectorAll(".folder-menu[open]")) if (!menu.contains(event.target)) menu.open = false;});
+  document.addEventListener("keydown", event => {if (event.key === "Escape") for (const menu of document.querySelectorAll(".folder-menu[open]")) {menu.open = false; menu.querySelector("summary").focus();}});
   document.addEventListener("change", event => {
     if (event.target.id === "document-input") {addFiles([...event.target.files]); event.target.value = "";}
     if (current?.type !== "review") return;

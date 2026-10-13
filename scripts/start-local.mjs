@@ -130,6 +130,7 @@ async function main() {
     if(probe.error)throw probe.error;
     if(result.code!==0)await manager.run('Installation Python',python,['-m','pip','install','-r','backend/requirements.lock.txt'],{cwd:memo},signal);
     await manager.run('Aperçus PDF','npm',['run','prepare:pdf'],{cwd:resolve(root,'apps/calendar')},signal);
+    await manager.run('Lecteur Bibliothèque','npm',['run','prepare:library'],{cwd:resolve(root,'frontend')},signal);
     await manager.run('Interface Mémo','npm',['run','build','--','--logLevel','warn'],{cwd:resolve(memo,'frontend')},signal);
 
     // Bootstrap only this local account directory. Keep its password out of logs.

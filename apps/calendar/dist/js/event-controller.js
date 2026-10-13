@@ -247,7 +247,7 @@ export function createEventController(store, dialogRoot) {
     void (e.target.id === "event-interpret-form" ? interpret(e.target) : save(e.target));
   });
   document.addEventListener("visibilitychange", () => {if (!document.hidden) void loadEvents();});
-  return {loadEvents, openCreate: () => open(), toast, acceptEvents(added) {
+  return {loadEvents, openCreate: () => open(), openEvent(id) {const event = store.getState().events.find(event => event.id === id); if (event) open(event);}, toast, acceptEvents(added) {
     ++loadId;
     const ids = new Set(added.map(event => event.id));
     store.setEvents([...store.getState().events.filter(event => !ids.has(event.id)), ...added], {eventsStatus: "ready", eventsError: ""});

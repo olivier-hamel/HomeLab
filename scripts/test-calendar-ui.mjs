@@ -116,7 +116,7 @@ try {
  await page.setViewportSize({width:390,height:667});
  const now='2026-10-12T14:00:00Z';
  events=Array.from({length:5},(_,index)=>({...draft,id:`00000000-0000-4000-8000-${String(index+1).padStart(12,'0')}`,title:`Rendez-vous ${index+1}`,startTime:`${14+index}:00`,endTime:`${15+index}:00`,createdAt:now,updatedAt:now}));
- await page.reload();await expect(page.locator('#events-status')).toBeHidden();await page.locator('.browse-calendar').click();
+ await page.reload();await expect(page.locator('#events-status')).toBeHidden();
  await expect(page.locator('.month-events .more-events')).toBeVisible();
  await page.screenshot({animations:'disabled',path:resolve(output,'month-mobile.png')});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -143,7 +143,7 @@ try {
  await page.locator('#event-toast button').click();await expect(page.locator('.time-event')).toHaveCount(1);
  await jump('2026-10-25');await expect(page.locator('.time-event')).toHaveCount(0);
  await jump('2026-11-01');await expect(page.locator('.time-event')).toHaveCount(1);
- await page.reload();await expect(page.locator('#events-status')).toBeHidden();await page.locator('.browse-calendar').click();
+ await page.reload();await expect(page.locator('#events-status')).toBeHidden();
  await jump('2026-11-01');await expect(page.locator('.month-events [data-event-id]')).toHaveCount(3);
  // Future occurrences edit the first occurrence and clearly target the series.
  await page.locator('.month-events [data-event-id]').first().click();await expect(page.locator('#event-dialog-description')).toContainText('toute la série');

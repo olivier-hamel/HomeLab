@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {CalendarDocumentStore, MAX_PDF_BYTES} from '../src/lib/calendar/documents.ts';
+import {CalendarFolderStore} from '../src/lib/calendar/folders.ts';
 import {CalendarEventStore} from '../src/lib/calendar/store.ts';
 import {createCalendarApi} from '../src/lib/calendar/api.ts';
 import {MediaError} from '../src/lib/media/core.ts';
@@ -9,26 +10,27 @@ import {MediaError} from '../src/lib/media/core.ts';
 const origin='https://homelab.test';
 const pdf=Buffer.from('%PDF-1.4\nfixture\n%%EOF');
 const draft={title:'Examen',description:'Salle 204',date:'2026-10-20',endDate:'2026-10-20',startTime:'09:00',endTime:'11:00',allDay:false,recurrence:null};
-function collectionFixture() {
+function collectionFixture(library=false) {
  const rows=[];
- const matches=(row,filter)=>Object.entries(filter).every(([key,value])=>row[key]===value);
+ const matches=(row,filter)=>Object.entries(filter).every(([key,value])=>value&&typeof value==='object'&&'$in' in value?value.$in.includes(row[key]):row[key]===value);
  return {rows,collection:{
   find:filter=>({sort:()=>({toArray:async()=>rows.filter(row=>matches(row,filter)).map(row=>({...row}))})}),
   findOne:async filter=>rows.find(row=>matches(row,filter))||null,
-  insertOne:async row=>{if(rows.some(previous=>previous.username===row.username&&(previous.id===row.id||previous.hash===row.hash))) throw Object.assign(new Error('duplicate'),{code:11000});rows.push({...row});},
+  insertOne:async row=>{if(rows.some(previous=>previous.username===row.username&&(library||previous.id===row.id||previous.hash===row.hash))) throw Object.assign(new Error('duplicate'),{code:11000});rows.push({...row});},
   updateOne:async(filter,update)=>{if(!rows.some(row=>matches(row,filter)))rows.push({...update.$setOnInsert});},
   findOneAndUpdate:async(filter,update)=>{const row=rows.find(row=>matches(row,filter));if(!row)return null;Object.assign(row,update.$set);return {...row};},
   deleteOne:async filter=>{const i=rows.findIndex(row=>matches(row,filter));if(i<0)return{deletedCount:0};rows.splice(i,1);return{deletedCount:1};},
  }};
 }
 function fixture(fetcher=async()=>{throw new Error('unexpected provider request');}) {
- const df=collectionFixture(),ef=collectionFixture();
- const documents=new CalendarDocumentStore(async()=>df.collection),events=new CalendarEventStore(async()=>ef.collection);
+ const df=collectionFixture(),ef=collectionFixture(),lf=collectionFixture(true);
+ const folders=new CalendarFolderStore(async()=>lf.collection);
+ const documents=new CalendarDocumentStore(async()=>df.collection,folders),events=new CalendarEventStore(async()=>ef.collection);
  const authenticate=async request=>{const username=request.headers.get('x-test-account');if(!username)throw new MediaError('account_session','Connexion requise',401);return{user:{username},accounts:[]};};
  const api=createCalendarApi(fetcher,events,authenticate,documents);
  const call=(path='',method='GET',body,username='oli',headers={})=>api(new Request(`${origin}/api/calendar/documents${path}`,{method,headers:{Origin:origin,'X-Test-Account':username,...(body!==undefined?{'X-Calendar-Request':'1','Content-Type':'application/json'}:{}),...headers},...(body!==undefined?{body:body instanceof Uint8Array?body:JSON.stringify(body)}:{})}));
  const upload=(bytes=pdf,name='Horaire été.pdf',username='oli',id=randomUUID())=>call('','POST',bytes,username,{'Content-Type':'application/pdf','X-Document-Name':encodeURIComponent(name),'X-Document-Id':id});
- return {df,ef,documents,events,api,call,upload};
+ return {df,ef,lf,folders,documents,events,api,call,upload};
 }
 const provider=events=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({summary:'Horaire de cours',events})}]}}]});
 const withKey=async work=>{const previous=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='document-test-canary';try{await work();}finally{if(previous===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=previous;}};
@@ -71,6 +73,94 @@ test('Gemini receives the PDF, keeps multiple proposals without adding them, and
  assert(analyzed.updatedAt>document.updatedAt);assert.equal((await f.call(`/${document.id}/analyze`,'POST',{})).status,200);assert.equal(calls,1);
  assert.equal((await f.call(`/${document.id}`,'DELETE',{updatedAt:document.updatedAt})).status,409);
 }));
+test('nested folders persist per account with safe names, unique siblings and idempotent creation',async()=>{
+ const f=fixture(),id=randomUUID();
+ const body={requestId:id,name:'  Cours  ',parentId:null};
+ const created=await f.call('/folders','POST',body);assert.equal(created.status,201);
+ const parent=(await created.json()).folder;assert.equal(parent.name,'Cours');
+ assert.equal((await f.call('/folders','POST',{...body,name:'Cours'})).status,201);
+ assert.equal((await f.folders.list('oli')).length,1);
+ const child=await f.folders.create('oli',randomUUID(),'Automne',parent.id);
+ const listing=await(await f.call()).json();assert.equal(listing.folders.length,2);assert.equal(listing.folders[1].parentId,parent.id);
+ assert.equal((await(await f.call('','GET',undefined,'max')).json()).folders.length,0);
+ assert.equal((await f.call(`/folders/${child.id}`,'PATCH',{name:'Secret',updatedAt:child.updatedAt},'max')).status,404);
+ for(const name of ['', '   ', '../cours', 'cours\\notes', 'x\n', '.', '..', 'a'.repeat(121)])assert.equal((await f.call('/folders','POST',{requestId:randomUUID(),name,parentId:null})).status,400);
+ assert.equal((await f.call('/folders','POST',{requestId:randomUUID(),name:'cours',parentId:null})).status,409);
+ assert.equal((await f.call('/folders','POST',{requestId:randomUUID(),name:'Cours',parentId:child.id})).status,201);
+ assert.equal((await f.call('/folders','POST',{requestId:randomUUID(),name:'Intrusion',parentId:parent.id},'max')).status,404);
+ assert.equal((await f.call('/folders','POST',{requestId:randomUUID(),name:'Refus',parentId:null},'oli',{Origin:'https://evil.test'})).status,403);
+});
+test('folder moves preserve descendants, reject cycles and stale writes, and serialize concurrent topology changes',async()=>{
+ const f=fixture();
+ let parent=await f.folders.create('oli',randomUUID(),'Cours',null);
+ const child=await f.folders.create('oli',randomUUID(),'Automne',parent.id);
+ const other=await f.folders.create('oli',randomUUID(),'Archives',null);
+ assert.equal((await f.call(`/folders/${parent.id}`,'PATCH',{parentId:child.id,updatedAt:parent.updatedAt})).status,400);
+ assert.equal((await f.call(`/folders/${parent.id}`,'PATCH',{parentId:parent.id,updatedAt:parent.updatedAt})).status,400);
+ const renamed=await f.call(`/folders/${parent.id}`,'PATCH',{name:'Université',updatedAt:parent.updatedAt});assert.equal(renamed.status,200);
+ assert.equal((await f.call(`/folders/${parent.id}`,'PATCH',{name:'Obsolète',updatedAt:parent.updatedAt})).status,409);
+ parent=(await renamed.json()).folder;
+ const moved=await f.call(`/folders/${parent.id}`,'PATCH',{parentId:other.id,updatedAt:parent.updatedAt});assert.equal(moved.status,200);
+ assert.equal((await f.folders.list('oli')).find(row=>row.id===child.id).parentId,parent.id);
+ const a=await f.folders.create('oli',randomUUID(),'A',null),b=await f.folders.create('oli',randomUUID(),'B',null);
+ const concurrent=await Promise.allSettled([f.folders.update('oli',a.id,{parentId:b.id},a.updatedAt),f.folders.update('oli',b.id,{parentId:a.id},b.updatedAt)]);
+ assert.equal(concurrent.filter(result=>result.status==='fulfilled').length,1,'Only one mutually cyclic move may succeed');
+ assert.equal(concurrent.find(result=>result.status==='rejected').reason.status,400);
+});
+test('PDF folder placement and moves preserve binaries and calendar sources; duplicates keep their location',async()=>withKey(async()=>{
+ const f=fixture(async()=>provider([{event:draft,page:2,note:''}]));
+ const folder=await f.folders.create('oli',randomUUID(),'Cours',null),other=await f.folders.create('oli',randomUUID(),'Archives',null);
+ const id=randomUUID();
+ const uploaded=await f.call('','POST',pdf,'oli',{'Content-Type':'application/pdf','X-Document-Name':'Horaire.pdf','X-Document-Id':id,'X-Document-Folder':folder.id});assert.equal(uploaded.status,201);
+ const document=(await uploaded.json()).document;assert.equal(document.folderId,folder.id);
+ const analyzed=(await(await f.call(`/${id}/analyze`,'POST',{})).json()).document;assert.equal(analyzed.folderId,folder.id);
+ await f.call(`/${id}/events`,'POST',{events:analyzed.proposals.map(proposal=>({proposalId:proposal.id,event:proposal.event}))});
+ const source={...f.ef.rows[0].source};
+ const moved=await f.call(`/${id}`,'PATCH',{folderId:other.id,previousFolderId:folder.id});assert.equal(moved.status,200);assert.equal((await moved.json()).document.folderId,other.id);
+ assert.deepEqual(f.ef.rows[0].source,source);assert.deepEqual(Buffer.from(await(await f.call(`/${id}/file`)).arrayBuffer()),pdf);
+ const repeat=await f.upload();assert.equal((await repeat.json()).document.folderId,other.id);
+ assert.equal((await f.call(`/${id}`,'PATCH',{folderId:null,previousFolderId:folder.id})).status,409);
+ assert.equal((await f.call(`/${id}`,'PATCH',{folderId:randomUUID(),previousFolderId:other.id})).status,404);
+ assert.equal((await f.call(`/${id}`,'PATCH',{folderId:null,previousFolderId:other.id},'max')).status,404);
+ assert.equal((await f.call(`/folders/${other.id}`,'DELETE',{updatedAt:other.updatedAt})).status,409);
+ assert.equal((await f.call(`/${id}`,'PATCH',{folderId:null,previousFolderId:other.id})).status,200);
+ assert.equal((await f.call(`/folders/${other.id}`,'DELETE',{updatedAt:other.updatedAt})).status,200);
+ assert.equal((await f.documents.get('oli',id)).folderId,null);
+}));
+test('only empty folders can be removed, and legacy PDFs stay available at the root',async()=>{
+ const f=fixture();
+ const root=await f.folders.create('oli',randomUUID(),'Cours',null),child=await f.folders.create('oli',randomUUID(),'Automne',root.id);
+ assert.equal((await f.call(`/folders/${root.id}`,'DELETE',{updatedAt:root.updatedAt})).status,409);
+ const doc=(await(await f.upload()).json()).document;assert.equal(doc.folderId,null);
+ await f.documents.move('oli',doc.id,child.id,null);
+ assert.equal((await f.call(`/folders/${child.id}`,'DELETE',{updatedAt:child.updatedAt})).status,409);
+ await f.documents.remove('oli',doc.id,doc.updatedAt);
+ assert.equal((await f.call(`/folders/${child.id}`,'DELETE',{updatedAt:child.updatedAt})).status,200);
+ assert.equal((await f.call(`/folders/${root.id}`,'DELETE',{updatedAt:root.updatedAt})).status,200);
+ assert.equal((await f.folders.list('oli')).length,0);
+ const bad=await f.call('','POST',pdf,'oli',{'Content-Type':'application/pdf','X-Document-Name':'Horaire.pdf','X-Document-Id':randomUUID(),'X-Document-Folder':child.id});assert.equal(bad.status,404);assert.equal(f.df.rows.length,0);
+});
+test('removing a folder during an upload keeps the newly saved PDF at the root',async()=>{
+ const f=fixture(),folder=await f.folders.create('oli',randomUUID(),'Temporaire',null);
+ const insert=f.df.collection.insertOne;
+ f.df.collection.insertOne=async row=>{await insert(row);await f.folders.remove('oli',folder.id,folder.updatedAt);};
+ const result=await f.documents.upload('oli',randomUUID(),'Notes.pdf',pdf,folder.id);
+ assert.equal(result.folderUnavailable,true);assert.equal(result.document.folderId,null);assert.equal(f.df.rows.length,1);
+ assert.equal((await f.documents.list('oli'))[0].folderId,null);assert.equal((await f.folders.list('oli')).length,0);
+});
+test('a folder remains removable after interrupted PDF cleanup and concurrent moves never strand files',async()=>{
+ const f=fixture(),folder=await f.folders.create('oli',randomUUID(),'Temporaire',null);
+ const document=(await(await f.upload()).json()).document;
+ await f.documents.move('oli',document.id,folder.id,null);
+ // Model a process interruption between deleting a PDF and clearing its location.
+ f.df.rows.splice(0,1);
+ assert.equal((await f.call(`/folders/${folder.id}`,'DELETE',{updatedAt:folder.updatedAt})).status,200);
+ assert.deepEqual((await f.folders.snapshot('oli')).locations,{});
+ const target=await f.folders.create('oli',randomUUID(),'Destination',null),next=(await(await f.upload()).json()).document;
+ await Promise.allSettled([f.documents.move('oli',next.id,target.id,null),f.documents.removeFolder('oli',target.id,target.updatedAt)]);
+ const library=await f.documents.library('oli');
+ assert(library.documents[0].folderId===null||library.folders.some(row=>row.id===library.documents[0].folderId));
+});
 test('selected edits create idempotent events with immutable document links; PDF deletion preserves events',async()=>withKey(async()=>{
  const f=fixture(async()=>provider([{event:draft,page:2,note:''},{event:{...draft,title:'Atelier'},page:4,note:''}]));
  const uploaded=(await(await f.upload()).json()).document;

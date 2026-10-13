@@ -4,7 +4,6 @@ import {eventsOnDate,layoutTimedEvents} from '../dist/js/events.js';
 import {civilDate} from '../dist/js/date.js';
 import {createCalendarStore} from '../dist/js/state.js';
 import {renderCalendar} from '../dist/js/components/views.js';
-import {renderHome} from '../dist/js/components/home.js';
 const base={id:'event-one',title:'Dentiste',description:'Note',date:'2026-10-12',endDate:'2026-10-12',startTime:'14:00',endTime:'15:00',allDay:false};
 
 test('overnight events appear on the correct days, with midnight end exclusive and all-day end inclusive',()=>{
@@ -19,14 +18,10 @@ test('overlapping events get separate lanes and back-to-back events use full wid
  const rows=layoutTimedEvents([base,{...base,id:'two',startTime:'14:30',endTime:'15:30'},{...base,id:'three',startTime:'16:00',endTime:'17:00'}],civilDate(2026,9,12));
  assert.equal(rows[0].lanes,2); assert.equal(rows[1].lanes,2); assert.notEqual(rows[0].lane,rows[1].lane); assert.equal(rows[2].lanes,1);
 });
-test('events render safely in all calendar views and home without false empty states',()=>{
+test('events render safely in all calendar views',()=>{
  const store=createCalendarStore(); store.setEvents([{...base,title:'<img src=x onerror=alert(1)>',description:'<script>bad</script>'}],{eventsStatus:'ready'});
  for(const view of ['month','week','day']) {
   store.openDate(civilDate(2026,9,12),view); const html=renderCalendar(store.getState());
   assert(html.includes('data-event-id="event-one"')); assert(!html.includes('<img')); assert(html.includes('&lt;img'));
  }
- const html=renderHome({...store.getState(),today:civilDate(2026,9,12)});
- assert(html.includes('1 événement')); assert(!html.includes('Ta journée est libre')); assert(!html.includes('<script>'));
- const loading=renderHome({...store.getState(),today:civilDate(2026,9,12),eventsStatus:'loading',events:[]});
- assert(!loading.includes('Tu n’as aucun événement prévu aujourd’hui'));
 });

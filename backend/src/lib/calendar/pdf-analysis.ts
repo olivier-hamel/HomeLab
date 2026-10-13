@@ -2,6 +2,7 @@ import { generateGeminiObject } from "../ai/gemini.ts";
 import { MediaError, type Fetcher } from "../media/core.ts";
 import { validatePdf, validateAnalysis } from "./documents.ts";
 import { eventSchema } from "./events.ts";
+import { validateFile } from "../library/model.ts";
 
 // Bounding a deeply nested events array expands Gemini's output grammar and
 // can make the provider reject the request with HTTP 400. Keep the structural
@@ -23,8 +24,8 @@ const schema = { type: "object", additionalProperties: false, properties: {
 }, required: ["summary", "events"] };
 
 
-export async function analyseCalendarPdf(options: { name: string; pdf: Uint8Array; signal: AbortSignal; fetcher?: Fetcher }) {
-  const name = validatePdf(options.name, options.pdf);
+export async function analyseCalendarPdf(options: { name: string; pdf: Uint8Array; signal: AbortSignal; fetcher?: Fetcher; library?: boolean }) {
+  const name = options.library ? validateFile(options.name, options.pdf).name : validatePdf(options.name, options.pdf);
   const currentDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   try {
     const result = await generateGeminiObject({ instruction, input: { filename: name, currentDate, timezone: "America/Toronto" },
