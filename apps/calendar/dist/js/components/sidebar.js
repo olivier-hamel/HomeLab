@@ -1,6 +1,7 @@
 import {eventsOnDate, eventCount} from "../events.js";
 import {MONTHS, WEEKDAYS, monthDates, dateKey, sameDay, sameMonth, fullDate, formatDate} from "../date.js";
 import {icon} from "./icons.js";
+import {escapeHtml} from "../account.js";
 
 export function renderMiniCalendar(state) {
   const weekdays = Array.from({length: 7}, (_, i) => WEEKDAYS[(state.preferences.weekStart + i) % 7]);
@@ -21,6 +22,8 @@ function renderLibraryNotifications(state) {
 }
 export function renderSidebar(state) {
   const today = sameDay(state.date, state.today);
+  const sync = state.moodleSync;
+  const syncStatus = sync ? `<section id="moodle-sync-status" class="sidebar-moodle-status ${sync.status === "error" || sync.status === "warning" ? "has-error" : ""}" role="status" aria-live="polite"><strong>Moodle · ${escapeHtml(sync.semester || "Session actuelle")}</strong><p>${escapeHtml(sync.message || "Synchronisation automatique toutes les 30 minutes")}</p><button data-action="moodle-sync" ${sync.status === "running" ? "disabled" : ""}>${sync.status === "running" ? "Mise à jour…" : "Actualiser"}</button></section>` : "";
   return `<div class="sidebar-top"><a class="brand" href="./" data-action="month" aria-label="Calendrier Tempo"><span class="brand-icon">${icon("calendar")}</span><span>Tempo<span class="brand-period">.</span></span></a><button class="icon-button sidebar-close" data-action="close-sidebar" aria-label="Fermer le menu">${icon("close")}</button></div>
     <nav class="sidebar-navigation" aria-label="Navigation principale"><button class="calendar-nav" data-action="calendar-home" ${state.page === "calendar" ? 'aria-current="page"' : ""}>${icon("calendar")}<span>Mon calendrier</span><span class="nav-dot"></span></button>
     </nav>
@@ -33,6 +36,7 @@ export function renderSidebar(state) {
       <button class="day-link" data-action="open-day" data-date="${dateKey(state.date)}">Voir cette journée ${icon("arrowRight")}</button>
     </section>
     ${renderLibraryNotifications(state)}
+    ${syncStatus}
     <div class="sidebar-bottom"><div class="little-note"><span class="note-dot"></span>Au rythme de tes journées.</div>
       <button class="sidebar-utility" data-action="manage-event-types">${icon("edit")}<span>Types d’événement</span></button>
       <button class="sidebar-utility" data-action="shortcuts">${icon("keyboard")}<span>Raccourcis clavier</span><kbd>?</kbd></button>

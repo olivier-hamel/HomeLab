@@ -82,10 +82,13 @@ test('settings persist with restrictive permissions; partial credentials and unt
     finally { if (previous === undefined) delete process.env.TAPO_HOST; else process.env.TAPO_HOST = previous; }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
-test('RTSP input escapes credentials and ffmpeg remuxes video with bounded segments; invalid movement never connects', async () => {
+test('RTSP input escapes credentials and the relay bounds decoding, encoding and mux buffering; invalid movement never connects', async () => {
   assert.equal(rtspInput(config, 'sd'), 'rtsp://camera-user:private%40password%3A%3F@192.168.0.188:554/stream2');
   const args = streamArguments('rtsp://fixture', '/tmp/output');
-  assert.ok(args.includes('delete_segments+omit_endlist+temp_file')); assert.equal(args[args.indexOf('-c:v') + 1], 'copy');
+  assert.ok(args.includes('delete_segments+omit_endlist+temp_file+independent_segments+program_date_time'));
+  assert.equal(args[args.indexOf('-tune') + 1], 'zerolatency');
+  assert.equal(args[args.indexOf('-g') + 1], '12');
+  assert.equal(args[args.indexOf('-max_interleave_delta') + 1], '100000');
   assert.equal(args[args.indexOf('-timeout') + 1], '10000000');
   const control = new TapoControl();
   await assert.rejects(control.move(config, 'diagonal', 0.5), error => error.status === 400);
@@ -93,7 +96,7 @@ test('RTSP input escapes credentials and ffmpeg remuxes video with bounded segme
   await assert.rejects(control.preset(config, 'save', '<script>'), error => error.status === 400);
   assert.equal(validPreset('1</PresetToken>'), false);
 });
-test('the real ONVIF library encodes each movement with a 350 ms camera-side limit and can stop pan/tilt', async () => {
+test('C200 movement omits unsupported optical zoom, uses its minimum one-second timeout and sends an early Stop', async () => {
   const bodies = [];
   const cam = Object.create(Cam.prototype);
   Object.assign(cam, { activeSource: { profileToken: 'profile1', ptz: true },
@@ -102,26 +105,38 @@ test('the real ONVIF library encodes each movement with a 350 ms camera-side lim
   });
   const control = new TapoControl((saved, done) => { assert.deepEqual(saved, config); queueMicrotask(() => done(null)); return cam; });
   await control.move(config, 'left', 0.5);
-  assert.match(bodies[0], /<Timeout>PT0\.35S<\/Timeout>/);
+  assert.match(bodies[0], /<Timeout>PT1S<\/Timeout>/);
   assert.match(bodies[0], /PanTilt x="-0\.5" y="0"/);
-  await control.stop(config);
+  assert.doesNotMatch(bodies[0], /<Zoom\b/);
   assert.match(bodies[1], /<PanTilt>true<\/PanTilt>/);
   assert.doesNotMatch(bodies[1], /<Zoom>true<\/Zoom>/);
+  await control.stop(config);
+  assert.match(bodies[2], /<Stop\b/);
 });
 test('a real FFmpeg relay shares one encoder between viewers and produces playable HLS assets', async () => {
   let starts = 0;
   const streams = new TapoStreams((_binary, args, options) => {
     starts++;
     const output = args.slice(args.indexOf('-map'));
-    output[output.indexOf('-c:v') + 1] = 'libx264';
-    return spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=15', '-preset', 'ultrafast', '-g', '15', ...output], options);
+    return spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=20[out0];sine=frequency=440:sample_rate=8000[out1]', ...output], options);
   });
   try {
     const [first, second] = await Promise.all([streams.asset(config, 'hd', 'index.m3u8', AbortSignal.timeout(15_000)), streams.asset(config, 'hd', 'index.m3u8', AbortSignal.timeout(15_000))]);
     assert.equal(starts, 1);
     const manifest = new TextDecoder().decode(first); assert.match(manifest, /#EXTM3U/); assert.match(new TextDecoder().decode(second), /#EXTINF/);
+    const durations = [...manifest.matchAll(/#EXTINF:([\d.]+)/g)].map(match => Number(match[1]));
+    assert.ok(durations.every(duration => duration <= 0.65), `Live segments must stay short: ${durations}`);
+    assert.match(manifest, /#EXT-X-PROGRAM-DATE-TIME:/);
+    assert.match(manifest, /#EXT-X-INDEPENDENT-SEGMENTS/);
     const segment = manifest.match(/segment-\d{9}\.ts/)[0];
     const bytes = await streams.asset(config, 'hd', segment, AbortSignal.timeout(1000)); assert.equal(bytes[0], 0x47); assert.ok(bytes.length > 1000);
+    const tracks = await new Promise((resolve, reject) => {
+      const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name', '-of', 'json', 'pipe:0']);
+      let result = ''; child.stdout.on('data', chunk => { result += chunk; }); child.stderr.resume();
+      child.on('error', reject); child.on('close', code => code ? reject(new Error('Segment probe failed')) : resolve(JSON.parse(result).streams)); child.stdin.end(bytes);
+    });
+    assert.ok(tracks.some(track => track.codec_name === 'h264'));
+    assert.ok(tracks.some(track => track.codec_name === 'aac'), 'The initial short segment must include audio so the player creates both buffers');
     await assert.rejects(streams.asset(config, 'hd', '../account.json', AbortSignal.timeout(1000)), error => error.status === 404);
   } finally { streams.reset(); }
 });

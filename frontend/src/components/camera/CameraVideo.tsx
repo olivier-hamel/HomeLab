@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
+import { cameraLiveConfig, cameraLiveSeekPosition } from "../../lib/camera-live";
 
 export type VideoState = "connecting" | "playing" | "buffering" | "error";
 export default function CameraVideo({ videoRef, quality, muted, zoom, attempt, onState }: {
@@ -33,12 +34,29 @@ export default function CameraVideo({ videoRef, quality, muted, zoom, attempt, o
       // Chromium can report native HLS support but reject the C200's DTS ordering.
       // HLS.js remuxes the stream and normalizes timestamps before browser decode.
       if (Hls.isSupported()) {
-        const hls = new Hls({ liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 5, maxBufferLength: 8, backBufferLength: 0 });
-        cleanup = () => hls.destroy();
+        const hls = new Hls(cameraLiveConfig);
+        const followLive = (force = false) => {
+          if (disposed || document.hidden || video.paused || !hls.latestLevelDetails?.live) return;
+          const target = cameraLiveSeekPosition(video.currentTime, hls.liveSyncPosition, force);
+          if (target !== null) video.currentTime = target;
+        };
+        const returnLive = () => followLive(true);
+        const visible = () => { if (!document.hidden) followLive(true); };
+        const liveTimer = setInterval(() => followLive(), 1000);
+        document.addEventListener("visibilitychange", visible);
+        video.addEventListener("camera:return-live", returnLive);
+        hls.on(Hls.Events.LEVEL_UPDATED, () => followLive());
+        cleanup = () => {
+          clearInterval(liveTimer); document.removeEventListener("visibilitychange", visible);
+          video.removeEventListener("camera:return-live", returnLive); hls.destroy();
+        };
         hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { hls.stopLoad(); failed(); } });
         hls.on(Hls.Events.MANIFEST_PARSED, () => { void video.play().catch(() => emit("error", "La lecture automatique a été bloquée. Appuie sur Relancer le direct.")); });
         hls.loadSource(source); hls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        const returnLive = () => { if (video.seekable.length) video.currentTime = Math.max(0, video.seekable.end(video.seekable.length - 1) - 1.2); };
+        video.addEventListener("camera:return-live", returnLive);
+        cleanup = () => video.removeEventListener("camera:return-live", returnLive);
         video.src = source; void video.play().catch(() => emit("error", "La lecture automatique a été bloquée. Appuie sur Relancer le direct."));
       } else {
         emit("error", "Ce navigateur ne prend pas en charge le direct. Utilise une version récente de Chrome, Firefox, Edge ou Safari.");

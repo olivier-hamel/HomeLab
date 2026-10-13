@@ -47,15 +47,25 @@ The file contains the camera password and should be treated like `backend/.env`.
 FFmpeg input arguments contain the RTSP credential, so server process access
 should be limited to trusted administrators. Diagnostics are not logged.
 
-H.264 video is copied into HLS, with optional audio converted to AAC. Each quality
-uses at most one shared relay process. It stops after 45 seconds without video
+H.264 video is encoded with FFmpeg's ultrafast, zero-latency preset at 20 fps,
+with independently decodable 600 ms segments. Camera audio timestamps are
+normalized and optional audio is converted to AAC. This uses more server CPU
+than copying the original stream; each quality shares one encoder limited to
+two threads. The relay stops after 45 seconds without video
 requests and deletes its temporary files. Every playlist and segment request
 requires a valid HomeLab session. Browsers with Media Source support use locally
 bundled HLS.js, which normalizes the C200's timestamps; native HLS is a fallback.
 Chromium's native player can report HLS support while rejecting the camera's DTS
-ordering, so the app prefers HLS.js. Allow a few seconds of video delay when
-orienting the camera. Each pan/tilt click sends a movement limited to 350 ms by
-the camera; the center button sends Stop.
+ordering, so the app prefers HLS.js. The player targets 1.2 seconds behind the
+published live edge, bounds its buffer and automatically catches up when delayed
+or when returning to the tab. The refresh icon becomes **Revenir au direct** while
+video is playing. The full image delay also includes camera and transport time.
+On the supplied C200, a physical movement became visible in Firefox in about
+2 seconds after these changes. This measurement is specific to the tested LAN.
+Each pan/tilt click sends only the supported PanTilt fields,
+uses the C200's minimum one-second camera timeout, then sends Stop after 350 ms.
+The camera timeout limits movement if the server cannot send the earlier Stop;
+the center button also sends Stop. This was verified on firmware 1.9.1.
 
 Snapshots capture the full original frame (digital zoom only changes the live
 display). Up to 24 snapshots remain in browser memory during the visit; download
@@ -93,8 +103,9 @@ gallery downloads and responsive layouts at desktop, 390 px and 320 px. Real
 camera authentication, firmware capabilities and movement require the camera
 account and a server that can reach the camera. The supplied C200 was verified
 with read-only ONVIF, both RTSP streams (1280×720 HD and 640×360 SD), the FFmpeg
-relay, and actual moving video frames through HLS.js. Motor movement and native
-HLS fallback on Safari still need device-specific verification.
+relay, and actual moving video frames through HLS.js. Pan/tilt commands and
+position changes were verified on firmware 1.9.1 Build 260326 Rel.26771n. Native
+HLS fallback on Safari still needs device-specific verification.
 
 Protocol references: [TP-Link RTSP/ONVIF setup](https://www.tapo.com/en/faq/34/),
 [ONVIF client API](https://github.com/agsh/onvif/tree/v0.x),

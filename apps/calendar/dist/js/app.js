@@ -62,14 +62,12 @@ function render(state, reason = "initial") {
   status.hidden = state.eventsStatus === "ready";
   status.innerHTML = state.eventsStatus === "error" ? `<span>${escapeHtml(state.eventsError)}</span><button data-action="events-retry">Réessayer</button>` : "Chargement de tes événements…";
   status.classList.toggle("has-error", state.eventsStatus === "error");
-  const syncStatus = document.getElementById("moodle-sync-status");
-  const sync = state.moodleSync;
-  syncStatus.hidden = !sync;
-  syncStatus.classList.toggle("has-error", sync?.status === "error" || sync?.status === "warning");
-  if (sync) syncStatus.innerHTML = `<span>Moodle · ${escapeHtml(sync.semester || "Session actuelle")} · ${escapeHtml(sync.message || "Synchronisation automatique toutes les 30 minutes")}</span><button data-action="moodle-sync" ${sync.status === "running" ? "disabled" : ""}>${sync.status === "running" ? "Mise à jour…" : "Actualiser"}</button>`;
   const title = periodTitle(state);
   app.querySelector(".calendar-toolbar").dataset.view = state.view;
-  document.getElementById("period-title").innerHTML = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
+  const periodLabel = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
+  document.getElementById("period-title").innerHTML = state.view === "week"
+    ? `<button class="period-title-button" data-action="month" title="Revenir à la vue du mois" aria-label="${escapeHtml(`${title.primary} ${title.secondary} — Revenir à la vue du mois`)}">${periodLabel}</button>`
+    : periodLabel;
   app.querySelector('[data-action="prev"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "précédente" : "précédent"}`);
   app.querySelector('[data-action="next"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "suivante" : "suivant"}`);
   for (const button of app.querySelectorAll(".view-switch button")) button.setAttribute("aria-pressed", String(button.dataset.action === state.view));

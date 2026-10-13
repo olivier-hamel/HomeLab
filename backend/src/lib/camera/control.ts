@@ -48,8 +48,12 @@ export class TapoControl implements CameraControl {
     const vectors: Record<string, [number, number]> = { left: [-1, 0], right: [1, 0], up: [0, 1], down: [0, -1] };
     const vector = vectors[direction];
     if (!vector || ![0.25, 0.5, 0.8].includes(speed)) throw new MediaError("input", "Choisis une direction et une vitesse valides.", 400);
-    // The camera itself limits each movement, even if the browser disconnects.
-    await this.call(config, (cam, done) => cam.continuousMove({ x: vector[0] * speed, y: vector[1] * speed, timeout: 350 }, done));
+    // C200 firmware 1.9.1 requires at least PT1S and has no optical zoom.
+    // Stop earlier for a short step; the camera's one-second limit remains a
+    // fallback if the browser disconnects or the server cannot send Stop.
+    await this.call(config, (cam, done) => cam.continuousMove({ x: vector[0] * speed, y: vector[1] * speed, timeout: 1000, onlySendPanTilt: true }, done));
+    await new Promise<void>(resolve => setTimeout(resolve, 350));
+    await this.stop(config);
   }
   async stop(config: CameraConfig) { await this.call(config, (cam, done) => cam.stop({ panTilt: true, zoom: false }, done)); }
   async preset(config: CameraConfig, action: string, value: string) {

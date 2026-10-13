@@ -68,6 +68,12 @@ a { color: inherit; text-decoration: none; }
 .day-link:hover .icon { transform: translateX(3px); }
 .day-link:hover { color: var(--accent-dark); }
 .sidebar-bottom { margin-top: auto; padding-top: 28px; }
+.sidebar-moodle-status { margin-top: 20px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--accent-wash); color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.sidebar-moodle-status strong { color: var(--ink); font-weight: 600; }
+.sidebar-moodle-status p { margin: 6px 0; }
+.sidebar-moodle-status button { padding: 6px 0; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.sidebar-moodle-status button:disabled { cursor: default; opacity: .6; text-decoration: none; }
+.sidebar-moodle-status.has-error { background: #fff8f2; color: #875331; border-color: #efdfcf; }
 .little-note { font-size: 9px; color: #929a8d; margin: 0 4px 19px; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .note-dot { height: 5px; width: 5px; border: 1px solid #9aab8f; border-radius: 50%; }
 .sidebar-utility { display: flex; align-items: center; width: 100%; gap: 10px; padding: 9px 4px; border-radius: 6px; color: #7c857b; font-size: 11px; text-align: left; }
@@ -95,7 +101,9 @@ a { color: inherit; text-decoration: none; }
 .calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 31px 0 27px; flex-shrink: 0; }
 .period-controls { display: flex; align-items: center; min-width: 0; }
 h1 { margin: 0; letter-spacing: -1.05px; font-weight: 570; font-size: 29px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
-h1 > .period-year { color: #98a18f; font-size: 27px; font-weight: 370; letter-spacing: -.9px; }
+h1 .period-year { color: #98a18f; font-size: 27px; font-weight: 370; letter-spacing: -.9px; }
+.period-title-button { display: flex; align-items: baseline; gap: 10px; padding: 0; font: inherit; letter-spacing: inherit; border-radius: 4px; }
+.period-title-button:hover .period-primary { color: var(--accent); }
 .calendar-toolbar[data-view="month"] #period-title { width: 9em; flex: 0 0 9em; }
 .period-navigation { display: flex; margin-left: 23px; gap: 0; }
 .period-navigation .icon-button { height: 30px; width: 28px; }
@@ -218,7 +226,7 @@ input[type="date"] { padding: 12px 14px; width: 100%; background: #fafcf8; color
   .workspace-header { padding: 0 25px; }
   .calendar-workspace { padding: 0 25px; }
   h1 { font-size: 25px; gap: 8px; }
-  h1 > .period-year { font-size: 23px; }
+  h1 .period-year { font-size: 23px; }
   .period-navigation { margin-left: 13px; }
   .today-button { margin-left: 8px; }
   .view-switch button { padding-left: 12px; padding-right: 12px; min-width: 47px; }
