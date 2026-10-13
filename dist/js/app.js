@@ -146,7 +146,7 @@ document.addEventListener("submit", event => {
   }
 });
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && store.getState().sidebarOpen) store.closeSidebar();
+  if (event.key === "Escape" && store.getState().sidebarOpen) {event.preventDefault(); store.closeSidebar();}
   if (event.key === "Tab" && store.getState().sidebarOpen && window.matchMedia("(max-width: 760px)").matches) {
     const buttons = Array.from(app.querySelectorAll(".sidebar a, .sidebar button")).filter(element => element.getClientRects().length);
     const first = buttons[0], last = buttons[buttons.length - 1];
