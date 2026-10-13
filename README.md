@@ -133,7 +133,7 @@ network and permitted remote clients.
 
 Install [Node.js 24](https://nodejs.org/en/download), including npm. The root
 `.nvmrc` selects Node 24. Each app keeps its own dependencies and npm lockfile;
-Tempo has no dependencies or build step.
+Tempo uses locally served PDF.js assets, prepared by `npm run dev`.
 
 From the repository root, start the frontend in one terminal:
 
@@ -171,6 +171,12 @@ npm run build
 For Tempo, run `npm run dev` or `npm test` in `apps/calendar/`.
 For Memo, run `./start.sh --dev` in `apps/memo/web-app/`; see its
 [README](apps/memo/web-app/README.md) for Python dependencies and checks.
+
+To verify real Gemini PDF extraction before deploying, run `npm run test:pdf`
+in `backend/`, or `npm run test:pdf -- "/path/document.pdf"` for your own PDF.
+Configure `GEMINI_API_KEY` in the private `backend/.env` first. This uses the
+production extractor and performs no database writes. See the
+[local Tempo testing guide](docs/calendar-local.md) for the full browser setup.
 
 The existing `npm start` commands remain available for manual production previews.
 The frontend preview serves `dist` and has no API proxy; use Docker Compose to

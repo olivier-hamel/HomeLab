@@ -157,6 +157,13 @@ l’action de l’utilisateur. Les dates relatives suivent la date actuelle
 
 ## Documents PDF
 
+Pour tester avec la **vraie API Gemini** avant de déployer, configure
+`GEMINI_API_KEY` dans `backend/.env`, puis lance `npm run test:pdf` depuis
+`backend/`, ou `npm run test:pdf -- "/chemin/document.pdf"`. Ce test réutilise
+l’extracteur du serveur et ne crée aucune donnée dans MongoDB.
+Voir le [guide de test local](../../docs/calendar-local.md) pour lancer aussi
+l’interface complète.
+
 « Documents » ouvre une bibliothèque avec recherche et filtre « À vérifier ».
 Ajoute plusieurs PDF par le bouton ou par glisser-déposer (10 Mo par fichier).
 Sur ordinateur, le panneau de détails présente l’aperçu de première page,

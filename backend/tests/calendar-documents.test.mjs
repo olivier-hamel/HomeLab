@@ -60,6 +60,8 @@ test('Gemini receives the PDF, keeps multiple proposals without adding them, and
  const f=fixture(async(url,init)=>{
   calls++;assert(!String(url).includes('document-test-canary'));assert(!init.body.includes('document-test-canary'));const body=JSON.parse(init.body);
   const parts=body.contents[0].parts;assert.deepEqual(Buffer.from(parts[1].inlineData.data,'base64'),pdf);assert.equal(parts[1].inlineData.mimeType,'application/pdf');
+  // The bounded nested array was rejected by the live provider with HTTP 400.
+  assert.equal(body.generationConfig.responseJsonSchema.properties.events.maxItems,undefined);
   assert.equal(JSON.parse(parts[0].text).username,undefined);assert.match(body.systemInstruction.parts[0].text,/untrusted/);
   return provider([{event:draft,page:2,note:''},{event:{...draft,title:'Remise du travail',allDay:true,startTime:null,endTime:null},page:3,note:'Vérifier la date'}]);
  });
@@ -118,4 +120,9 @@ test('an aborted provider request marks the analysis retryable while preserving 
  const controller=new AbortController();controller.abort();
  const request=new Request(`${origin}/api/calendar/documents/${document.id}/analyze`,{method:'POST',signal:controller.signal,headers:{Origin:origin,'X-Test-Account':'cancel','X-Calendar-Request':'1','Content-Type':'application/json'},body:'{}'});
  const response=await f.api(request);assert.equal(response.status,499);assert.equal(f.df.rows.length,1);assert.equal((await f.documents.get('cancel',document.id)).analysisState,'error');assert.equal(f.ef.rows.length,0);
+}));
+test('the server still rejects more than 100 proposals with an unbounded provider schema',async()=>withKey(async()=>{
+ const f=fixture(async()=>provider(Array.from({length:101},()=>({event:draft,page:1,note:''}))));
+ const {document}=await(await f.upload(pdf,'Horaire.pdf','schema_limit')).json();
+ const response=await f.call(`/${document.id}/analyze`,'POST',{},'schema_limit');assert.equal(response.status,502);assert.equal(f.ef.rows.length,0);assert.equal((await f.documents.get('schema_limit',document.id)).analysisState,'error');
 }));
