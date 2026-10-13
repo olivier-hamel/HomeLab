@@ -6,7 +6,7 @@ import { libraryStore, type LibraryStore } from "./store.ts";
 import { moodleSync, type MoodleSync } from "./sync.ts";
 import { powerpointPreview } from "./preview.ts";
 import { TempoScans } from "./scans.ts";
-import { geminiApiKey } from "../ai/gemini.ts";
+import { openaiApiKey } from "../ai/openai.ts";
 import { importMemoArchive } from "./imports.ts";
 
 const rates = new BoundedCache<number>(1024, 60_000);
@@ -31,7 +31,7 @@ export function createLibraryApi(authenticate: AccountVerifier = createAccountVe
       boundary(request); const { user } = await authenticate(request); const username = user.username;
       const allowed = moodleAuthorized(username);
       const path = new URL(request.url).pathname.replace(/^\/api\/library\/?/, "").split("/").filter(Boolean);
-      if (!path.length && request.method === "GET") return json({ ...publicLibrary(await store.snapshot(username), allowed), aiAvailable: !!geminiApiKey() });
+      if (!path.length && request.method === "GET") return json({ ...publicLibrary(await store.snapshot(username), allowed), aiAvailable: !!openaiApiKey() });
       if (path.length === 1 && path[0] === "notifications" && request.method === "GET") return json(await scans.notifications(username));
       if (path.join("/") === "import/memo" && request.method === "POST") {
         const data = await body(request); await importMemoArchive(request, username, data.id, store); return json({ imported: true });

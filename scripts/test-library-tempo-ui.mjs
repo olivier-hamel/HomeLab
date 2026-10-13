@@ -10,7 +10,7 @@ import {eventTypeFixture} from '../backend/tests/helpers/calendar-types.mjs';
 const root=fileURLToPath(new URL('..',import.meta.url)),require=createRequire(resolve(root,'apps/memo/web-app/frontend/package.json'));
 const {chromium}=require('playwright'),{expect}=require('@playwright/test');
 const temporary=await mkdtemp(resolve(tmpdir(),'library-tempo-ui-'));
-Object.assign(process.env,{LIBRARY_STORAGE_PATH:temporary,GEMINI_API_KEY:'isolated-ui-test-key',MOODLE_ALLOWED_USERS:'oli'});
+Object.assign(process.env,{LIBRARY_STORAGE_PATH:temporary,OPENAI_API_KEY:'isolated-ui-test-key',MOODLE_ALLOWED_USERS:'oli'});
 const {LibraryStore}=await import('../backend/src/lib/library/store.ts');
 const {TempoScans}=await import('../backend/src/lib/library/scans.ts');
 const {createLibraryApi}=await import('../backend/src/lib/library/api.ts');

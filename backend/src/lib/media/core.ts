@@ -73,7 +73,9 @@ export function envNumber(name: string, fallback: number, min: number, max: numb
 }
 export function serviceUrl(name: string): URL {
   const value = process.env[name];
-  if (!value) throw new MediaError("setup", `Set ${name} in backend/.env.`, 503);
+  if (!value) throw new MediaError("setup", /^(?:GEMINI|OPENAI)_/.test(name)
+    ? "Le service d’analyse doit être configuré sur le serveur."
+    : `Set ${name} in backend/.env.`, 503);
   let url: URL;
   try { url = new URL(value); } catch { throw new MediaError("setup", `Check ${name} in backend/.env.`, 503); }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new MediaError("setup", `Use a plain HTTP(S) base URL in ${name}, without credentials or a query.`, 503);

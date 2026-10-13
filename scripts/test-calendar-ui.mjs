@@ -36,7 +36,7 @@ await page.route('**/*',async route=>{
   return json(route,{removed:true,events,eventTypes});
  }
  if(path==='/api/calendar/interpret') {
-  interpreted++; if(failAi) return json(route,{error:'OpenAI est occupé. Réessaie ou saisis les détails manuellement.'},429);
+  interpreted++; if(failAi) return json(route,{error:'La préparation est occupée. Réessaie ou saisis les détails manuellement.'},429);
   return json(route,{event:aiDraft,clarification:null});
  }
  if(path==='/api/calendar/events' && req.method()==='POST') {
@@ -98,7 +98,7 @@ try {
  failAi=true;await page.locator('[data-action="create-event"]').first().click();
  await page.locator('#event-prompt').fill('Dentiste demain à 14 h');
  await page.locator('#event-interpret-form button[type="submit"]').click();
- await expect(page.locator('#event-error')).toContainText('OpenAI est occupé');
+ await expect(page.locator('#event-error')).toContainText('La préparation est occupée');
  await expect(page.locator('#event-prompt')).toHaveValue('Dentiste demain à 14 h');
  await page.locator('[data-action="event-manual"]').click();
  await page.locator('#event-title').fill('Dentiste');await page.locator('[name="allDay"]').check();

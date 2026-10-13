@@ -52,7 +52,7 @@ export default function Sources({ intent, choose, disabled, reject }: { intent: 
     {task.busy && <p role="status" className="text-orange-400">Searching indexers…</p>}
     {task.error && <div role="alert" className="rounded border border-orange-500/40 p-4"><p>{task.error}</p><Button variant="outline" className="mt-3" onClick={() => search()}>Retry search</Button></div>}
     {result && <>
-      {assistant.busy && <p role="status" className="text-sm text-neutral-400">Gemini is reviewing the sources…</p>}
+      {assistant.busy && <p role="status" className="text-sm text-neutral-400">Reviewing the sources…</p>}
       {!assistant.busy && (advice?.warning || assistant.error) && <p role="status" className="text-sm text-orange-400">{advice?.warning || `${assistant.error} Showing basic recommendations.`}</p>}
       {result.warning && <p role="status" className="text-orange-400">{result.warning}</p>}
       {result.reports.some(r => r.error) && <ul className="space-y-2 rounded border border-orange-500/40 p-4 text-sm" aria-label="Indexer errors">{result.reports.filter(r => r.error).map(r => <li key={r.indexer}><strong>{r.indexer}:</strong> {r.error}</li>)}</ul>}

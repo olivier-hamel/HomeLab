@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { MediaError } from "../media/core.ts";
+import { publicAnalysisError } from "../ai/messages.ts";
 import type { MoodleCourse, MoodleFile } from "../moodle/client.ts";
 import type { EventInput } from "../calendar/events.ts";
 
@@ -99,7 +100,7 @@ export function publicLibrary(library: Library, allowed: boolean) {
   const folders = library.folders.filter(folder => allowed || !folder.managed || folder.id === MOODLE_FOLDER);
   const files = library.files.filter(file => allowed || !file.source).map(({ blobId, previewId, tempoScan, tempoDecisions, ...file }) => ({ ...file, ready: !!blobId, hasPreview: !!previewId || file.kind === "pdf" && !!blobId,
     tempoScan: tempoScan ? { id: tempoScan.id, state: tempoScan.state, automatic: tempoScan.automatic, requestedAt: tempoScan.requestedAt, completedAt: tempoScan.completedAt,
-      summary: tempoScan.summary, error: tempoScan.error, changed: !!tempoScan.blobId && tempoScan.blobId !== blobId,
+      summary: tempoScan.summary, error: publicAnalysisError(tempoScan.error), changed: !!tempoScan.blobId && tempoScan.blobId !== blobId,
       proposals: tempoScan.proposals.map(proposal => ({ ...proposal, decision: tempoDecisions?.[proposal.id] ?? proposal.decision })) } : null }));
   const privateSync = allowed ? library.sync : emptySync();
   const sync = { status: privateSync.status, lastAttempt: privateSync.lastAttempt, lastSuccess: privateSync.lastSuccess, message: privateSync.message, saved: privateSync.saved, total: privateSync.total };

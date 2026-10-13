@@ -76,7 +76,7 @@ export default function Library() {
     try { await libraryRequest(`/files/${file.id}/scan`, "POST", {}); await reload(); return null; }
     catch (error) { const message = error instanceof Error ? error.message : "Le scan n’a pas pu être lancé."; setError(message); return message; }
   };
-  const scanLabel = (file: LibraryFile) => file.tempoScan?.state === "queued" ? (data?.aiAvailable ? "Scan Tempo en attente…" : "En attente de Gemini…") : file.tempoScan?.state === "scanning" ? "Scan Tempo en cours…" : file.tempoScan ? "Relancer le scan Tempo" : "Scanner pour Tempo";
+  const scanLabel = (file: LibraryFile) => file.tempoScan?.state === "queued" ? (data?.aiAvailable ? "Scan Tempo en attente…" : "En attente de configuration…") : file.tempoScan?.state === "scanning" ? "Scan Tempo en cours…" : file.tempoScan ? "Relancer le scan Tempo" : "Scanner pour Tempo";
   const syncing = syncBusy || data?.sync.status === "running";
   const countInFolder = (folder: LibraryFolder) => { const ids = descendants(folders, folder.id); return files.filter(file => file.folderId && ids.has(file.folderId)).length; };
   const sync = async () => {

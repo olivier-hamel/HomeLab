@@ -1,6 +1,6 @@
 # Tester Tempo localement
 
-## Analyse Gemini seule, sans démarrer HomeLab
+## Analyse Tempo seule, sans démarrer HomeLab
 
 Utilise Node.js 24. Depuis la racine du dépôt :
 
@@ -10,8 +10,8 @@ npm ci
 test -f .env || cp .env.example .env
 ```
 
-Dans `backend/.env`, renseigne `GEMINI_API_KEY` avec ta clé Gemini. Tu peux aussi
-la fournir dans l’environnement du terminal. `GEMINI_MODEL` est facultatif.
+Dans `backend/.env`, renseigne `OPENAI_API_KEY` avec ta clé OpenAI. Tu peux aussi
+la fournir dans l’environnement du terminal. Tempo utilise toujours `gpt-6.1-sol`.
 Le fichier `.env` est ignoré par Git; ne mets pas la clé dans une commande ou
 un fichier suivi. MongoDB n’est pas nécessaire pour ce test.
 
@@ -23,12 +23,12 @@ npm run test:pdf
 npm run test:pdf -- "/chemin/2026-03_PlanDeCours_PHS1101.pdf"
 ```
 
-Le PDF est transmis à Gemini. La commande utilise le même extracteur, le même
+Le PDF est transmis au service d’analyse. La commande utilise le même extracteur, le même
 schéma et les mêmes validations que le serveur. Elle affiche le résumé, les
 événements, leurs pages et les hypothèses détectées. Elle ne crée aucun
 document ni événement dans MongoDB. Le test synthétique échoue si l’examen
-attendu n’est pas retrouvé. En cas de refus Gemini, la sortie distingue le
-statut HTTP, le modèle et le code fournisseur, sans afficher la clé API ou
+attendu n’est pas retrouvé. En cas de refus du service, la sortie distingue le
+statut HTTP et le code fournisseur, sans afficher la clé API ou
 le corps d’erreur privé du fournisseur.
 
 ## Interface complète dans le navigateur
@@ -47,8 +47,8 @@ arrête les autres et affiche l’erreur.
 
 Le fichier `backend/.env` est créé depuis le modèle s’il manque. Complète
 `OPENAI_API_KEY` pour préparer les événements depuis une description avec
-`gpt-6.1-sol`, `GEMINI_API_KEY` pour scanner les documents et `MONGODB_URI`
-pour enregistrer les événements. `OPENAI_MODEL` est facultatif. Redémarre
+`gpt-6.1-sol` et scanner les documents, puis `MONGODB_URI`
+pour enregistrer les événements. Redémarre
 le backend après avoir ajouté la clé. Le lanceur
 utilise `homelab_calendar_dev` pour Tempo et `homelab_memo_dev` pour la
 bibliothèque Mémo. Les comptes et fichiers Mémo locaux restent dans
@@ -140,7 +140,7 @@ L’exception HTTP est réservée au développement local; le serveur conserve H
 erreurs et les validations avec des fournisseurs simulés. Le parcours visuel
 `node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-library-tempo-ui.mjs` utilise lui aussi des API simulées.
 Ces tests ne remplacent pas `npm run test:pdf` pour vérifier la compatibilité
-avec la vraie API Gemini avant un déploiement.
+avec le service d’analyse réel avant un déploiement.
 
 ## Vérifier l’app Accueil
 

@@ -33,8 +33,8 @@ function fixture(fetcher=async()=>{throw new Error('unexpected provider request'
  const upload=(bytes=pdf,name='Horaire été.pdf',username='oli',id=randomUUID())=>call('','POST',bytes,username,{'Content-Type':'application/pdf','X-Document-Name':encodeURIComponent(name),'X-Document-Id':id});
  return {df,ef,lf,folders,documents,events,api,call,upload};
 }
-const provider=events=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({summary:'Horaire de cours',events})}]}}]});
-const withKey=async work=>{const previous=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='document-test-canary';try{await work();}finally{if(previous===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=previous;}};
+const provider=events=>Response.json({status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({summary:'Horaire de cours',events})}]}]});
+const withKey=async work=>{const previous=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='document-test-canary';try{await work();}finally{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}};
 
 test('PDFs persist, deduplicate by account, hide storage fields, and serve authenticated originals',async()=>{
  const f=fixture();
@@ -58,14 +58,14 @@ test('upload rejects cross-origin changes, spoofed file types, invalid names and
  const large=Buffer.alloc(MAX_PDF_BYTES+1);pdf.copy(large);assert.equal((await f.upload(large)).status,413);
  assert.equal((await f.call('','POST',{event:draft})).status,403);assert.equal(f.df.rows.length,0);
 });
-test('Gemini receives the PDF, keeps multiple proposals without adding them, and successful analysis is reusable',async()=>withKey(async()=>{
+test('OpenAI receives the PDF, keeps multiple proposals without adding them, and successful analysis is reusable',async()=>withKey(async()=>{
  let calls=0;
  const f=fixture(async(url,init)=>{
   calls++;assert(!String(url).includes('document-test-canary'));assert(!init.body.includes('document-test-canary'));const body=JSON.parse(init.body);
-  const parts=body.contents[0].parts;assert.deepEqual(Buffer.from(parts[1].inlineData.data,'base64'),pdf);assert.equal(parts[1].inlineData.mimeType,'application/pdf');
-  // The bounded nested array was rejected by the live provider with HTTP 400.
-  assert.equal(body.generationConfig.responseJsonSchema.properties.events.maxItems,undefined);
-  assert.equal(JSON.parse(parts[0].text).username,undefined);assert.match(body.systemInstruction.parts[0].text,/untrusted/);
+  const parts=body.input[0].content;assert.equal(body.model,'gpt-6.1-sol');assert.equal(parts[1].type,'input_file');assert.deepEqual(Buffer.from(parts[1].file_data.split(',')[1],'base64'),pdf);assert.equal(parts[1].filename,'Horaire été.pdf');
+  // Structured document outputs remain bounded to 100 proposals.
+  assert.equal(body.text.format.schema.properties.events.maxItems,100);
+  assert.equal(JSON.parse(parts[0].text).username,undefined);assert.match(body.instructions,/untrusted/);
   return provider([{event:draft,page:2,note:''},{event:{...draft,title:'Remise du travail',allDay:true,startTime:null,endTime:null},page:3,note:'Vérifier la date'}]);
  });
  const {document}=await(await f.upload()).json();
@@ -180,11 +180,11 @@ test('selected edits create idempotent events with immutable document links; PDF
  assert.equal((await f.call(`/${document.id}/file`)).status,404);
 }));
 test('analysis failure, malformed output and missing key retain PDFs for retry',async()=>withKey(async()=>{
- for(const answer of [new Response('private-error-with-credentials',{status:500}),provider([{event:{...draft,date:'bad'},page:1,note:''}]),Response.json({candidates:[{finishReason:'MAX_TOKENS'}]})]){
+ for(const answer of [new Response('private-error-with-credentials',{status:500}),provider([{event:{...draft,date:'bad'},page:1,note:''}]),Response.json({status:'incomplete',incomplete_details:{reason:'max_output_tokens'}})]){
   const f=fixture(async()=>answer);const {document}=await(await f.upload()).json();const result=await f.call(`/${document.id}/analyze`,'POST',{});
   assert.equal(result.status,502);assert(!(await result.text()).includes('private-error'));assert.equal(f.df.rows.length,1);assert.equal((await f.documents.get('oli',document.id)).analysisState,'error');assert.equal(f.ef.rows.length,0);
  }
- const f=fixture();const {document}=await(await f.upload()).json();delete process.env.GEMINI_API_KEY;
+ const f=fixture();const {document}=await(await f.upload()).json();delete process.env.OPENAI_API_KEY;
  assert.equal((await f.call(`/${document.id}/analyze`,'POST',{})).status,503);assert.equal(f.df.rows.length,1);assert.equal((await f.documents.get('oli',document.id)).analysisState,'pending');
 }));
 test('analysis leases prevent simultaneous extraction and recover an interrupted request',async()=>{

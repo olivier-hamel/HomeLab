@@ -39,7 +39,7 @@ function CacheProgress({ stats }: { stats: TorrentStatus }) {
 function QualityReview({ value }: { value: string }) {
   const [heading, details, ...review] = value.split("\n\n");
   return <div role="status" aria-label="Quality review" className="max-w-3xl space-y-1 text-center">
-    <p className="text-lg font-semibold text-orange-300">{heading.replace("Gemini quality review:", "Quality review ·")}</p>
+    <p className="text-lg font-semibold text-orange-300">{heading.replace(/^(?:Gemini )?quality review:/i, "Quality review ·")}</p>
     <p className="text-xs text-neutral-400">{details}</p>
     <p className="text-xs leading-relaxed text-neutral-300">{review.join(" ")}</p>
   </div>;

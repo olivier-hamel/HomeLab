@@ -31,10 +31,10 @@ COPY --from=build --chown=app:app /app/.next/static/ ./.next/static/
 COPY --from=build --chown=app:app /app/public/ ./public/
 # Private MCP operations checker: no .env or SSH key is included in the image.
 COPY --from=build --chown=app:app /app/scripts/check-moodle.mjs ./scripts/check-moodle.mjs
-COPY --from=build --chown=app:app /app/src/lib/moodle/client.ts ./src/lib/moodle/client.ts
-COPY --from=build --chown=app:app /app/src/lib/media/core.ts /app/src/lib/media/http.ts ./src/lib/media/
+COPY --from=build --chown=app:app /app/src/lib/ ./src/lib/
 COPY --from=build --chown=app:app /app/scripts/sync-library.mjs ./scripts/sync-library.mjs
-COPY --from=build --chown=app:app /app/src/lib/library/ ./src/lib/library/
+COPY --from=build --chown=app:app /app/scripts/test-calendar-pdf.mjs ./scripts/test-calendar-pdf.mjs
+COPY --from=build --chown=app:app /app/scripts/lib/calendar-pdf-fixture.mjs ./scripts/lib/calendar-pdf-fixture.mjs
 USER 10001:10001
 EXPOSE 3001
 CMD ["node", "server.js"]

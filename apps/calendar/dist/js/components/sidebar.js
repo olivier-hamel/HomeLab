@@ -16,7 +16,7 @@ function renderLibraryNotifications(state) {
   const {count = 0, scanning = false, failureCount = 0, aiAvailable = true} = state.libraryNotifications || {};
   if (!count && !scanning && !failureCount) return '<section id="tempo-library-notifications" class="tempo-library-notifications" hidden></section>';
   const title = count ? `<span id="tempo-notifications-count">${count}</span> événement${count > 1 ? "s" : ""} à vérifier` : scanning ? "Recherche d’événements en cours" : "Un scan à relancer";
-  const description = count ? "Repérés dans Bibliothèque. Rien n’a été ajouté à ton calendrier." : scanning ? aiAvailable ? "Tempo analyse les nouveaux documents de Bibliothèque." : "Les nouveaux documents attendent la configuration de Gemini." : "Relance-le depuis le document dans Bibliothèque.";
+  const description = count ? "Repérés dans Bibliothèque. Rien n’a été ajouté à ton calendrier." : scanning ? aiAvailable ? "Tempo analyse les nouveaux documents de Bibliothèque." : "Les nouveaux documents attendent la configuration de l’analyse." : "Relance-le depuis le document dans Bibliothèque.";
   return `<section id="tempo-library-notifications" class="tempo-library-notifications" role="status" aria-live="polite"><div class="tempo-notifications-heading">${icon(count || scanning ? "sparkles" : "document")}<strong>${title}</strong></div><p>${description}</p>${count ? `<button id="tempo-notifications-button" data-action="tempo-review">Vérifier les propositions ${icon("arrowRight")}</button>` : !scanning ? '<a href="/?section=library" target="_top">Ouvrir Bibliothèque</a>' : ""}</section>`;
 }
 export function renderSidebar(state) {

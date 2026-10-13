@@ -11,7 +11,7 @@ export default function LibraryFileInfo({ file, folders, aiAvailable, onOpen, on
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const Icon = file.kind === "pdf" ? FileText : Presentation;
   const scan = file.tempoScan;
-  const scanLabel = scan?.state === "queued" ? (aiAvailable ? "Scan Tempo en attente…" : "En attente de Gemini…") : scan?.state === "scanning" ? "Scan Tempo en cours…" : scan ? "Relancer le scan Tempo" : "Scanner pour Tempo";
+  const scanLabel = scan?.state === "queued" ? (aiAvailable ? "Scan Tempo en attente…" : "En attente de configuration…") : scan?.state === "scanning" ? "Scan Tempo en cours…" : scan ? "Relancer le scan Tempo" : "Scanner pour Tempo";
   const scanFile = async () => {
     setBusy(true); setError("");
     try { setError(await onScan(file) || ""); }

@@ -53,7 +53,7 @@ création, la modification et la revue des propositions de documents.
 Le type système « aucun », caché, est utilisé par défaut et ne peut pas être
 supprimé. Supprimer un type conserve ses événements avec une importance normale.
 OpenAI reçoit la liste des types du compte et choisit celui qui correspond le
-mieux au titre en langage naturel. Gemini reçoit cette même liste lors des scans PDF et PowerPoint.
+mieux au titre, en langage naturel comme lors des scans PDF et PowerPoint.
 
 Le backend utilise la connexion MongoDB commune à HomeLab : configure
 `MONGODB_URI` dans `backend/.env`, avec `MONGODB_DATABASE=homelab` ou ta base
@@ -70,9 +70,9 @@ GPT-6.1 Sol peut préparer ces mêmes règles depuis une description en langage 
 
 La création assistée utilise `OPENAI_API_KEY`, exclusivement côté serveur.
 Ajoute la clé dans le fichier privé `backend/.env`, puis redémarre le backend.
-`OPENAI_MODEL` est optionnel et vaut `gpt-6.1-sol` par défaut. Le fichier `.env`
-à la racine sert uniquement aux réglages Compose. Les scans de documents
-conservent `GEMINI_API_KEY` et `GEMINI_MODEL`. Mémo conserve ses variables
+Toutes les fonctionnalités Tempo utilisent le modèle fixe `gpt-6.1-sol`, y
+compris les scans PDF et PowerPoint. Le fichier `.env` à la racine sert uniquement
+aux réglages Compose. Mémo conserve ses variables
 `MEMO_*` dans son service distinct. Le compte MongoDB du backend doit avoir
 accès à la base configurée.
 
@@ -93,6 +93,6 @@ et sa page. La suppression du fichier conserve les événements du calendrier.
 
 Les notifications et les fichiers restent dans le volume Bibliothèque; les
 événements acceptés restent dans MongoDB. Les anciens PDF Tempo et leurs dossiers
-sont migrés à l’ouverture du calendrier sans relancer Gemini. Les anciens liens
+sont migrés à l’ouverture du calendrier sans relancer l’analyse. Les anciens liens
 restent consultables. Reconstruis `backend`, `frontend`, `calendar` et `memo`
 pour activer le parcours commun.
