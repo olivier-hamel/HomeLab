@@ -3,13 +3,14 @@ import { ArrowLeft, LoaderCircle, RotateCcw } from "lucide-react";
 import { Button } from "../ui/button";
 import Playback from "./Playback";
 import { useTvFocus } from "../useTvNavigation";
-import { automaticSources, loadDismissedSources, mediaApi, saveDismissedSources, sourceFingerprint, type Assessment, type SearchIntent, type SearchResults, type Source, type SourceAdvice } from "../../lib/media";
+import { automaticSources, loadDismissedSources, matchingDownload, mediaApi, saveDismissedSources, sourceFingerprint, type Assessment, type MediaDownload, type SearchIntent, type SearchResults, type Source, type SourceAdvice } from "../../lib/media";
 import { hasNativeVideoPlayer, nativePlayerStatus, onNativePlayerRequest } from "../../native";
 
-export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: SearchIntent; close: () => void; resumeAt?: number }) {
+export default function AutoPlayback({ intent, close, resumeAt = 0, downloadOnly = false, onQueued }: { intent: SearchIntent; close: () => void; resumeAt?: number; downloadOnly?: boolean; onQueued?: () => void }) {
   const panel = useRef<HTMLElement>(null);
   useTvFocus(panel);
   const [chosen, setChosen] = useState<{ source: Source; assessment?: Assessment; key: number } | null>(null);
+  const [local, setLocal] = useState<{ downloadId: string } | null>(null);
   const [message, setMessage] = useState("Finding the best version for you…");
   const [error, setError] = useState("");
   const [english, setEnglish] = useState(false);
@@ -42,6 +43,12 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
     if (attempts.current >= 5) { setError("Torrent unavailable. Retry or choose another source."); return; }
     const controller = new AbortController(); active.current = controller;
     try {
+      if (!downloadOnly && !attempts.current) {
+        const saved = await mediaApi<{ downloads: MediaDownload[] }>("downloads", AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)])).catch(() => ({ downloads: [] }));
+        controller.signal.throwIfAborted();
+        const available = matchingDownload(saved.downloads, intent);
+        if (available) { setLocal({ downloadId: available.id }); return; }
+      }
       // Source handles expire after ten minutes. Refresh them before switching late in a film.
       if (Date.now() - fetchedAt.current > 8 * 60_000) { queue.current = []; nextBatch.current = 1; }
       let candidate: Source | undefined;
@@ -87,14 +94,14 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
     }
   });
   useEffect(() => {
-    if (!hasNativeVideoPlayer()) return;
+    if (!hasNativeVideoPlayer() || downloadOnly) return;
     let disposed = false;
     const listener = onNativePlayerRequest(request => { if (!disposed) nativeRequest(request.action); });
     return () => { disposed = true; void listener.then(handle => handle.remove()).catch(() => {}); };
-  }, []);
+  }, [downloadOnly]);
   useEffect(() => {
-    if (hasNativeVideoPlayer()) void nativePlayerStatus(error || (chosen ? "Getting the next video ready…" : message), !!error);
-  }, [chosen, message, error]);
+    if (hasNativeVideoPlayer() && !downloadOnly && !local) void nativePlayerStatus(error || (chosen ? "Getting the next video ready…" : message), !!error);
+  }, [chosen, message, error, downloadOnly, local]);
   useEffect(() => {
     // The request owns loading state and cancellation for this mounted viewing session.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -109,8 +116,10 @@ export default function AutoPlayback({ intent, close, resumeAt = 0 }: { intent: 
     </div>
     <div className="space-y-3">
       <h2 className="text-2xl font-semibold text-white sm:text-3xl">{intent.label || intent.query}</h2>
+      {downloadOnly && <p className="text-sm text-neutral-400">Recherche d’une version à conserver sur le serveur. Le téléchargement continuera après la fermeture de cette page.</p>}
+      {local && <p className="text-sm text-orange-300">Lecture du fichier téléchargé sur HomeLab</p>}
     </div>
-    {chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} nativeSession={nativeSession} qualityInfo={qualityInfo} simple resumeAt={nextPosition} onFailure={() => { void next(true); }} onNext={position => { if (position !== undefined) setNextPosition(position); void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
+    {local ? <Playback source={local} search={intent} close={close} simple resumeAt={resumeAt} /> : chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} downloadOnly={downloadOnly} onQueued={onQueued} nativeSession={nativeSession} qualityInfo={qualityInfo} simple resumeAt={nextPosition} onFailure={() => { void next(true); }} onNext={position => { if (position !== undefined) setNextPosition(position); void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
       {error ? <><p role="alert" className="max-w-md text-center text-neutral-300">{error}</p><Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => { if (!nextBatch.current && !queue.current.length) nextBatch.current = 1; void next(false, true); }}><RotateCcw />Try again</Button></> : <><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status" className="text-neutral-200">{message}</p><p className="text-sm text-neutral-400">This can take a moment. We'll start when it's ready.</p></>}
       <Button variant="ghost" onClick={close}>{error ? "Choose another title" : "Cancel"}</Button>
     </div>}

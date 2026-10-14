@@ -349,3 +349,20 @@
 .library-tempo-review .library-tempo-all-day { display: flex; align-items: center; gap: 8px; margin-top: 15px; }
 .library-tempo-review fieldset > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 760px) { .library-tempo-notification { margin-inline: 20px; flex-wrap: wrap; } .library-tempo-notification > div { flex-basis: calc(100% - 35px); } .library-tempo-notification button { margin-left: 30px; } }
+.library-download-folder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .5rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.5rem;
+  border: 1px solid var(--lib-line);
+  border-radius: .75rem;
+  background: #f6f7f9;
+  color: var(--lib-ink);
+  text-align: left;
+}
+.library-download-folder small { color: var(--lib-muted); }
+.library-download-folder:hover, .library-download-folder:focus-visible { border-color: #f97316; }
+.library-media-downloads { min-width: 0; padding: 1.5rem; border-radius: .75rem; background: #171717; color-scheme: dark; }
+@media (max-width: 600px) { .library-media-downloads { padding: 1rem; } }

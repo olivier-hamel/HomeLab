@@ -413,8 +413,8 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
   transform: scale(1.035);
   box-shadow: 0 1rem 2.5rem #000a, 0 0 22px #ffffff12;
 }
-[data-tv-mode="true"] .simple-episodes > button { animation: tv-fade-in 280ms ease-out; }
-[data-tv-mode="true"] .simple-episodes > button:is(:hover, :focus) {
+[data-tv-mode="true"] .simple-episodes button { animation: tv-fade-in 280ms ease-out; }
+[data-tv-mode="true"] .simple-episodes button:is(:hover, :focus) {
   transform: translateX(3px);
   border-color: #fb923c;
   background-color: #231c17;

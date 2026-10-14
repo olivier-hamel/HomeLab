@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Film, Info, Play, Search, Star, X } from "lucide-react";
+import { Download, Film, Info, Play, Search, Star, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { mediaApi, sourceIntent, type ContinueWatchingMovie, type Details, type SearchIntent, type Title } from "../../lib/media";
@@ -9,7 +9,7 @@ import useTvDialogMotion from "../useTvDialogMotion";
 const field = "h-11 rounded border border-neutral-600 bg-neutral-950 px-3 text-sm text-white focus:outline-orange-500";
 type CatalogueResponse = { titles: Title[]; pages: number; originalQuery?: string; correctedQuery?: string; correctionProvider?: "gemini" };
 type RecommendationResponse = { provider: "gemini"; basedOn: number; titles: Title[] };
-export default function Catalogue({ find, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent, resumeAt?: number) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
+export default function Catalogue({ find, download, simple = false, continueWatching, recommendations = false }: { find: (intent: SearchIntent, resumeAt?: number) => void; download?: (intent: SearchIntent) => void; simple?: boolean; continueWatching?: ReactNode; recommendations?: boolean }) {
   const [text, setText] = useState("");
   const [q, setQuery] = useState("");
   const [chosen, setChosen] = useState<Title | null>(null);
@@ -56,7 +56,7 @@ export default function Catalogue({ find, simple = false, continueWatching, reco
       <p className="text-sm text-neutral-400">{q ? `Results for “${q}”` : simple ? "Popular movies and TV shows" : "Popular movies and TV shows on TMDB"}{!simple && " · Metadata only."}</p>
       {q && <Button type="button" variant="outline" data-tv-back="" onClick={exitSearch}><X />Exit search</Button>}
     </div>
-    {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={(intent, resumeAt) => { setChosen(null); find(intent, resumeAt); }} simple={simple} />}
+    {chosen && <TitleDetails key={`${chosen.kind}/${chosen.id}`} title={chosen} close={() => setChosen(null)} find={(intent, resumeAt) => { setChosen(null); find(intent, resumeAt); }} download={download ? intent => { setChosen(null); download(intent); } : undefined} simple={simple} />}
     <CatalogueResults key={`${q}/${retry}`} query={q} choose={choose} showDetails={setChosen} retry={() => setRetry(r => r + 1)} simple={simple} />
   </div>;
 }
@@ -169,7 +169,7 @@ function CatalogueResults({ query, choose, showDetails, retry, simple }: { query
   </>;
 }
 
-export function TitleDetails({ title, close, find, simple, initialProgress }: { title: Title; close: () => void; find: (intent: SearchIntent, resumeAt?: number) => void; simple: boolean; initialProgress?: ContinueWatchingMovie }) {
+export function TitleDetails({ title, close, find, download, simple, initialProgress }: { title: Title; close: () => void; find: (intent: SearchIntent, resumeAt?: number) => void; download?: (intent: SearchIntent) => void; simple: boolean; initialProgress?: ContinueWatchingMovie }) {
   const tvMode = useTvMode();
   const tvDetails = simple && tvMode;
   const panel = useRef<HTMLDialogElement>(null);
@@ -238,12 +238,13 @@ export function TitleDetails({ title, close, find, simple, initialProgress }: { 
     <p className="max-w-4xl text-sm leading-relaxed text-neutral-300">{data?.overview || title.overview || "No overview available."}</p>
     {error ? <p role="alert">{error} Close and reopen details to retry.</p> : !data ? <p role="status">Loading details…</p> : data.kind === "movie" ? <div className="flex flex-wrap gap-3">
       <Button ref={primaryAction} data-tv-initial-focus={tvDetails ? "" : undefined} disabled={restarting || (tvDetails && progress === undefined)} className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(data), progress?.playbackPositionSeconds ?? 0)}>{tvDetails && progress === undefined ? "Checking progress…" : tvDetails ? progress ? "Continue" : "Watch" : simple ? "Watch now" : "Find sources"}</Button>
+      {download && <Button variant="outline" onClick={() => download(sourceIntent(data))}><Download />Télécharger sur le serveur</Button>}
       {tvDetails && progress && <Button variant="outline" disabled={restarting} onClick={() => { void restart(data); }}>{restarting ? "Starting…" : "Watch from beginning"}</Button>}
       {tvDetails && <Button variant="ghost" onClick={dismiss}>Close</Button>}
       {restartError && <p role="alert" className="w-full text-sm text-orange-400">{restartError}</p>}
     </div> : <div className="space-y-4">
       <label className="flex flex-wrap items-center gap-3 text-sm">Season<select className={field} value={season ?? ""} onChange={e => setSeason(Number(e.target.value))}>{data.seasons.map(s => <option key={s.number} value={s.number}>{s.name} ({s.episodes ?? "?"} episodes)</option>)}</select></label>
-      {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} simple={simple} /> : <p>No season information is available.</p>}
+      {season !== undefined ? <Episodes key={season} title={data} season={season} find={find} download={download} simple={simple} /> : <p>No season information is available.</p>}
     </div>}
     </div>
     <div className="flex aspect-[2/3] w-40 max-w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 justify-self-center sm:justify-self-end">
@@ -252,7 +253,7 @@ export function TitleDetails({ title, close, find, simple, initialProgress }: { 
     </div>
   </dialog>;
 }
-function Episodes({ title, season, find, simple }: { title: Details; season: number; find: (intent: SearchIntent) => void; simple: boolean }) {
+function Episodes({ title, season, find, download, simple }: { title: Details; season: number; find: (intent: SearchIntent) => void; download?: (intent: SearchIntent) => void; simple: boolean }) {
   const [episodes, setEpisodes] = useState<{ number: number; name: string; overview: string; airDate: string }[] | null>(null);
   const [episode, setEpisode] = useState("");
   const [error, setError] = useState("");
@@ -263,11 +264,12 @@ function Episodes({ title, season, find, simple }: { title: Details; season: num
   }, [title.id, season]);
   const selected = episodes?.find(e => e.number === Number(episode));
   if (simple) return <div className="space-y-3">
-    {error ? <p role="alert">Couldn't load episodes. Reselect the season to retry.</p> : !episodes ? <p role="status">Loading episodes…</p> : episodes.length ? <div className="simple-episodes">{episodes.map(item => <button key={item.number} onClick={() => find(sourceIntent(title, season, item.number))} aria-label={`Watch episode ${item.number}: ${item.name}`}><span className="text-orange-400"><Play className="h-5 w-5" /></span><span><strong className="block text-sm text-white">{item.number}. {item.name}</strong><span className="mt-1 line-clamp-2 block text-xs text-neutral-400">{item.overview}</span></span></button>)}</div> : <p>No episodes are available for this season.</p>}
+    {error ? <p role="alert">Couldn't load episodes. Reselect the season to retry.</p> : !episodes ? <p role="status">Loading episodes…</p> : episodes.length ? <div className="simple-episodes">{episodes.map(item => <div key={item.number} className="space-y-2"><button onClick={() => find(sourceIntent(title, season, item.number))} aria-label={`Watch episode ${item.number}: ${item.name}`}><span className="text-orange-400"><Play className="h-5 w-5" /></span><span><strong className="block text-sm text-white">{item.number}. {item.name}</strong><span className="mt-1 line-clamp-2 block text-xs text-neutral-400">{item.overview}</span></span></button>{download && <Button variant="outline" size="sm" aria-label={`Télécharger l’épisode ${item.number} : ${item.name}`} onClick={() => download(sourceIntent(title, season, item.number))}><Download />Télécharger cet épisode</Button>}</div>)}</div> : <p>No episodes are available for this season.</p>}
   </div>;
   return <div className="space-y-3">
     {error ? <p role="alert">{error} Reselect the season to retry.</p> : !episodes ? <p role="status">Loading episodes…</p> : <label className="flex flex-wrap items-center gap-3 text-sm">Episode<select className={`${field} max-w-full`} value={episode} onChange={e => setEpisode(e.target.value)}><option value="">Whole season / season pack</option>{episodes.map(e => <option key={e.number} value={e.number}>{e.number}. {e.name}</option>)}</select></label>}
     {selected && <p className="text-sm text-neutral-400">{selected.airDate && `${selected.airDate} · `}{selected.overview}</p>}
     <Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => find(sourceIntent(title, season, episode ? Number(episode) : undefined))}>Find sources</Button>
+    {download && episode && <Button variant="outline" onClick={() => download(sourceIntent(title, season, Number(episode)))}><Download />Télécharger cet épisode</Button>}
   </div>;
 }

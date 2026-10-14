@@ -13,7 +13,7 @@ let probes = 0, conversions = 0;
 
 // A seekable, file-scoped loopback input keeps upstream credentials out of process
 // arguments. FFmpeg can request the tail of an MP4 without downloading the film.
-async function openInput(torrents: TorrServer, hash: string, file: TorrentFile, signal: AbortSignal): Promise<Input> {
+async function openInput(torrents: Pick<TorrServer, "stream">, hash: string, file: TorrentFile, signal: AbortSignal): Promise<Input> {
   const token = randomBytes(32).toString("hex");
   const controller = new AbortController();
   let header = Buffer.alloc(0);
@@ -85,9 +85,9 @@ function startJob(binary: string, args: string[], input: Input, signal: AbortSig
 }
 
 export class FFmpeg {
-  private torrents: TorrServer;
+  private torrents: Pick<TorrServer, "stream">;
   private cache = new BoundedCache<MediaProbe>(128, 30 * 60_000);
-  constructor(torrents: TorrServer) { this.torrents = torrents; }
+  constructor(torrents: Pick<TorrServer, "stream">) { this.torrents = torrents; }
 
   async probe(hash: string, file: TorrentFile, signal: AbortSignal): Promise<MediaProbe> {
     const key = `${hash}:${file.id}:${file.size}`;

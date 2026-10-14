@@ -39,11 +39,12 @@ export class TorrServer {
     const headers = this.headers(); headers.set("Content-Type", "application/json");
     return jsonRequest(this.fetcher, "TorrServer", new URL(path, serviceUrl("TORRSERVER_BASE_URL")), { method: "POST", headers, body: JSON.stringify(body) }, envNumber("MEDIA_METADATA_TIMEOUT_MS", 10_000, 1000, 60_000), signal);
   }
-  async add(input: string | Uint8Array<ArrayBuffer>, signal: AbortSignal) {
-    if (typeof input === "string") return normalizeTorrent(await this.request("torrents", { action: "add", link: magnet(input), save_to_db: false }, signal));
+  async add(input: string | Uint8Array<ArrayBuffer>, signal: AbortSignal, persistent = false) {
+    if (typeof input === "string") return normalizeTorrent(await this.request("torrents", { action: "add", link: magnet(input), save_to_db: persistent }, signal));
     const form = new FormData();
     form.set("file", new Blob([input], { type: "application/x-bittorrent" }), "source.torrent");
-    // Omit save entirely: upstream treats any supplied value (even "false") as true.
+    if (persistent) form.set("save", "true");
+    // For temporary playback omit save: upstream treats even "false" as true.
     const result = await jsonRequest(this.fetcher, "TorrServer", new URL("torrent/upload", serviceUrl("TORRSERVER_BASE_URL")), { method: "POST", headers: this.headers(), body: form }, envNumber("MEDIA_METADATA_TIMEOUT_MS", 10_000, 1000, 60_000), signal);
     return normalizeTorrent(Array.isArray(result) ? result[0] : result);
   }

@@ -13,7 +13,18 @@ export type Assessment = { id: string; identity: "match" | "uncertain" | "mismat
 export type SourceAdvice = { provider: "gemini" | "heuristic"; model: string | null; warning: string | null; reviewed: number; ranking: Assessment[] };
 export type SearchResults = { searchId: string; advice: SourceAdvice; results: Source[]; reports: { indexer: string; query: string; strategy: string; error: string | null }[]; more: boolean; batch: number; warning: string | null };
 export type TorrentFile = { id: number; path: string; size: number | null; kind: "video" | "subtitle" | "other"; sample: boolean };
-export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
+export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloaded?: boolean; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
+export type MediaDownload = { id: string; title: string; file: TorrentFile; intent: SearchIntent; state: "queued" | "downloading" | "ready" | "error"; downloadedBytes: number; totalBytes: number; error: string; createdAt: string; updatedAt: string };
+export type PlaybackSource = Source | string | { downloadId: string };
+export function matchingDownload(downloads: MediaDownload[], intent: SearchIntent): MediaDownload | undefined {
+  const target = intent.target ?? intent.context;
+  if (!target?.tmdbId || (target.kind === "tv" && target.episode === undefined)) return;
+  return downloads.find(download => {
+    const saved = download.intent.target ?? download.intent.context;
+    return download.state === "ready" && saved?.kind === target.kind && saved.tmdbId === target.tmdbId &&
+      (target.kind === "movie" || (saved.season === target.season && saved.episode === target.episode));
+  });
+}
 export type Selection = { id: string; stream: string; file: TorrentFile };
 export type PlaybackOption = { id: string; mode: "direct" | "remux" | "transcode"; mime: string; container: string; video: "copy" | "h264" | "vp9"; audio: "copy" | "aac" | "opus" | "none" };
 export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; width?: number; height?: number; frameRate?: number; options: PlaybackOption[] };

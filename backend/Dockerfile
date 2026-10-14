@@ -24,8 +24,8 @@ RUN apt-get update \
     && groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home app \
     && chown app:app /app \
-    && mkdir -p /data/library /data/camera \
-    && chown app:app /data/library /data/camera
+    && mkdir -p /data/library /data/camera /data/media-downloads \
+    && chown app:app /data/library /data/camera /data/media-downloads
 COPY --from=build --chown=app:app /app/.next/standalone/ ./
 COPY --from=build --chown=app:app /app/.next/static/ ./.next/static/
 COPY --from=build --chown=app:app /app/public/ ./public/
