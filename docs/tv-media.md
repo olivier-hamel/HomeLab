@@ -23,9 +23,15 @@ l’historique; les téléchargements appartiennent au compte connecté.
 Les fichiers restent sur le serveur jusqu’à une suppression explicite. Fermer la page
 ne coupe pas le transfert. Une file SQLite persistante traite une vidéo à la fois et
 reprend les tâches après redémarrage du backend; TorrServer conserve les métadonnées
-des sources ajoutées à cette file. Une erreur conserve le fichier partiel pour le bouton
-**Reprendre**. Les téléchargements incomplets ne sont jamais proposés à la lecture.
+des sources ajoutées à cette file. Une coupure de connexion ou un flux tronqué déclenche
+jusqu’à trois reprises automatiques, espacées de 10 secondes, depuis les octets réellement
+conservés. Les téléchargements tolèrent 3 minutes sans données; la lecture conserve son
+délai de 45 secondes. Après épuisement des reprises, une erreur conserve le fichier partiel
+pour le bouton **Reprendre**. Les erreurs disque et les réponses invalides ne sont pas
+relancées automatiquement. Les téléchargements incomplets ne sont jamais proposés à la lecture.
 La suppression d’un transfert actif annule celui-ci et retire également ses octets partiels.
+Les échecs définitifs écrivent une entrée `media.download.failed` dans les journaux du
+backend, avec la catégorie d’erreur, le code système éventuel et les octets conservés.
 
 Quand un film ou un épisode exact est déjà prêt, la lecture automatique du catalogue
 utilise le fichier conservé. **Regarder** dans les téléchargements fonctionne également
@@ -279,6 +285,9 @@ Keep the generated output private.
 | `TORRSERVER_USERNAME`, `TORRSERVER_PASSWORD` | Both blank, or both set for existing HTTP Basic auth. |
 | `MEDIA_DOWNLOAD_STORAGE_PATH` | Durable video and SQLite directory; local default `.local-data/media-downloads`, Docker `/data/media-downloads`. |
 | `MEDIA_DOWNLOAD_RESERVE_MIB` | `512`; free disk reserve checked before starting a download. |
+| `MEDIA_DOWNLOAD_IDLE_TIMEOUT_MS` | `180000`; range 1000–600000 ms without data during a download. Independent of playback. |
+| `MEDIA_DOWNLOAD_RETRIES` | `3`; range 0–10 automatic retries for connection failures, timeouts and truncated bodies. Partial bytes are retained. |
+| `MEDIA_DOWNLOAD_RETRY_DELAY_MS` | `10000`; range 0–60000 ms between automatic retries. Deletion cancels the wait. |
 | `TMDB_READ_ACCESS_TOKEN` | Optional Bearer token. Direct source search works independently. |
 | `MONGODB_URI` | Optional MongoDB connection string enabling persistent Continue Watching and watch history. It may use `<db_username>` and `<db_password>` placeholders. |
 | `MONGODB_USERNAME`, `MONGODB_PASSWORD` | Optional credentials inserted into the URI placeholders and URL-encoded by the backend. |

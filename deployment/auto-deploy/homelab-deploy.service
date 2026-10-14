@@ -1,0 +1,14 @@
+[Unit]
+Description=Deploy the latest pushed HomeLab commit
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Docker runs as root; the script runs Git as the checkout owner (olivier on apps01).
+Environment=DEPLOY_REPO_DIR=/opt/stacks/homelab
+EnvironmentFile=-/etc/default/homelab-deploy
+ExecStart=/bin/bash /opt/stacks/homelab/scripts/deploy-server.sh
+TimeoutStartSec=45min
+UMask=0077
