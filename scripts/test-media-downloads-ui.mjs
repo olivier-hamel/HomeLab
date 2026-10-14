@@ -31,14 +31,17 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `https://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, locale: 'fr-CA', ignoreHTTPSErrors: true });
-const errors = [], requests = [], downloads = [];
+const errors = [], requests = [], downloads = [], progressWrites = [];
 page.on('pageerror', error => errors.push(error.message));
 const account = { enabled: true, user: { username: 'oli', display_name: 'Oli', must_change_password: false }, accounts: [{ username: 'oli', display_name: 'Oli' }] };
 const movie = { id: 1, kind: 'movie', title: 'Fixture Movie', year: '2026', overview: 'A locally generated test movie.', poster: null };
 const show = { ...movie, id: 2, kind: 'tv', title: 'Fixture Show' };
 let intent;
 const file = () => ({ id: 1, path: intent?.context?.kind === 'tv' ? 'Fixture.Show.S01E02.mp4' : 'Fixture.Movie.mp4', kind: 'video', sample: false, size: video.length });
-const status = (downloaded = false) => ({ id: downloaded ? 'local-session' : 'torrent-session', title: 'Fixture video', state: 'ready', files: [file()], downloaded, downloadSpeed: 0, connectedPeers: 0, downloadedBytes: video.length, completedBytes: video.length, preloadBytes: video.length, preloadTarget: video.length });
+const status = (downloaded = false) => {
+  const saved = downloads.find(row => row.intent.context.tmdbId === intent?.context?.tmdbId);
+  return { id: downloaded ? 'local-session' : 'torrent-session', title: 'Fixture video', state: 'ready', files: [file()], downloaded, ...(downloaded ? { downloadId: saved.id, playbackState: saved.playbackState } : {}), downloadSpeed: 0, connectedPeers: 0, downloadedBytes: video.length, completedBytes: video.length, preloadBytes: video.length, preloadTarget: video.length };
+};
 await page.route('**/memo/api/auth/**', route => route.fulfill({ json: account }));
 await page.route('**/api/library**', route => route.fulfill({ json: { folders: [], files: [], semester: 'A26', maxFileBytes: 25000000, moodleAvailable: false, sync: { status: 'idle', message: '', lastAttempt: null, lastSuccess: null, saved: 0, total: 0 } } }));
 await page.route('**/api/media/**', async route => {
@@ -61,13 +64,27 @@ await page.route('**/api/media/**', async route => {
     downloads.push(row); data = { download: row };
   } else if (path === 'downloads') data = { downloads };
   else if (path === 'downloads/playback') { intent = downloads.find(row => row.id === body.downloadId).intent; data = status(true); }
+  else if (path === 'downloads/progress') {
+    progressWrites.push(body);
+    const row = downloads.find(row => row.id === body.downloadId);
+    row.playbackState ??= { playbackPositionSeconds: 0, durationSeconds: 0, subtitleOffsetSeconds: 0, completed: false };
+    for (const key of ['playbackPositionSeconds', 'durationSeconds', 'subtitleOffsetSeconds']) if (body[key] !== undefined) row.playbackState[key] = body[key];
+    if (body.playbackPositionSeconds !== undefined) row.playbackState.completed = body.playbackPositionSeconds / body.durationSeconds >= 0.95;
+    data = { playbackState: row.playbackState };
+  }
   else if (path === 'downloads/remove') { downloads.splice(downloads.findIndex(row => row.id === body.downloadId), 1); data = { removed: true }; }
   else if (path === 'downloads/retry') { const row = downloads.find(row => row.id === body.downloadId); row.state = 'ready'; row.error = ''; row.downloadedBytes = row.totalBytes; data = { download: row }; }
   else if (path === 'inspect') data = { duration: 3, options: [{ id: 'direct', mode: 'direct', mime: 'video/mp4', container: 'mp4', video: 'copy', audio: 'none' }] };
   else if (path === 'prepare') data = { id: 'direct', mode: 'direct', mime: 'video/mp4', container: 'mp4', video: 'copy', audio: 'none', duration: 3, stream: '/api/media/stream/local-session' };
-  else if (path.startsWith('stream/')) { await route.fulfill({ contentType: 'video/mp4', body: video }); return; }
+  else if (path.startsWith('stream/')) {
+    const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers().range || '');
+    const start = range ? Number(range[1]) : 0, end = range?.[2] ? Math.min(Number(range[2]), video.length - 1) : video.length - 1;
+    await route.fulfill({ status: range ? 206 : 200, headers: { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', ...(range ? { 'Content-Range': `bytes ${start}-${end}/${video.length}` } : {}) }, body: video.subarray(start, end + 1) }); return;
+  }
   else if (['history', 'progress'].includes(path)) data = { saved: true };
   else if (path === 'subtitles/provider') data = { configured: false };
+  else if (path === 'subtitles/search') data = { results: [{ id: 'english', name: 'English.srt', release: 'Fixture', language: 'EN' }] };
+  else if (path === 'subtitles/download') data = { files: [{ name: 'English.srt', content: Buffer.from('1\n00:00:00,200 --> 00:00:02,500\nResume fixture').toString('base64') }] };
   else { await route.fulfill({ status: 404, json: { error: `Unexpected fixture endpoint: ${path}` } }); return; }
   await route.fulfill({ json: data });
 });
@@ -101,6 +118,51 @@ try {
   await page.locator('.library-download-folder').click();
   await expect(page.getByRole('article')).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Importer', exact: true })).toBeDisabled();
+  for (const row of downloads) {
+    const article = page.getByRole('article', { name: row.title });
+    await article.getByRole('button', { name: /Regarder|Reprendre à|Revoir/ }).click();
+    await expect.poll(() => page.locator('video').evaluate(video => video.readyState)).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.readyState >= 3)).toBe(true);
+    await page.locator('video').evaluate(video => { video.pause(); video.currentTime = 1.25; });
+    await expect.poll(() => page.locator('video').evaluate(video => video.seeking)).toBe(false);
+    assert.equal(await page.locator('video').evaluate(video => video.currentTime), 1.25);
+    await page.getByRole('button', { name: 'Subtitles', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Load file', exact: true })).toBeHidden();
+    await page.getByRole('button', { name: 'More options', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Load file', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'More options', exact: true }).click();
+    await page.getByRole('button', { name: 'English subtitles', exact: true }).click();
+    await expect.poll(() => page.locator('track').evaluate(track => track.track.cues?.length)).toBe(1);
+    await page.getByRole('button', { name: 'Show subtitles 0.5 seconds later' }).click();
+    await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Close player', exact: true }).click();
+    await expect.poll(() => row.playbackState?.playbackPositionSeconds).toBe(1.25);
+    assert.equal(row.playbackState.subtitleOffsetSeconds, 0.5);
+    await page.reload(); await page.locator('.library-download-folder').click();
+    await article.getByRole('button', { name: 'Reprendre à 0:01', exact: true }).click();
+    await expect.poll(() => page.locator('video').evaluate(video => video.readyState)).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.currentTime >= 1.25)).toBe(true);
+    await page.locator('video').evaluate(video => video.pause());
+    assert(await page.locator('video').evaluate(video => video.currentTime >= 1.25 && video.currentTime < 2.5), 'Reopening resumes the saved position');
+    await page.getByRole('button', { name: 'Subtitles', exact: true }).click();
+    await page.getByRole('button', { name: 'English subtitles', exact: true }).click();
+    await expect.poll(() => page.locator('track').evaluate(track => track.track.cues?.[0]?.startTime)).toBe(0.7);
+    await expect(page.locator('output[aria-label="Subtitle offset"]')).toHaveText('+0.5 s');
+    await page.getByRole('button', { name: 'Off', exact: true }).click();
+    await page.getByRole('button', { name: 'English subtitles', exact: true }).click();
+    await expect.poll(() => page.locator('track').evaluate(track => track.track.cues?.[0]?.startTime)).toBe(0.7);
+    await page.getByRole('button', { name: 'Reset subtitle timing', exact: true }).click();
+    await expect.poll(() => row.playbackState.subtitleOffsetSeconds).toBe(0);
+    await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Close player', exact: true }).click();
+    await article.getByRole('button', { name: 'Depuis le début', exact: true }).click();
+    await expect.poll(() => page.locator('video').evaluate(video => video.readyState)).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.readyState >= 3)).toBe(true);
+    await page.locator('video').evaluate(video => { video.pause(); video.currentTime = 0.25; });
+    await expect.poll(() => page.locator('video').evaluate(video => video.seeking)).toBe(false);
+    await page.getByRole('button', { name: 'Close player', exact: true }).click();
+    await expect.poll(() => row.playbackState.playbackPositionSeconds).toBe(0.25);
+  }
   await noOverflow(); await shot('library-desktop');
   for (const width of [768, 390, 320]) { await page.setViewportSize({ width, height: 900 }); await noOverflow(); if (width === 390) await shot('library-mobile'); }
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -114,12 +176,12 @@ try {
   await expect(page.getByText('Prêt à regarder', { exact: false })).toBeVisible();
   await page.goto(`${origin}/?section=tv&tv=1`);
   await page.getByRole('button', { name: 'Téléchargements', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Regarder', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Reprendre à/ })).toBeVisible();
   await noOverflow(); await shot('cinema-tv');
   assert.deepEqual(errors, []);
-  console.log('Media downloads UI passed: simultaneous movie/episode progress, no playback during download, local playback, library management, deletion, resume, mobile and TV.');
+  console.log('Media downloads UI passed: simultaneous downloads, local playback, movie/episode watch resume after reload, saved subtitle timing and reset, simplified captions menu, start over, library management, deletion, mobile and TV.');
 } catch (error) {
-  console.error({ body: (await page.locator('body').innerText()).slice(0, 3000), errors, requests });
+  console.error({ body: (await page.locator('body').innerText()).slice(0, 3000), errors, requests, progressWrites });
   await shot('failure');
   throw error;
 } finally {

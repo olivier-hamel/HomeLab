@@ -125,6 +125,7 @@ public class NativeVideoPlayerPlugin extends Plugin {
         intent.putExtra("title", call.getString("title", "HomeLab TV"));
         intent.putExtra("position", call.getDouble("position", 0.0));
         intent.putExtra("timelineOffset", call.getDouble("timelineOffset", 0.0));
+        intent.putExtra("subtitleOffsetSeconds", call.getDouble("subtitleOffsetSeconds", 0.0));
         intent.putExtra("playbackId", call.getString("playbackId", ""));
         intent.putExtra("searchQuery", call.getString("searchQuery", ""));
         intent.putExtra("sessionId", call.getString("sessionId", ""));

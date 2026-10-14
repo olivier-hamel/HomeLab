@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Copy, Download, FastForward, LoaderCircle, Maximize, Pause, Play, RefreshCw, Rewind, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
-import { bytes, mainVideo, mediaApi, preparePlayback, recordWatchHistory, savePlaybackProgress, type MediaDownload, type PlaybackSource, type PreparedPlayback, type SearchIntent, type Selection, type TorrentStatus } from "../../lib/media";
+import { bytes, downloadResumePosition, loadSubtitleOffset, mainVideo, mediaApi, preparePlayback, recordWatchHistory, saveDownloadPlaybackState, savePlaybackProgress, saveSubtitleOffset, type MediaDownload, type PlaybackSource, type PreparedPlayback, type SearchIntent, type Selection, type TorrentStatus } from "../../lib/media";
 import { useMediaTask } from "./useMediaTask";
 import Subtitles, { type NativeSubtitleState } from "./Subtitles";
 import PlaybackTimeline from "./PlaybackTimeline";
@@ -46,7 +46,7 @@ function QualityReview({ value }: { value: string }) {
   </div>;
 }
 
-export default function Playback({ source, search, close, simple = false, downloadOnly = false, onQueued, nativeSession, qualityInfo, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { source: PlaybackSource; search?: SearchIntent; close: () => void; downloadOnly?: boolean; onQueued?: () => void } & SimplePlayback) {
+export default function Playback({ source, search, close, simple = false, downloadOnly = false, onQueued, nativeSession, qualityInfo, resumeAt, onFailure, onNext, englishEnabled, onEnglishChange }: { source: PlaybackSource; search?: SearchIntent; close: () => void; downloadOnly?: boolean; onQueued?: () => void } & SimplePlayback) {
   const panel = useRef<HTMLElement>(null);
   useTvFocus(panel);
   const [status, setStatus] = useState<TorrentStatus | null>(null);
@@ -110,7 +110,7 @@ export default function Playback({ source, search, close, simple = false, downlo
   </section>;
 }
 
-function Player({ selection, initial, search, close, simple = false, nativeSession, qualityInfo, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { selection: Selection; initial: TorrentStatus; search?: SearchIntent; close: () => void } & SimplePlayback) {
+function Player({ selection, initial, search, close, simple = false, nativeSession, qualityInfo, resumeAt, onFailure, onNext, englishEnabled: controlledEnglish, onEnglishChange: changeControlledEnglish }: { selection: Selection; initial: TorrentStatus; search?: SearchIntent; close: () => void } & SimplePlayback) {
   const tvMode = useTvMode();
   const screen = useRef<HTMLDivElement>(null);
   useTvFocus(screen);
@@ -131,24 +131,52 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
   const [position, setPosition] = useState(0);
   const [share, setShare] = useState<{ token: string; path: string; expiresAt: string } | null>(null);
   const [notice, setNotice] = useState("");
+  const [localEnglish, setLocalEnglish] = useState(false);
+  const englishEnabled = controlledEnglish ?? localEnglish;
+  const onEnglishChange = changeControlledEnglish ?? setLocalEnglish;
   const [nativeSubtitle, setNativeSubtitle] = useState<NativeSubtitleState>(() => simple && englishEnabled ? { status: "loading" } : { status: "off" });
+  const [subtitleOffset] = useState(() => initial.playbackState?.subtitleOffsetSeconds ?? loadSubtitleOffset(selection.file));
+  const latestSubtitleOffset = useRef(subtitleOffset);
   const task = useMediaTask();
   const downloadTask = useMediaTask();
   const [saved, setSaved] = useState(!!initial.downloaded);
   const saveDownload = <div className="space-y-2">{!initial.downloaded && <Button variant="outline" disabled={downloadTask.busy} onClick={() => { void downloadTask.run(signal => mediaApi<{ download: MediaDownload }>("downloads", signal, { id: selection.id, intent: search }), () => { setNotice("Téléchargement ajouté. Le fichier restera sur le serveur jusqu’à sa suppression."); window.dispatchEvent(new Event("homelab:downloads-changed")); }, 30_000); }}><Download />{downloadTask.busy ? "Ajout…" : "Télécharger sur le serveur"}</Button>}{downloadTask.error && <p role="alert" className="text-sm text-orange-400">{downloadTask.error}</p>}</div>;
   const failedOnce = useRef(false);
   const historyRecorded = useRef(false);
-  const initialResume = useRef(Math.max(0, resumeAt));
+  const initialResume = useRef(Math.max(0, resumeAt ?? downloadResumePosition(initial.playbackState)));
   const pendingDirectSeek = useRef(0);
   const latestPosition = useRef(0);
   const latestDuration = useRef<number | null>(null);
-  const isResume = resumeAt > 0;
+  const [isResume] = useState(() => (resumeAt ?? downloadResumePosition(initial.playbackState)) > 0);
+  const playbackStarted = useRef(false);
+  const rememberSubtitleOffset = (offset: number) => {
+    latestSubtitleOffset.current = offset;
+    saveSubtitleOffset(selection.file, offset);
+    if (initial.downloadId) void saveDownloadPlaybackState(initial.downloadId, { subtitleOffsetSeconds: offset }).catch(() => setNotice("Subtitle timing could not be saved on HomeLab. Check your connection."));
+  };
+  const persistNow = () => {
+    if (!playbackStarted.current) return;
+    if (initial.downloadId && latestDuration.current && Number.isFinite(latestDuration.current)) {
+      void saveDownloadPlaybackState(initial.downloadId, { playbackPositionSeconds: Math.min(latestPosition.current, latestDuration.current), durationSeconds: latestDuration.current }).catch(() => setNotice("Your watch position could not be saved. Check the connection to HomeLab."));
+    }
+    if (search && latestDuration.current) void savePlaybackProgress(search, latestPosition.current, latestDuration.current).catch(() => {});
+  };
+  const nativeProgress = useEffectEvent((request: { action: string; subtitleOffsetSeconds?: number; playbackPositionSeconds?: number; durationSeconds?: number }) => {
+    if (request.action === "subtitleTiming" && Number.isFinite(request.subtitleOffsetSeconds)) rememberSubtitleOffset(request.subtitleOffsetSeconds!);
+    if (request.action === "playbackProgress" && Number.isFinite(request.playbackPositionSeconds) && request.durationSeconds && request.durationSeconds > 0) {
+      playbackStarted.current = true;
+      latestPosition.current = request.playbackPositionSeconds!;
+      latestDuration.current ??= request.durationSeconds;
+      persistNow();
+    }
+  });
   useEffect(() => {
     if (!hasNativeVideoPlayer()) return;
     const handle = nativeSubtitleSession(selection.id, selection.file.path, initial.files, search);
     let active: AbortController | null = null;
     let disposed = false;
     const listener = onNativePlayerRequest(request => {
+      if (!disposed && request.playbackId === selection.id && ["playbackProgress", "subtitleTiming"].includes(request.action)) { nativeProgress(request); return; }
       if (disposed || request.playbackId !== selection.id || !request.action.startsWith("subtitle")) return;
       active?.abort();
       if (request.action === "subtitleOff") return;
@@ -165,9 +193,6 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     });
     return () => { disposed = true; active?.abort(); void listener.then(handle => handle.remove()).catch(() => {}); };
   }, [selection.id, selection.file.path, initial.files, search]);
-  const persistNow = () => {
-    if (search && latestDuration.current) void savePlaybackProgress(search, latestPosition.current, latestDuration.current).catch(() => {});
-  };
   const persist = useEffectEvent(persistNow);
   const recordHistory = () => {
     if (!search || historyRecorded.current) return;
@@ -184,11 +209,16 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     return () => { persist(); preparing.current?.abort(); if (element) { element.pause(); element.removeAttribute("src"); element.load(); } };
   }, []);
   useEffect(() => {
-    if (state !== "playing") return;
-    const timer = window.setInterval(persist, 60_000);
     const visibility = () => { if (document.visibilityState === "hidden") persist(); };
+    const leaving = () => persist();
     document.addEventListener("visibilitychange", visibility);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", visibility); };
+    window.addEventListener("pagehide", leaving);
+    return () => { document.removeEventListener("visibilitychange", visibility); window.removeEventListener("pagehide", leaving); };
+  }, []);
+  useEffect(() => {
+    if (state !== "playing") return;
+    const timer = window.setInterval(persist, 10_000);
+    return () => window.clearInterval(timer);
   }, [state]);
   useEffect(() => {
     if (state !== "buffering") return;
@@ -222,6 +252,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
       let plan = prepared ?? await preparePlayback(selection.id, AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]), mime => element.canPlayType(mime), isNativeApp() ? "android-tv" : "browser", hasNativeVideoPlayer() ? nativePlaybackSupport : undefined);
       if (controller.signal.aborted) return;
       setPrepared(plan); setState("buffering");
+      latestDuration.current = plan.duration;
       let target = at ?? (!element.getAttribute("src") || element.error ? initialResume.current : 0);
       if (at !== undefined || !element.getAttribute("src") || element.error) {
         const offset = plan.mode === "direct" ? 0 : target;
@@ -236,14 +267,16 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
             const nativeOffset = plan.mode === "direct" ? 0 : target;
             const nativeUrl = nativeOffset ? `${plan.stream}?start=${nativeOffset}` : plan.stream;
             setState("playing"); recordHistory();
-            const subtitle = nativeSubtitle.status === "ready" ? { ...nativeSubtitle.subtitle, content: offsetSubtitleVtt(nativeSubtitle.subtitle.content, nativeSubtitle.subtitle.offset - nativeOffset) } : undefined;
+            const subtitle = nativeSubtitle.status === "ready" ? { ...nativeSubtitle.subtitle, content: offsetSubtitleVtt(nativeSubtitle.subtitle.content, -nativeOffset) } : undefined;
             const result = await playNativeVideo(new URL(nativeUrl, window.location.href).href, selection.file.path, plan.mode === "direct" ? target : 0, subtitle, {
               playbackId: selection.id, timelineOffset: nativeOffset, searchQuery: subtitleSearch(selection.file.path, search).query,
-              sessionId: nativeSession ?? selection.id, allowNext: !!onNext, qualityInfo,
+              sessionId: nativeSession ?? selection.id, allowNext: !!onNext, qualityInfo, subtitleOffsetSeconds: latestSubtitleOffset.current,
             });
             if (controller.signal.aborted) return;
-            latestPosition.current = nativeOffset + (result.ended && result.duration > 0 ? result.duration : result.position);
+            latestPosition.current = result.error && result.position === 0 ? Math.max(target, latestPosition.current) : nativeOffset + (result.ended && result.duration > 0 ? result.duration : result.position);
             latestDuration.current = plan.duration ?? (result.duration > 0 ? nativeOffset + result.duration : null);
+            playbackStarted.current ||= !result.error || result.position > 0 || result.ended;
+            if (result.subtitleOffsetSeconds !== undefined) rememberSubtitleOffset(result.subtitleOffsetSeconds);
             initialResume.current = result.ended ? 0 : latestPosition.current;
             setPosition(latestPosition.current); persistNow();
             if (result.action === "next") { onNext?.(latestPosition.current); return; }
@@ -287,7 +320,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
   useEffect(() => { if (simple && nativeSubtitle.status !== "loading") autoplay(); }, [simple, nativeSubtitle.status]);
   const updateBuffer = () => {
     const element = video.current;
-    if (!element) return;
+    if (!element || pendingDirectSeek.current > 0) return;
     let ahead = 0;
     for (let i = 0; i < element.buffered.length; i++) if (element.buffered.start(i) <= element.currentTime && element.buffered.end(i) >= element.currentTime) ahead = element.buffered.end(i) - element.currentTime;
     setBuffer(ahead);
@@ -346,7 +379,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
   const videoElement = <video ref={video} controls={tvMode || hasNativeVideoPlayer()} playsInline preload="none" aria-label="Selected video" className="aspect-video w-full rounded bg-black"
       onLoadedMetadata={() => { const element = video.current; if (element && pendingDirectSeek.current) { element.currentTime = Math.min(pendingDirectSeek.current, Math.max(0, element.duration - 1)); pendingDirectSeek.current = 0; } }}
       onDurationChange={() => { const value = video.current?.duration; if (value && Number.isFinite(value)) { setNativeDuration(value); latestDuration.current = prepared?.duration ?? value; } }}
-      onPlaying={() => { initialResume.current = 0; setState("playing"); setError(""); recordHistory(); }} onWaiting={() => setState("buffering")} onStalled={() => setState("buffering")} onSeeking={() => setState("buffering")} onCanPlay={() => setState(s => s === "playing" ? s : "ready")} onPause={() => { setState(s => s === "stalled" || s === "failed" ? s : "ready"); persistNow(); }} onEnded={() => { if (latestDuration.current) latestPosition.current = latestDuration.current; persistNow(); setState("ready"); }} onProgress={updateBuffer} onTimeUpdate={updateBuffer}
+      onPlaying={() => { playbackStarted.current = true; initialResume.current = 0; setState("playing"); setError(""); recordHistory(); }} onWaiting={() => setState("buffering")} onStalled={() => setState("buffering")} onSeeking={() => setState("buffering")} onCanPlay={() => setState(s => s === "playing" ? s : "ready")} onPause={() => { setState(s => s === "stalled" || s === "failed" ? s : "ready"); persistNow(); }} onEnded={() => { if (latestDuration.current) latestPosition.current = latestDuration.current; persistNow(); setState("ready"); }} onProgress={updateBuffer} onTimeUpdate={updateBuffer}
       onError={() => { if (!playbackUrl) return; setState("failed"); setError(simple && isResume ? "Resume couldn't start. Retry playback or choose another source." : simple ? "This version couldn't play. Trying another…" : "Playback was interrupted or the browser could not decode the prepared stream. Retry, choose another file, or use an external player."); if (simple && !isResume && !failedOnce.current) { failedOnce.current = true; onFailure?.(); } }} />;
   const playerControls = <>
     {videoElement}
@@ -376,7 +409,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     onVolume={value => { const element = video.current; if (element) { element.volume = value; element.muted = value === 0; } }}
     onMute={() => { const element = video.current; if (element) element.muted = !element.muted; }}
     onSpeed={value => { const element = video.current; if (element) { element.defaultPlaybackRate = value; element.playbackRate = value; } }}
-    subtitles={<Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} compact customDisplay englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} onNativeSubtitleChange={setNativeSubtitle} />}
+    subtitles={<Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} initialOffset={subtitleOffset} onOffsetChange={rememberSubtitleOffset} compact customDisplay englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} onNativeSubtitleChange={setNativeSubtitle} />}
     options={<>
       <div className="cinema-option-actions">
         <Button variant="outline" disabled={downloadTask.busy || saved} onClick={() => { void downloadTask.run(signal => mediaApi<{ download: MediaDownload }>("downloads", signal, { id: selection.id, intent: search }), () => { setSaved(true); setNotice("Added to downloads. Your video will be saved on HomeLab."); window.dispatchEvent(new Event("homelab:downloads-changed")); }, 30_000); }}><Download />{saved ? "Saved on HomeLab" : downloadTask.busy ? "Adding to downloads…" : "Save on HomeLab"}</Button>
@@ -393,7 +426,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     {error && <p role="status" className="text-sm text-orange-300">{error}</p>}
     {qualityInfo && <QualityReview value={qualityInfo} />}
     <div className="simple-player-options">
-      <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} simple englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} onNativeSubtitleChange={setNativeSubtitle} />
+      <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} initialOffset={subtitleOffset} onOffsetChange={rememberSubtitleOffset} simple englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} onNativeSubtitleChange={setNativeSubtitle} />
       {onNext && <div className="space-y-2"><Button variant="outline" onClick={() => onNext()}><RefreshCw />Try another source</Button><p className="text-xs text-neutral-400">Playback not working?</p></div>}
       {saveDownload}
     </div>
@@ -409,7 +442,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     {stats.preloadBytes !== null && stats.preloadTarget !== null && stats.preloadTarget > 0 && <p className="text-xs text-neutral-500">TorrServer torrent-wide preload: {bytes(stats.preloadBytes)} / {bytes(stats.preloadTarget)}. This may include another viewer’s buffer.</p>}
     {statsError && <p className="text-xs text-orange-400">{statsError}</p>}
     <p className="text-xs leading-relaxed text-neutral-400">Playback checks this browser’s format support and preserves compatible video and audio. External players receive the original file.</p>
-    {!desktopPlayer && <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} onNativeSubtitleChange={setNativeSubtitle} />}
+    {!desktopPlayer && <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} initialOffset={subtitleOffset} onOffsetChange={rememberSubtitleOffset} onNativeSubtitleChange={setNativeSubtitle} />}
     <TvDetails className="rounded border border-neutral-700 p-4"><summary className="cursor-pointer text-sm">External player · VLC / M3U</summary><div className="mt-4 space-y-3">
       <p className="text-xs leading-relaxed text-neutral-400">Create a link valid for 15 minutes, scoped to this file. The player must reach this dashboard on your LAN/tailnet. The link works without browser cookies; anyone who has it and network access can use it until expiry or revocation. A separate login proxy may still block VLC.</p>
       <Button variant="outline" disabled={task.busy || !!share} onClick={() => { void task.run(s => mediaApi<NonNullable<typeof share>>("share", s, { id: selection.id }), setShare, 15_000); }}>Create player link</Button>

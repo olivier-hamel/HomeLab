@@ -24,9 +24,9 @@ export function hasNativeVideoPlayer(): boolean {
   }
 }
 
-type NativePlaybackResult = { position: number; duration: number; ended: boolean; action?: "next" | "close" | "ended" | "error"; error?: string; errorCode?: number };
-export type NativePlayerRequest = { action: string; playbackId?: string; requestId?: number; query?: string; language?: string; choice?: string };
-export type NativeSessionOptions = { playbackId: string; timelineOffset: number; searchQuery: string; sessionId: string; allowNext: boolean; qualityInfo?: string };
+type NativePlaybackResult = { position: number; duration: number; ended: boolean; subtitleOffsetSeconds?: number; action?: "next" | "close" | "ended" | "error"; error?: string; errorCode?: number };
+export type NativePlayerRequest = { action: string; playbackId?: string; requestId?: number; query?: string; language?: string; choice?: string; subtitleOffsetSeconds?: number; playbackPositionSeconds?: number; durationSeconds?: number };
+export type NativeSessionOptions = { playbackId: string; timelineOffset: number; searchQuery: string; sessionId: string; allowNext: boolean; qualityInfo?: string; subtitleOffsetSeconds?: number };
 export type NativeSubtitle = { name: string; language: string; content: string };
 const NativeVideoPlayer = registerPlugin<{
   play(options: { url: string; title: string; position: number; subtitle?: NativeSubtitle } & Partial<NativeSessionOptions>): Promise<NativePlaybackResult>;
