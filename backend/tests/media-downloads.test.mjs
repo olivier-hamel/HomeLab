@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, readFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, readdir, open } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { MediaDownloads, downloadIntent } from '../src/lib/media/downloads.ts';
+import { MediaError } from '../src/lib/media/core.ts';
+import { TorrServer } from '../src/lib/media/torrserver.ts';
 import { createMediaApi } from '../src/lib/media/api.ts';
 import { FFmpeg } from '../src/lib/media/ffmpeg.ts';
 import { inspectPlayback, choosePlayback } from '../src/lib/media/playback-plan.ts';
@@ -23,9 +27,11 @@ const waitFor = async (store, id, state) => {
   }
   assert.fail(`Download did not enter ${state}: ${JSON.stringify(store.list('oli'))}`);
 };
-async function fixture(t, stream) {
+async function fixture(t, stream, retries = 0, retryDelay = 0) {
   const root = await mkdtemp(join(tmpdir(), 'homelab-media-downloads-'));
   process.env.MEDIA_DOWNLOAD_RESERVE_MIB = '0';
+  process.env.MEDIA_DOWNLOAD_RETRIES = String(retries);
+  process.env.MEDIA_DOWNLOAD_RETRY_DELAY_MS = String(retryDelay);
   const store = new MediaDownloads({ stream }, root);
   t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
   return { store, root };
@@ -77,6 +83,80 @@ test('truncated transfers stay unplayable and retry resumes from actual bytes on
   store.retry('oli', row.id); await waitFor(store, row.id, 'ready');
   assert.deepEqual(ranges, [null, 'bytes=4-']);
   assert.equal((await readFile(join(root, 'files', row.id))).toString(), 'abcdefghij');
+});
+
+test('a disconnected HTTP body automatically resumes from the bytes written to disk', async t => {
+  const ranges = [];
+  const server = createServer((request, response) => {
+    ranges.push(request.headers.range ?? null);
+    if (ranges.length === 1) {
+      response.writeHead(200, { 'Content-Length': '10', 'Content-Type': 'video/mp4' });
+      response.write('abcd');
+      setTimeout(() => response.destroy(), 30);
+    } else {
+      response.writeHead(206, { 'Content-Length': '6', 'Content-Type': 'video/mp4', 'Content-Range': 'bytes 4-9/10' });
+      response.end('efghij');
+    }
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  process.env.TORRSERVER_BASE_URL = 'http://torrserver.test';
+  const torrents = new TorrServer((_url, init) => fetch(`http://127.0.0.1:${server.address().port}/stream`, init));
+  const { store, root } = await fixture(t, torrents.stream.bind(torrents), 3);
+  const row = await store.enqueue('oli', hash, file, intent);
+  await waitFor(store, row.id, 'ready');
+  assert.deepEqual(ranges, [null, 'bytes=4-']);
+  assert.equal((await readFile(join(root, 'files', row.id))).toString(), 'abcdefghij');
+  assert.equal(store.list('oli')[0].error, '');
+});
+
+test('truncated responses get bounded automatic retries and retain their partial bytes', async t => {
+  const ranges = [];
+  const { store, root } = await fixture(t, async (_hash, _file, request) => {
+    ranges.push(request.headers.get('range'));
+    return ranges.length === 1 ? new Response('abcd') : new Response('', { status: 206, headers: { 'Content-Range': 'bytes 4-9/10' } });
+  }, 3);
+  const row = await store.enqueue('oli', hash, file, intent);
+  const failed = await waitFor(store, row.id, 'error');
+  assert.deepEqual(ranges, [null, 'bytes=4-', 'bytes=4-', 'bytes=4-']);
+  assert.equal(failed.downloadedBytes, 4);
+  assert.match(failed.error, /TorrServer a fermé la connexion/);
+  assert.doesNotMatch(failed.error, /disque/);
+  assert.equal((await readFile(join(root, 'files', `${row.id}.part`))).toString(), 'abcd');
+});
+
+test('deleting during an automatic retry delay aborts the wait and removes partial bytes', async t => {
+  let calls = 0;
+  const { store, root } = await fixture(t, async () => { calls++; return new Response('abcd'); }, 3, 60_000);
+  const row = await store.enqueue('oli', hash, file, intent);
+  for (let i = 0; i < 100 && !store.get('oli', row.id).error.includes('Reprise automatique'); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.match(store.get('oli', row.id).error, /Reprise automatique 1\/3/);
+  await store.remove('oli', row.id);
+  assert.equal(calls, 1);
+  assert.deepEqual(store.list('oli'), []);
+  assert.deepEqual(await readdir(join(root, 'files')), []);
+});
+
+test('disk write failures are distinct from network errors and are never retried', async t => {
+  let calls = 0;
+  const { store, root } = await fixture(t, async () => { calls++; return complete(); }, 3);
+  const probe = await open(join(root, 'probe'), 'w');
+  const prototype = Object.getPrototypeOf(probe);
+  await probe.close();
+  t.mock.method(prototype, 'write', async () => { throw Object.assign(new Error('private disk path'), { code: 'ENOSPC' }); });
+  const row = await store.enqueue('oli', hash, file, intent);
+  const failed = await waitFor(store, row.id, 'error');
+  assert.match(failed.error, /Espace disque ou quota insuffisant/);
+  assert.doesNotMatch(failed.error, /private disk path|TorrServer/);
+  assert.equal(calls, 1);
+});
+
+test('permanent source errors do not trigger automatic retries', async t => {
+  let calls = 0;
+  const { store } = await fixture(t, async () => { calls++; throw new MediaError('stream', 'TorrServer returned HTTP 401.', 502); }, 3);
+  const row = await store.enqueue('oli', hash, file, intent);
+  assert.match((await waitFor(store, row.id, 'error')).error, /401/);
+  assert.equal(calls, 1);
 });
 
 test('an upstream ignoring resume ranges restarts safely and invalid ranges never commit a ready file', async t => {

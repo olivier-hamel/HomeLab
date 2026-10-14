@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, createReadStream } from "node:fs";
-import { open, rename, rm, stat, statfs } from "node:fs/promises";
+import { open, rename, rm, stat, statfs, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Readable } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 import { envNumber, hash, integer, kind, MediaError, query, record, string } from "./core.ts";
 import { TorrServer, type TorrentFile } from "./torrserver.ts";
 
@@ -48,6 +49,13 @@ export function downloadIntent(value: unknown, fallback: string): DownloadIntent
 function publicDownload(row: Stored): MediaDownload {
   const { id, title, file, intent, state, downloadedBytes, totalBytes, error, createdAt, updatedAt } = row;
   return { id, title, file, intent, state, downloadedBytes, totalBytes, error, createdAt, updatedAt };
+}
+function downloadFailure(error: unknown): MediaError {
+  if (error instanceof MediaError) return error;
+  const code = record(error).code;
+  if (code === "ENOSPC" || code === "EDQUOT") return new MediaError("storage", "Espace disque ou quota insuffisant dans le volume des téléchargements. Libère de l’espace puis réessaie.", 507);
+  if (["EACCES", "EPERM", "EROFS"].includes(String(code))) return new MediaError("storage", "Impossible d’écrire dans le volume des téléchargements. Vérifie ses permissions.", 507);
+  return new MediaError("storage", "Impossible d’enregistrer le fichier dans le volume des téléchargements. Vérifie les journaux du backend.", 500);
 }
 
 // Only metadata enters SQLite. Video bytes are streamed to a private durable volume.
@@ -167,53 +175,84 @@ export class MediaDownloads {
     const heartbeat = setInterval(() => { if (!update()) controller.abort(); }, 1000);
     heartbeat.unref();
     let handle: Awaited<ReturnType<typeof open>> | undefined;
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       // A rename may have completed just before a worker died. Recover that file.
       const completed = await stat(this.path(row.id)).catch(() => null);
       if (completed?.size === row.totalBytes) { row.downloadedBytes = row.totalBytes; row.state = "ready"; update(); return; }
       handle = await open(this.path(row.id, true), "a+", 0o600);
-      row.downloadedBytes = (await handle.stat()).size;
-      if (row.downloadedBytes > row.totalBytes) { await handle.truncate(0); row.downloadedBytes = 0; }
-      const capacity = await statfs(this.root);
-      const reserve = envNumber("MEDIA_DOWNLOAD_RESERVE_MIB", 512, 0, 1_048_576) * 1024 * 1024;
-      if (capacity.bavail * capacity.bsize < row.totalBytes - row.downloadedBytes + reserve) throw new MediaError("storage", "Espace disque insuffisant. Supprime des téléchargements puis réessaie.", 507);
-      if (row.downloadedBytes < row.totalBytes) {
-        const headers = row.downloadedBytes ? { Range: `bytes=${row.downloadedBytes}-` } : undefined;
-        const response = await this.torrents.stream(row.hash, row.file, new Request("http://localhost/download", { headers, signal }));
-        reader = response.body?.getReader();
-        const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get("content-range") ?? "");
-        if (!reader || ![200, 206].includes(response.status) || (response.status === 206 && (!range || Number(range[1]) !== row.downloadedBytes || Number(range[2]) !== row.totalBytes - 1 || Number(range[3]) !== row.totalBytes))) throw new MediaError("download", "Le serveur a retourné un fichier incomplet. Réessaie le téléchargement.", 502);
-        if (response.status === 200 && row.downloadedBytes) { await handle.truncate(0); row.downloadedBytes = 0; }
-        while (true) {
+      const retries = envNumber("MEDIA_DOWNLOAD_RETRIES", 3, 0, 10);
+      for (let attempt = 0; ; attempt++) {
+        signal.throwIfAborted();
+        try { await this.transfer(row, handle, signal); break; }
+        catch (error) {
           signal.throwIfAborted();
-          const next = await reader.read();
-          if (next.done) break;
-          if (row.downloadedBytes + next.value.length > row.totalBytes) throw new MediaError("download", "La taille reçue ne correspond pas au fichier choisi.", 502);
-          let offset = 0;
-          while (offset < next.value.length) {
-            const written = await handle.write(next.value, offset, next.value.length - offset);
-            if (!written.bytesWritten) throw new Error("Empty write");
-            offset += written.bytesWritten; row.downloadedBytes += written.bytesWritten;
-          }
+          const failure = downloadFailure(error);
+          if (attempt >= retries || !["stream_unavailable", "stream_timeout", "stream_interrupted"].includes(failure.code)) throw error;
+          row.error = `${failure.message} Reprise automatique ${attempt + 1}/${retries}…`;
+          if (!update()) { controller.abort(); signal.throwIfAborted(); }
+          await delay(envNumber("MEDIA_DOWNLOAD_RETRY_DELAY_MS", 10_000, 0, 60_000), undefined, { signal });
+          row.error = "";
         }
       }
-      if (row.downloadedBytes !== row.totalBytes) throw new MediaError("download", "Le téléchargement a été interrompu. Réessaie pour reprendre le fichier.", 502);
       await handle.sync(); await handle.close(); handle = undefined;
       signal.throwIfAborted();
       if (this.read(row.id)?.state !== "downloading" || this.read(row.id)?.token !== token) return;
       await rename(this.path(row.id, true), this.path(row.id));
       row.state = "ready"; row.error = ""; update();
     } catch (error) {
+      const failure = downloadFailure(error);
       row.state = this.stopping ? "queued" : "error";
-      row.error = this.stopping ? "" : error instanceof MediaError ? error.message : "Le téléchargement a été interrompu. Vérifie TorrServer et l’espace disque, puis réessaie.";
+      row.error = this.stopping ? "" : failure.message;
+      const systemCode = record(error).code;
+      if (!signal.aborted) console.warn("media.download.failed", { id: row.id, code: failure.code, ...(typeof systemCode === "string" && /^E[A-Z0-9_]{1,39}$/.test(systemCode) ? { systemCode } : {}), downloadedBytes: row.downloadedBytes, totalBytes: row.totalBytes });
       update();
     } finally {
       clearInterval(heartbeat);
-      await reader?.cancel().catch(() => {});
       await handle?.close();
       if (this.read(row.id)?.state === "deleting") await this.erase(row.id);
     }
+  }
+  private async transfer(row: Stored, handle: FileHandle, signal: AbortSignal) {
+    row.downloadedBytes = (await handle.stat()).size;
+    if (row.downloadedBytes > row.totalBytes) { await handle.truncate(0); row.downloadedBytes = 0; }
+    const capacity = await statfs(this.root);
+    const reserve = envNumber("MEDIA_DOWNLOAD_RESERVE_MIB", 512, 0, 1_048_576) * 1024 * 1024;
+    if (capacity.bavail * capacity.bsize < row.totalBytes - row.downloadedBytes + reserve) throw new MediaError("storage", "Espace disque insuffisant. Supprime des téléchargements puis réessaie.", 507);
+    if (row.downloadedBytes === row.totalBytes) return;
+    const headers = row.downloadedBytes ? { Range: `bytes=${row.downloadedBytes}-` } : undefined;
+    let response;
+    try {
+      response = await this.torrents.stream(row.hash, row.file, new Request("http://localhost/download", { headers, signal }), { idleTimeoutMs: envNumber("MEDIA_DOWNLOAD_IDLE_TIMEOUT_MS", 180_000, 1000, 600_000) });
+    } catch (error) {
+      if (error instanceof MediaError) throw error;
+      throw new MediaError("stream_unavailable", "La connexion avec TorrServer est indisponible. Vérifie le service puis réessaie.", 504);
+    }
+    const reader = response.body?.getReader();
+    try {
+      const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get("content-range") ?? "");
+      if (!reader || ![200, 206].includes(response.status) || (response.status === 206 && (!range || Number(range[1]) !== row.downloadedBytes || Number(range[2]) !== row.totalBytes - 1 || Number(range[3]) !== row.totalBytes))) throw new MediaError("download", "Le serveur a retourné un fichier incomplet. Réessaie le téléchargement.", 502);
+      if (response.status === 200 && row.downloadedBytes) {
+        await handle.truncate(0); row.downloadedBytes = 0;
+      }
+      while (true) {
+        signal.throwIfAborted();
+        let next;
+        try { next = await reader.read(); }
+        catch (error) {
+          if (error instanceof MediaError) throw error;
+          throw new MediaError("stream_interrupted", "La connexion avec TorrServer a été interrompue. Réessaie pour reprendre le fichier.");
+        }
+        if (next.done) break;
+        if (row.downloadedBytes + next.value.length > row.totalBytes) throw new MediaError("download", "La taille reçue ne correspond pas au fichier choisi.", 502);
+        let offset = 0;
+        while (offset < next.value.length) {
+          const written = await handle.write(next.value, offset, next.value.length - offset);
+          if (!written.bytesWritten) throw new Error("Empty write");
+          offset += written.bytesWritten; row.downloadedBytes += written.bytesWritten;
+        }
+      }
+      if (row.downloadedBytes !== row.totalBytes) throw new MediaError("stream_interrupted", "TorrServer a fermé la connexion avant la fin du fichier. Réessaie pour reprendre le téléchargement.", 502);
+    } finally { await reader?.cancel().catch(() => {}); }
   }
   status(username: string, id: string) {
     const row = this.get(username, id);

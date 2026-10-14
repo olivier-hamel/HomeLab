@@ -300,23 +300,20 @@ it. Apply access restrictions at your router, Proxmox firewall, or appropriate
 Docker forwarding rules, and in your tailnet policy. See
 [Docker's firewall explanation](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
 
-## 8. Pull changes and redeploy
+## 8. Automatically deploy pushed commits
 
-Make source changes on your development machine or fork, review and commit them,
-and publish them to the branch your server tracks. Keep local settings and keys
-out of Git. On the VM, inspect before pulling:
+Install the deployment service and timer once using
+[SERVER-UPDATE.md](../SERVER-UPDATE.md#2-install-automatic-deployment-on-apps01-once).
+Then review, commit, and push changes to `feat/memo-integration` from your
+development machine. The server checks for pushed commits every minute, builds
+the services sequentially, and waits for healthy containers. Keep local settings
+and keys out of Git.
 
-```sh
-cd /opt/stacks/homelab
-git status --short
-git diff --stat
-git diff --cached --stat
-git branch -vv
-```
-
-Use the root [SERVER-UPDATE.md](../SERVER-UPDATE.md) for the single-repository
-commit, push, pull, build, and rollout commands. All app sources are included
-in this checkout. Routine updates create no backups.
+The script refuses local source changes and divergent server history. Successful
+commits are skipped; failed deployments are retried on the next check. The same
+guide covers immediate deployment, logs, configuration, and pausing the timer.
+All app sources are included in this checkout. Routine updates create no backups
+and retain private environment files and named volumes.
 
 ## 9. Restart, recreate, and stop
 
