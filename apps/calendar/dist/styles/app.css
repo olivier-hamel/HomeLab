@@ -68,12 +68,12 @@ a { color: inherit; text-decoration: none; }
 .day-link:hover .icon { transform: translateX(3px); }
 .day-link:hover { color: var(--accent-dark); }
 .sidebar-bottom { margin-top: auto; padding-top: 28px; }
-.sidebar-moodle-status { margin-top: 20px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--accent-wash); color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
-.sidebar-moodle-status strong { color: var(--ink); font-weight: 600; }
-.sidebar-moodle-status p { margin: 6px 0; }
-.sidebar-moodle-status button { padding: 6px 0; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-.sidebar-moodle-status button:disabled { cursor: default; opacity: .6; text-decoration: none; }
-.sidebar-moodle-status.has-error { background: #fff8f2; color: #875331; border-color: #efdfcf; }
+.sidebar-moodle-status { margin: 18px 4px 0; display: flex; justify-content: flex-start; }
+.moodle-sync-button { display: inline-flex; align-items: center; gap: 10px; min-height: 32px; padding: 6px 11px; border: 1px solid #dce5da; border-radius: 8px; background: #f0f5ed; color: var(--accent); font-size: 11px; font-weight: 550; transition: background .18s, border-color .18s; }
+.moodle-sync-button .icon { width: 14px; height: 14px; opacity: .8; }
+.moodle-sync-button:hover { background: #e6eee2; border-color: #c7d8c4; }
+.moodle-sync-button:disabled { cursor: default; opacity: .6; }
+
 .little-note { font-size: 9px; color: #929a8d; margin: 0 4px 19px; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .note-dot { height: 5px; width: 5px; border: 1px solid #9aab8f; border-radius: 50%; }
 .sidebar-utility { display: flex; align-items: center; width: 100%; gap: 10px; padding: 9px 4px; border-radius: 6px; color: #7c857b; font-size: 11px; text-align: left; }

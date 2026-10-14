@@ -50,6 +50,10 @@ export default function Home({ onNavigate }: { onNavigate: Navigate }) {
   const openEvent = (event: CalendarEvent, date = today) => onNavigate("calendar", { date, view: "day", event: event.id });
 
   useEffect(() => {
+    search.current?.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
     const controller = new AbortController();
 
     const load = () => {

@@ -3,7 +3,7 @@ import {createEventTypeController} from "./event-type-controller.js";
 import {createNotificationController} from "./notifications.js";
 import {createCalendarStore} from "./state.js";
 import {calendarAccount, escapeHtml} from "./account.js";
-import {dateKey, parseDate, addDays, fullDate, periodTitle, zoneOffset, VIEW_LABELS} from "./date.js";
+import {dateKey, parseDate, addDays, fullDate, periodTitle, currentMinutes, zoneOffset, VIEW_LABELS} from "./date.js";
 import {renderSidebar} from "./components/sidebar.js";
 import {renderCalendar} from "./components/views.js";
 import {renderShell, renderBreadcrumb} from "./components/shell.js";
@@ -65,8 +65,10 @@ function render(state, reason = "initial") {
   const title = periodTitle(state);
   app.querySelector(".calendar-toolbar").dataset.view = state.view;
   const periodLabel = `<span class="period-primary">${title.primary}</span><span class="period-year">${title.secondary}</span>`;
-  document.getElementById("period-title").innerHTML = state.view === "week"
-    ? `<button class="period-title-button" data-action="month" title="Revenir à la vue du mois" aria-label="${escapeHtml(`${title.primary} ${title.secondary} — Revenir à la vue du mois`)}">${periodLabel}</button>`
+  const parentView = state.view === "day" ? "week" : "month";
+  const parentLabel = state.view === "day" ? "Revenir à la vue de la semaine" : "Revenir à la vue du mois";
+  document.getElementById("period-title").innerHTML = state.view !== "month"
+    ? `<button class="period-title-button" data-action="${parentView}" title="${parentLabel}" aria-label="${escapeHtml(`${title.primary} ${title.secondary} — ${parentLabel}`)}">${periodLabel}</button>`
     : periodLabel;
   app.querySelector('[data-action="prev"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "précédente" : "précédent"}`);
   app.querySelector('[data-action="next"]').setAttribute("aria-label", `${VIEW_LABELS[state.view]} ${state.view === "week" ? "suivante" : "suivant"}`);
@@ -90,7 +92,9 @@ function render(state, reason = "initial") {
     if (timeBody) {
       const timeView = content.querySelector(".time-view");
       timeView.style.setProperty("--time-scrollbar-width", `${timeBody.offsetWidth - timeBody.clientWidth}px`);
-      timeBody.scrollTop = sameTimeView && previousScroll !== undefined ? previousScroll : 8 * 64;
+      timeBody.scrollTop = sameTimeView && previousScroll !== undefined
+        ? previousScroll
+        : Math.max(0, currentMinutes(state.preferences.timezone) / 1440 * timeBody.querySelector(".time-grid").offsetHeight - timeBody.clientHeight / 2);
       if (sameTimeView && previousHorizontalScroll !== undefined) timeView.scrollLeft = previousHorizontalScroll;
     }
   }
