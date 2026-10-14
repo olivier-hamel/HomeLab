@@ -73,6 +73,13 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
     private float speed = 1f;
     private boolean subtitlesEnabled;
     private boolean subtitlesLoading;
+    private long subtitleOffsetMs;
+    private final Runnable saveProgress = new Runnable() {
+        @Override public void run() {
+            emitProgress();
+            if (!closing) playerRoot.postDelayed(this, 10_000);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle state) {
@@ -110,6 +117,7 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         findViewById(R.id.native_source_retry).setOnClickListener(view -> nextSource());
         findViewById(R.id.native_source_quit).setOnClickListener(view -> closePlayer());
         subtitles = new NativeSubtitleOverlay(findViewById(R.id.native_subtitles), () -> player == null ? positionMs : player.getCurrentPosition());
+        subtitleOffsetMs = state == null ? (long) (getIntent().getDoubleExtra("subtitleOffsetSeconds", 0) * 1000) : state.getLong("subtitleOffsetMs");
         positionMs = state == null ? (long) (Math.max(0, getIntent().getDoubleExtra("position", 0)) * 1000) : state.getLong("position");
         if (state != null) {
             playWhenReady = state.getBoolean("playWhenReady", true);
@@ -172,6 +180,7 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         releasePlayer();
         deleteInitialSubtitle();
         setIntent(intent);
+        subtitleOffsetMs = (long) (intent.getDoubleExtra("subtitleOffsetSeconds", 0) * 1000);
         subtitles.clear();
         positionMs = (long) (Math.max(0, intent.getDoubleExtra("position", 0)) * 1000);
         durationMs = 0;
@@ -202,7 +211,7 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
             while (read < bytes.length && (n = input.read(bytes, read, bytes.length - read)) > 0) read += n;
             subtitles.load(new String(bytes, 0, read, StandardCharsets.UTF_8), getIntent().getStringExtra("subtitleName"), 0, error -> {
                 subtitlesLoading = false;
-                if (error == null) disableEmbeddedText();
+                if (error == null) { subtitles.adjust(subtitleOffsetMs); disableEmbeddedText(); }
                 else { subtitlesEnabled = false; showMessage(error); }
             });
         } catch (Exception error) {
@@ -285,8 +294,22 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         result.put("position", positionMs / 1000.0);
         result.put("duration", durationMs / 1000.0);
         result.put("ended", ended);
+        result.put("subtitleOffsetSeconds", subtitleOffsetMs / 1000.0);
         if (error != null) { result.put("error", error); result.put("errorCode", errorCode); }
         return result;
+    }
+
+    private void emitProgress() {
+        if (player == null || waitingForSource || closing || player.getPlaybackState() == Player.STATE_IDLE) return;
+        capturePosition();
+        if (durationMs <= 0) return;
+        double timeline = getIntent().getDoubleExtra("timelineOffset", 0);
+        JSObject event = new JSObject();
+        event.put("action", "playbackProgress");
+        event.put("playbackId", getIntent().getStringExtra("playbackId"));
+        event.put("playbackPositionSeconds", timeline + positionMs / 1000.0);
+        event.put("durationSeconds", timeline + durationMs / 1000.0);
+        NativeVideoPlayerPlugin.emit(event);
     }
 
     private void waitForSource(String message, boolean error) {
@@ -430,6 +453,12 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
     }
 
     private void updateSubtitleTimingLabel(TextView label) {
+        subtitleOffsetMs = subtitles.adjustmentMs();
+        JSObject event = new JSObject();
+        event.put("action", "subtitleTiming");
+        event.put("playbackId", getIntent().getStringExtra("playbackId"));
+        event.put("subtitleOffsetSeconds", subtitleOffsetMs / 1000.0);
+        NativeVideoPlayerPlugin.emit(event);
         label.setText(String.format(Locale.US, "%+.1f s", subtitles.adjustmentMs() / 1000.0));
     }
 
@@ -509,7 +538,7 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
                     if (version != requestId || closing || waitingForSource) return;
                     subtitlesLoading = false;
                     if (error != null) { subtitlesEnabled = false; showMessage(error); }
-                    else { disableEmbeddedText(); subtitles.start(); }
+                    else { subtitles.adjust(subtitleOffsetMs); disableEmbeddedText(); subtitles.start(); }
                 });
         }
     }
@@ -518,15 +547,17 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
         super.onStart();
         if (Build.VERSION.SDK_INT >= 24) initializePlayer();
         if (!waitingForSource) subtitles.start();
+        playerRoot.postDelayed(saveProgress, 10_000);
     }
     @Override protected void onResume() { super.onResume(); if (Build.VERSION.SDK_INT < 24) initializePlayer(); }
     @Override protected void onPause() { if (Build.VERSION.SDK_INT < 24) releasePlayer(); super.onPause(); }
-    @Override protected void onStop() { subtitles.stop(); releasePlayer(); super.onStop(); }
+    @Override protected void onStop() { playerRoot.removeCallbacks(saveProgress); emitProgress(); subtitles.stop(); releasePlayer(); super.onStop(); }
     @Override protected void onSaveInstanceState(Bundle state) {
         capturePosition();
         state.putLong("position", positionMs); state.putLong("duration", durationMs);
         state.putBoolean("playWhenReady", playWhenReady); state.putBoolean("waiting", waitingForSource);
         state.putBoolean("subtitlesEnabled", subtitlesEnabled);
+        state.putLong("subtitleOffsetMs", subtitleOffsetMs);
         state.putFloat("speed", speed); state.putInt("resizeMode", playerView.getResizeMode());
         super.onSaveInstanceState(state);
     }

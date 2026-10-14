@@ -137,7 +137,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
       if (request.method === "HEAD") return json({ error: "HEAD is supported only for streams." }, 405);
       return await limited(async () => {
         if (request.method === "GET") {
-          if (path[0] === "downloads" && path.length === 1) return json({ downloads: downloads.list(account.user.username) });
+          if (path[0] === "downloads" && path.length === 1) return json({ downloads: downloads.list(account.user.username, profile) });
           if (path[0] === "continue-watching" && path.length === 1) {
             rate(`progress-list:${owner}`, 30);
             return json({ movies: await progress.list(profile) });
@@ -199,8 +199,12 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
             }
             if (path.length === 2 && path[1] === "retry") return json({ download: downloads.retry(username, string(body.downloadId, 64)) }, 202);
             if (path.length === 2 && path[1] === "remove") { await downloads.remove(username, string(body.downloadId, 64)); return json({ removed: true }); }
+            if (path.length === 2 && path[1] === "progress") {
+              rate(`download-progress:${owner}`, 90);
+              return json({ playbackState: downloads.savePlaybackState(username, string(body.downloadId, 64), profile, body) });
+            }
             if (path.length === 2 && path[1] === "playback") {
-              const status = downloads.status(username, string(body.downloadId, 64));
+              const status = downloads.status(username, string(body.downloadId, 64), profile);
               const id = randomUUID();
               playbacks.set(id, { owner, hash: status.hash, files: status.files, file: status.files[0] });
               return json({ ...status, hash: undefined, id });

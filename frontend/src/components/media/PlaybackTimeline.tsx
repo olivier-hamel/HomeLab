@@ -1,13 +1,6 @@
 import { useRef, useState, type CSSProperties } from "react";
 import { useTvMode } from "../../lib/tv";
-
-function timestamp(seconds: number) {
-  const whole = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(whole / 3600);
-  const minutes = Math.floor(whole / 60) % 60;
-  const rest = String(whole % 60).padStart(2, "0");
-  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
-}
+import { playbackTimestamp as timestamp } from "../../lib/media";
 
 export default function PlaybackTimeline({ duration, position, onSeek, compact = false, disabled = false, buffered = [] }: { duration: number; position: number; onSeek: (seconds: number) => void; compact?: boolean; disabled?: boolean; buffered?: [number, number][] }) {
   const tvMode = useTvMode();

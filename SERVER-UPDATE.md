@@ -19,11 +19,15 @@ git push origin HEAD:feat/memo-integration
 
 ## 2. Deploy from this machine
 
-Run the local helper from the repository root:
+Run the local helper from the repository root **without `sudo`**:
 
 ```sh
 ./scripts/deploy-server.sh
 ```
+
+Local `sudo` switches Git and SSH to root's credentials and trusted hosts, which
+can cause `Host key verification failed` before deployment starts. The helper
+uses `sudo` on the server automatically and refuses local root invocations.
 
 It fetches the latest pushed commit using your local Git credentials, transfers a
 Git bundle and a temporary copy of itself over SSH, then runs the deployment on

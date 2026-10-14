@@ -26,7 +26,7 @@ const plan = { id: 'direct', mode: 'direct', mime: 'video/mp4', container: 'mp4'
 const source = { id: 'source', title: 'Example movie 2026', indexer: 'Fixture', size: 1000000, seeders: 5000, leechers: 0, peers: 5000, quality: ['1080p'], match: 'Title match' };
 const alternatives = [source, { ...source, id: 'best', title: 'Example movie 2026 WEB-DL-GROUP' }, { ...source, id: 'broken', title: 'Example movie 2026 alternate' }, { ...source, id: 'wrong', title: 'Unrelated movie' }];
 const advice = { provider: 'gemini', ranking: ['best', 'broken', 'source', 'wrong'].map(id => ({ id, identity: id === 'wrong' ? 'mismatch' : 'match', verdict: 'good', method: 'gemini', reason: 'Its 1080p quality and 5,000 reported seeders make it a strong streaming choice.' })) };
-const metrics = { adds: [], selects: [], reviews: 0, subtitleSearches: [], subtitleDownloads: [] };
+const metrics = { adds: [], selects: [], reviews: 0, subtitleSearches: [], subtitleDownloads: [], progress: [] };
 const discoveryFixture = { requests: [], fail: false, delay: 0, duplicates: false };
 let simpleFixture = true;
 let subtitleDelay = 0;
@@ -57,12 +57,14 @@ const server = createServer(fixtureTls(output), async (req, res) => {
       if (simpleFixture && body.sourceId === 'broken') { res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Fixture source unavailable' })); return; }
     }
     if (endpoint === 'select') metrics.selects.push(body.fileId);
+    if (endpoint === 'progress') metrics.progress.push(body);
     if (endpoint === 'subtitles/search') metrics.subtitleSearches.push(body);
     if (endpoint === 'subtitles/download') { metrics.subtitleDownloads.push(body.choice); await delay(subtitleDelay); }
     const json = endpoint === 'status' ? { tmdb: true, prowlarr: true, torrserver: true, discovery: true }
       : endpoint === 'catalogue' ? { titles: url.searchParams.get('kind') === 'all' ? mixedTitles : url.searchParams.get('kind') === 'tv' ? shows : titles, pages: 1 }
       : endpoint.startsWith('details/') ? { ...(endpoint.startsWith('details/tv/') ? shows : titles)[Number(endpoint.split('/').pop()) - 1], seasons: endpoint.startsWith('details/tv/') ? [{ number: 1, name: 'Season 1', episodes: episodes.length }] : [], imdbId: 'tt123', tvdbId: null, rating: 8.1 }
       : endpoint === 'continue-watching' ? { movies: [] }
+      : endpoint === 'downloads' ? { downloads: [] }
       : endpoint.startsWith('season/') ? { episodes }
       : endpoint === 'search' ? { searchId: 'search', results: simpleFixture ? alternatives : [source], reports: [], more: false, batch: 1, advice: { provider: 'heuristic', ranking: [] } }
       : endpoint === 'recommend' ? fallbackAdvice ? { ...advice, provider: 'heuristic', warning: "Gemini's request limit or quota was reached. Using basic matching for this search." } : advice

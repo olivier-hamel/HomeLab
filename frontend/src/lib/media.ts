@@ -13,8 +13,9 @@ export type Assessment = { id: string; identity: "match" | "uncertain" | "mismat
 export type SourceAdvice = { provider: "gemini" | "heuristic"; model: string | null; warning: string | null; reviewed: number; ranking: Assessment[] };
 export type SearchResults = { searchId: string; advice: SourceAdvice; results: Source[]; reports: { indexer: string; query: string; strategy: string; error: string | null }[]; more: boolean; batch: number; warning: string | null };
 export type TorrentFile = { id: number; path: string; size: number | null; kind: "video" | "subtitle" | "other"; sample: boolean };
-export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloaded?: boolean; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
-export type MediaDownload = { id: string; title: string; file: TorrentFile; intent: SearchIntent; state: "queued" | "downloading" | "ready" | "error"; downloadedBytes: number; totalBytes: number; error: string; createdAt: string; updatedAt: string };
+export type DownloadPlaybackState = { playbackPositionSeconds: number; durationSeconds: number; subtitleOffsetSeconds: number; completed: boolean; updatedAt: string };
+export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloaded?: boolean; downloadId?: string; playbackState?: DownloadPlaybackState; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
+export type MediaDownload = { id: string; title: string; file: TorrentFile; intent: SearchIntent; state: "queued" | "downloading" | "ready" | "error"; downloadedBytes: number; totalBytes: number; error: string; createdAt: string; updatedAt: string; playbackState?: DownloadPlaybackState };
 export type PlaybackSource = Source | string | { downloadId: string };
 export function matchingDownload(downloads: MediaDownload[], intent: SearchIntent): MediaDownload | undefined {
   const target = intent.target ?? intent.context;
@@ -99,6 +100,33 @@ export async function savePlaybackProgress(intent: SearchIntent, playbackPositio
   const response = await fetch("/api/media/progress", { method: "POST", credentials: "same-origin", cache: "no-store", keepalive: true, headers: { "Content-Type": "application/json", "X-Media-Request": "1", "X-Media-Profile": activeMediaProfile() }, body: JSON.stringify({ movie: intent.movie, intent, playbackPositionSeconds, durationSeconds }) });
   if (!response.ok) throw new Error("Playback progress could not be saved.");
   window.dispatchEvent(new CustomEvent("homelab:continue-watching-changed"));
+}
+export async function saveDownloadPlaybackState(downloadId: string, state: Partial<Pick<DownloadPlaybackState, "playbackPositionSeconds" | "durationSeconds" | "subtitleOffsetSeconds">>): Promise<void> {
+  const response = await fetch("/api/media/downloads/progress", { method: "POST", credentials: "same-origin", cache: "no-store", keepalive: true, headers: { "Content-Type": "application/json", "X-Media-Request": "1", "X-Media-Profile": activeMediaProfile() }, body: JSON.stringify({ downloadId, ...state }) });
+  if (!response.ok) throw new Error("Download playback settings could not be saved.");
+  window.dispatchEvent(new Event("homelab:downloads-changed"));
+}
+export function downloadResumePosition(state?: DownloadPlaybackState): number {
+  return state && !state.completed && Number.isFinite(state.playbackPositionSeconds) && state.playbackPositionSeconds > 0 && state.playbackPositionSeconds < state.durationSeconds ? state.playbackPositionSeconds : 0;
+}
+export function playbackTimestamp(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(whole / 3600), minutes = Math.floor(whole / 60) % 60;
+  const rest = String(whole % 60).padStart(2, "0");
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
+}
+function subtitleOffsetKey(file: Pick<TorrentFile, "path" | "size">) {
+  return `homelab:subtitle-timing:v1:${JSON.stringify([activeMediaProfile(), file.path, file.size])}`;
+}
+export function loadSubtitleOffset(file: Pick<TorrentFile, "path" | "size">): number {
+  try {
+    const value = Number(localStorage.getItem(subtitleOffsetKey(file)) ?? 0);
+    return Number.isFinite(value) && Math.abs(value) <= 600 ? value : 0;
+  } catch { return 0; }
+}
+export function saveSubtitleOffset(file: Pick<TorrentFile, "path" | "size">, offset: number): void {
+  if (!Number.isFinite(offset) || Math.abs(offset) > 600) return;
+  try { localStorage.setItem(subtitleOffsetKey(file), String(offset)); } catch { /* Playback still works without browser storage. */ }
 }
 export async function recordWatchHistory(playbackId: string, intent: SearchIntent): Promise<void> {
   if (!intent.media) return;

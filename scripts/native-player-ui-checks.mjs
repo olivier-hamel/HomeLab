@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
 
 // Exercises the hosted app's real React lifecycle through a simulated Capacitor
 // bridge. Native drawing/decoding still requires a physical device.
@@ -6,6 +7,7 @@ export async function checkNativePlayer({ call, evaluate, until, activate, origi
   const injection = await call('Page.addScriptToEvaluateOnNewDocument', { source: `
     localStorage.setItem('homelab:media-profile:oli', 'oli');
     localStorage.setItem('homelab:advanced-media', 'false');
+    localStorage.setItem('homelab:subtitle-timing:v1:' + JSON.stringify(['oli', 'Example movie.mp4', 1000000]), '-0.5');
     sessionStorage.clear();
     window.androidBridge = {};
     const listeners = new Map();
@@ -54,6 +56,14 @@ export async function checkNativePlayer({ call, evaluate, until, activate, origi
     await until('!!document.querySelector(".simple-watch-pending")');
     await until('nativeFixture.plays.length === 1');
     assert.match(await evaluate('nativeFixture.plays[0].qualityInfo'), /Quality review: Good choice[\s\S]*1080p[\s\S]*5,000 seeders[\s\S]*strong streaming choice/);
+    assert.equal(await evaluate('nativeFixture.plays[0].subtitleOffsetSeconds'), -0.5, 'Native playback receives remembered timing');
+    await evaluate(`nativeFixture.emit({ action: 'subtitleTiming', playbackId: 'selected', subtitleOffsetSeconds: -1.5 })`);
+    assert.equal(await evaluate(`localStorage.getItem('homelab:subtitle-timing:v1:' + JSON.stringify(['oli', 'Example movie.mp4', 1000000]))`), '-1.5');
+    await evaluate(`nativeFixture.emit({ action: 'subtitleTiming', playbackId: 'foreign-session', subtitleOffsetSeconds: 10 })`);
+    assert.equal(await evaluate(`localStorage.getItem('homelab:subtitle-timing:v1:' + JSON.stringify(['oli', 'Example movie.mp4', 1000000]))`), '-1.5', 'Foreign native sessions cannot change timing');
+    await evaluate(`nativeFixture.emit({ action: 'playbackProgress', playbackId: 'selected', playbackPositionSeconds: 12.5, durationSeconds: 120 })`);
+    for (let attempt = 0; attempt < 50 && metrics.progress.at(-1)?.playbackPositionSeconds !== 12.5; attempt++) await delay(20);
+    assert.equal(metrics.progress.at(-1).playbackPositionSeconds, 12.5, 'Native progress events persist the absolute watch position');
     assert.equal(await evaluate('document.querySelector("video").hasAttribute("src")'), false, 'No WebView video decoding alongside native playback');
     assert.equal(await evaluate('document.querySelector(".tv-playback-controls").checkVisibility()'), false, 'Page keeps only the initial loading flow');
     await evaluate(`nativeFixture.emit({ action: 'subtitleAuto', playbackId: 'selected', requestId: 1 })`);
@@ -69,6 +79,7 @@ export async function checkNativePlayer({ call, evaluate, until, activate, origi
     await until('nativeFixture.plays.length === 2');
     assert.deepEqual(metrics.adds.slice(added), ['best', 'broken', 'source'], 'Source change skips the unavailable torrent');
     assert.equal(await evaluate('nativeFixture.plays[1].position'), 32, 'New source resumes the viewer position');
+    assert.equal(await evaluate('nativeFixture.plays[1].subtitleOffsetSeconds'), -1.5, 'Reopening the same file restores native timing');
     assert.equal(await evaluate('nativeFixture.open'), true, 'Source replacement keeps the native session open');
     await evaluate(`nativeFixture.complete({ action: 'next', position: 40, duration: 120, ended: false })`);
     await until('nativeFixture.statuses.some(status => status.error)');
@@ -78,6 +89,9 @@ export async function checkNativePlayer({ call, evaluate, until, activate, origi
     const responses = await evaluate('nativeFixture.responses.length');
     await evaluate(`nativeFixture.emit({ action: 'subtitleSearch', playbackId: 'selected', requestId: 99 })`);
     assert.equal(await evaluate('nativeFixture.responses.length'), responses, 'Closing disposes the subtitle request handler');
+  } catch (error) {
+    error.message += '\nNative fixture: ' + JSON.stringify(await evaluate('({plays: nativeFixture.plays, statuses: nativeFixture.statuses, responses: nativeFixture.responses})'));
+    throw error;
   } finally {
     await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: injection.identifier });
   }

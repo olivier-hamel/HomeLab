@@ -187,6 +187,38 @@ test('downloads are durable, account-scoped, deduplicated and seekable without T
   await assert.rejects(() => local(), /disponible/);
 });
 
+test('movie and episode watch positions and subtitle timing survive restart, stay profile-scoped, and clear on deletion', async t => {
+  const { store, root } = await fixture(t, complete);
+  const movie = await store.enqueue('oli', hash, { ...file, id: 3, path: 'Movie.mp4' }, downloadIntent({ query: 'Movie' }, 'Movie.mp4'));
+  const episode = await store.enqueue('oli', hash, file, intent);
+  await waitFor(store, movie.id, 'ready'); await waitFor(store, episode.id, 'ready');
+  store.savePlaybackState('oli', movie.id, 'oli', { playbackPositionSeconds: 1300.25, durationSeconds: 7200 });
+  store.savePlaybackState('oli', episode.id, 'oli', { playbackPositionSeconds: 600, durationSeconds: 2400 });
+  store.savePlaybackState('oli', movie.id, 'oli', { subtitleOffsetSeconds: -1.5 });
+  store.savePlaybackState('oli', movie.id, 'max', { playbackPositionSeconds: 250, durationSeconds: 7200, subtitleOffsetSeconds: 2 });
+  assert.throws(() => store.savePlaybackState('max', movie.id, 'max', { subtitleOffsetSeconds: 0 }), /disponible/);
+  await store.close();
+  const restored = new MediaDownloads({ stream() { assert.fail('resume must use local bytes'); } }, root);
+  t.after(() => restored.close());
+  const state = restored.status('oli', movie.id).playbackState;
+  assert.equal(state.playbackPositionSeconds, 1300.25); assert.equal(state.subtitleOffsetSeconds, -1.5);
+  assert.equal(restored.list('oli').find(row => row.id === episode.id).playbackState.playbackPositionSeconds, 600);
+  assert.equal(restored.status('oli', movie.id, 'max').playbackState.subtitleOffsetSeconds, 2);
+  restored.savePlaybackState('oli', movie.id, 'oli', { playbackPositionSeconds: 1400, durationSeconds: 7200 });
+  assert.equal(restored.playbackState('oli', movie.id).subtitleOffsetSeconds, -1.5, 'Progress saves retain timing');
+  restored.savePlaybackState('oli', movie.id, 'oli', { subtitleOffsetSeconds: 0 });
+  assert.equal(restored.playbackState('oli', movie.id).playbackPositionSeconds, 1400, 'Resetting timing retains progress');
+  restored.savePlaybackState('oli', episode.id, 'oli', { playbackPositionSeconds: 2400, durationSeconds: 2400 });
+  assert.equal(restored.playbackState('oli', episode.id).completed, true);
+  restored.savePlaybackState('oli', episode.id, 'oli', { playbackPositionSeconds: 1, durationSeconds: 2400 });
+  assert.equal(restored.playbackState('oli', episode.id).completed, false, 'Watching again clears completion');
+  for (const value of [{}, { subtitleOffsetSeconds: null }, { subtitleOffsetSeconds: '1' }, { subtitleOffsetSeconds: 601 }, { subtitleOffsetSeconds: Infinity }, { playbackPositionSeconds: -1, durationSeconds: 7200 }, { playbackPositionSeconds: 7201, durationSeconds: 7200 }, { playbackPositionSeconds: 12 }, { playbackPositionSeconds: 12, durationSeconds: 0 }]) assert.throws(() => restored.savePlaybackState('oli', movie.id, 'oli', value));
+  await restored.remove('oli', movie.id);
+  const db = new DatabaseSync(join(root, 'downloads.sqlite'));
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM download_playback WHERE download_id = ?').get(movie.id).count, 0);
+  db.close();
+});
+
 test('truncated transfers stay unplayable and retry resumes from actual bytes on disk', async t => {
   const ranges = [];
   const { store, root } = await fixture(t, async (_hash, _file, request) => {
@@ -377,10 +409,21 @@ test('authenticated API queues a selected file, persists its source, then plays 
   cookie = (await api(new Request('http://downloads.test/api/media/status'))).headers.get('set-cookie').split(';')[0];
   const local = await (await call('downloads/playback', { downloadId: row.id })).json();
   assert.equal(local.downloaded, true); assert.equal(local.hash, undefined);
+  assert.equal(local.downloadId, row.id);
+  response = await call('downloads/progress', { downloadId: row.id, playbackPositionSeconds: 321.5, durationSeconds: 2400, subtitleOffsetSeconds: 1.5 });
+  assert.equal(response.status, 200);
+  const reopened = await (await call('downloads/playback', { downloadId: row.id })).json();
+  assert.notEqual(reopened.id, local.id);
+  assert.equal(reopened.playbackState.playbackPositionSeconds, 321.5);
+  assert.equal(reopened.playbackState.subtitleOffsetSeconds, 1.5);
+  assert.equal((await (await call('downloads')).json()).downloads[0].playbackState.playbackPositionSeconds, 321.5);
+  response = await call('downloads/playback', { downloadId: row.id }, { headers: { 'X-Media-Profile': 'max' } });
+  assert.equal((await response.json()).playbackState, undefined);
   response = await call(`stream/${local.id}`, undefined, { headers: { Range: 'bytes=1-3' } }); assert.equal(response.status, 206); assert.equal(await response.text(), 'bcd');
   account = { ...accountSession, user: { ...accountSession.user, username: 'max' } };
   assert.deepEqual((await (await call('downloads')).json()).downloads, []);
   assert.equal((await call('downloads/remove', { downloadId: row.id })).status, 404);
+  assert.equal((await call('downloads/progress', { downloadId: row.id, subtitleOffsetSeconds: 0 })).status, 404);
   account = accountSession;
   assert.equal((await call('downloads/remove', { downloadId: row.id })).status, 200);
   assert.equal((await call(`stream/${local.id}`)).status, 404);

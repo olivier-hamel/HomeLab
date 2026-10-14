@@ -14,7 +14,8 @@ export type DownloadIntent = {
   media?: { id: number; kind: "movie" | "tv"; title: string; year: string; poster: string | null };
   movie?: { id: number; title: string; year: string; poster: string | null };
 };
-export type MediaDownload = { id: string; title: string; file: TorrentFile; intent: DownloadIntent; state: "queued" | "downloading" | "ready" | "error" | "deleting"; downloadedBytes: number; totalBytes: number; error: string; createdAt: string; updatedAt: string };
+export type DownloadPlaybackState = { playbackPositionSeconds: number; durationSeconds: number; subtitleOffsetSeconds: number; completed: boolean; updatedAt: string };
+export type MediaDownload = { id: string; title: string; file: TorrentFile; intent: DownloadIntent; state: "queued" | "downloading" | "ready" | "error" | "deleting"; downloadedBytes: number; totalBytes: number; error: string; createdAt: string; updatedAt: string; playbackState?: DownloadPlaybackState };
 type Stored = MediaDownload & { username: string; hash: string; token: string; lease: number; reserved?: boolean };
 function identifier(value: string) {
   if (!/^[0-9a-f-]{36}$/.test(value)) throw new MediaError("input", "Téléchargement invalide.", 400);
@@ -76,6 +77,7 @@ export class MediaDownloads {
       mkdirSync(/* turbopackIgnore: true */ join(this.root, "files"), { recursive: true, mode: 0o700 });
       this.db = new DatabaseSync(join(this.root, "downloads.sqlite"));
       this.db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, username TEXT NOT NULL, hash TEXT NOT NULL, file_id INTEGER NOT NULL, state TEXT NOT NULL, lease INTEGER NOT NULL DEFAULT 0, token TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL, UNIQUE(username, hash, file_id))");
+      this.db.exec("PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS download_playback (download_id TEXT NOT NULL REFERENCES downloads(id) ON DELETE CASCADE, profile TEXT NOT NULL, position REAL NOT NULL DEFAULT 0, duration REAL NOT NULL DEFAULT 0, subtitle_offset REAL NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, PRIMARY KEY(download_id, profile))");
     }
     return this.db;
   }
@@ -89,8 +91,32 @@ export class MediaDownloads {
     if (!row || row.username !== username || row.state === "deleting") throw new MediaError("not_found", "Ce téléchargement n’est plus disponible.", 404);
     return row;
   }
-  list(username: string): MediaDownload[] {
-    return this.storage().prepare("SELECT id FROM downloads WHERE username = ? AND state != 'deleting' ORDER BY rowid DESC").all(username).map(row => publicDownload(this.get(username, String(row.id))));
+  list(username: string, profile = username): MediaDownload[] {
+    return this.storage().prepare("SELECT id FROM downloads WHERE username = ? AND state != 'deleting' ORDER BY rowid DESC").all(username).map(row => ({ ...publicDownload(this.get(username, String(row.id))), playbackState: this.playbackState(username, String(row.id), profile) }));
+  }
+  playbackState(username: string, id: string, profile = username): DownloadPlaybackState | undefined {
+    this.get(username, id);
+    const row = this.storage().prepare("SELECT * FROM download_playback WHERE download_id = ? AND profile = ?").get(id, profile);
+    return row ? { playbackPositionSeconds: Number(row.position), durationSeconds: Number(row.duration), subtitleOffsetSeconds: Number(row.subtitle_offset), completed: !!row.completed, updatedAt: String(row.updated_at) } : undefined;
+  }
+  savePlaybackState(username: string, id: string, profile: string, value: unknown) {
+    if (this.get(username, id).state !== "ready") throw new MediaError("pending", "Ce téléchargement n’est pas encore prêt.", 409);
+    const input = record(value), columns: string[] = [], values: (string | number)[] = [];
+    if (input.playbackPositionSeconds !== undefined || input.durationSeconds !== undefined) {
+      const position = input.playbackPositionSeconds, duration = input.durationSeconds;
+      if (typeof position !== "number" || typeof duration !== "number" || !Number.isFinite(position) || !Number.isFinite(duration) || position < 0 || duration <= 0 || duration > 604800 || position > duration) throw new MediaError("input", "Playback progress is outside the video duration.", 400);
+      columns.push("position", "duration", "completed"); values.push(position, duration, position / duration >= 0.95 ? 1 : 0);
+    }
+    if (input.subtitleOffsetSeconds !== undefined) {
+      const offset = input.subtitleOffsetSeconds;
+      if (typeof offset !== "number" || !Number.isFinite(offset) || Math.abs(offset) > 600) throw new MediaError("input", "Subtitle timing must be within ten minutes.", 400);
+      columns.push("subtitle_offset"); values.push(offset);
+    }
+    if (!columns.length) throw new MediaError("input", "Provide playback progress or subtitle timing.", 400);
+    columns.push("updated_at"); values.push(new Date().toISOString());
+    // Update only supplied fields so progress and caption adjustments cannot overwrite each other.
+    this.storage().prepare(`INSERT INTO download_playback (download_id, profile, ${columns.join(", ")}) VALUES (?, ?, ${columns.map(() => "?").join(", ")}) ON CONFLICT(download_id, profile) DO UPDATE SET ${columns.map(column => `${column} = excluded.${column}`).join(", ")}`).run(id, profile, ...values);
+    return this.playbackState(username, id, profile)!;
   }
   start() {
     if (this.timer) return;
@@ -288,10 +314,10 @@ export class MediaDownloads {
       db.exec("COMMIT");
     } catch (error) { db.exec("ROLLBACK"); throw error; }
   }
-  status(username: string, id: string) {
+  status(username: string, id: string, profile = username) {
     const row = this.get(username, id);
     if (row.state !== "ready") throw new MediaError("pending", "Ce téléchargement n’est pas encore prêt.", 409);
-    return { hash: `local:${username}:${row.id}`, title: row.title, state: "ready", files: [row.file], downloaded: true, downloadSpeed: null, connectedPeers: null, downloadedBytes: row.totalBytes, completedBytes: row.totalBytes, preloadBytes: row.totalBytes, preloadTarget: row.totalBytes };
+    return { hash: `local:${username}:${row.id}`, title: row.title, state: "ready", files: [row.file], downloaded: true, downloadId: id, playbackState: this.playbackState(username, id, profile), downloadSpeed: null, connectedPeers: null, downloadedBytes: row.totalBytes, completedBytes: row.totalBytes, preloadBytes: row.totalBytes, preloadTarget: row.totalBytes };
   }
   async stream(source: string, file: TorrentFile, request: Request): Promise<Response> {
     const match = /^local:([^:]+):([0-9a-f-]{36})$/.exec(source);

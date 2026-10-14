@@ -94,9 +94,18 @@
 .cinema-subtitle-controls button { min-height: 36px; border-color: #ffffff20; border-radius: 8px; background: #ffffff08; font-size: 11px; }
 .cinema-subtitle-controls button:hover { background: #ffffff16; }
 .cinema-subtitle-controls button svg { width: 15px; height: 15px; }
-.cinema-subtitle-controls .cinema-auto-subtitles { display: flex; justify-content: space-between; width: 100%; min-height: 44px; margin-bottom: 14px; padding: 0 12px; border: 1px solid #ffffff20; font-size: 12px; }
-.cinema-auto-subtitles[aria-pressed="true"] { background: #ffffff20; }
+.cinema-subtitle-selection { display: grid; grid-template-columns: 64px 1fr; gap: 5px; }
+.cinema-subtitle-selection > button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid transparent; font-size: 12px; }
+.cinema-subtitle-selection > button[aria-pressed="true"] { background: #ffffff20; border-color: #ffffff20; color: white; }
+.cinema-auto-subtitles small { color: #aeaeb6; font-size: 10px; }
 .cinema-auto-subtitles > span { display: flex; align-items: center; gap: 8px; }
+.cinema-subtitle-controls .cinema-subtitle-more { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 12px; background: transparent; color: #aeaeb6; }
+.cinema-subtitle-more[aria-expanded="true"] svg { transform: rotate(180deg); }
+.cinema-timing-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; }
+.cinema-subtitle-controls .cinema-subtitle-timing .cinema-timing-heading button { min-height: 28px; padding: 0 8px; background: transparent; color: #aeaeb6; }
+.cinema-timing-adjust { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+.cinema-timing-adjust button { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; }
+.cinema-timing-adjust output { min-width: 58px; text-align: center; font-variant-numeric: tabular-nums; }
 .cinema-subtitle-controls [aria-label="Subtitle timing"] { padding: 13px 0 0; border: 0; border-top: 1px solid #ffffff16; border-radius: 0; background: none; }
 .cinema-subtitle-controls [aria-label="Subtitle timing"] > div > p { color: #d1d1d6; font-size: 12px; }
 .cinema-subtitle-controls [aria-label="Subtitle offset"] { color: #f5f5f7; font-size: 16px; }
