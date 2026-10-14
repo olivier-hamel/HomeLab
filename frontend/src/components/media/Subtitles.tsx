@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useId, useRef, useState, type RefObject } from "react";
-import { Captions, Search, Upload } from "lucide-react";
+import { Captions, Check, LoaderCircle, Search, Upload } from "lucide-react";
 import { Button } from "../ui/button";
 import { type SearchIntent, type TorrentFile } from "../../lib/media";
 import { MAX_SUBTITLE_BYTES, subtitleFormat, subtitleTiming, subtitleVtt } from "../../lib/subtitles";
@@ -17,13 +17,14 @@ function disableSubtitles(element: HTMLVideoElement | null) {
   }
 }
 
-export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0, simple = false, englishEnabled = false, onEnglishChange, onNativeSubtitleChange }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number; simple?: boolean; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void; onNativeSubtitleChange?: (state: NativeSubtitleState) => void }) {
+export default function Subtitles({ video, playbackId, files, filename, search, timelineStart = 0, simple = false, compact = false, customDisplay = false, englishEnabled = false, onEnglishChange, onNativeSubtitleChange }: { video: RefObject<HTMLVideoElement | null>; playbackId: string; files: TorrentFile[]; filename: string; search?: SearchIntent; timelineStart?: number; simple?: boolean; compact?: boolean; customDisplay?: boolean; englishEnabled?: boolean; onEnglishChange?: (enabled: boolean) => void; onNativeSubtitleChange?: (state: NativeSubtitleState) => void }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const active = useRef<AbortController | null>(null);
   const selectionVersion = useRef(0);
   const offsetValue = useRef(0);
   const applyOffset = useRef<((offset: number) => void) | null>(null);
+  const autoStarted = useRef(false);
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState("");
   const [loaded, setLoaded] = useState<Subtitle | null>(null);
@@ -60,11 +61,11 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     };
     // Loading another converted time range temporarily resets native track modes.
     // Keep the user's selection through that reset and restore it after metadata.
-    const restore = () => { track.track.mode = "showing"; };
+    const restore = () => { track.track.mode = customDisplay ? "hidden" : "showing"; };
     const changed = () => { if (element.readyState > 0 && track.track.mode === "disabled") { selectionVersion.current++; setSelected(""); if (simple) changedEnglish(false); } };
     track.addEventListener("load", ready); track.addEventListener("error", failed);
     disableSubtitles(element);
-    element.append(track); track.track.mode = "showing";
+    element.append(track); restore();
     element.textTracks.addEventListener("change", changed);
     element.addEventListener("loadedmetadata", restore);
     return () => {
@@ -74,9 +75,10 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
       track.removeEventListener("load", ready); track.removeEventListener("error", failed);
       track.remove(); URL.revokeObjectURL(url);
     };
-  }, [loaded, selected, video, simple]);
+  }, [loaded, selected, video, simple, customDisplay]);
 
   const loadEnglish = async () => {
+    selectionVersion.current++;
     active.current?.abort();
     const controller = new AbortController(); active.current = controller;
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]);
@@ -101,6 +103,11 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (simple) syncEnglish();
   }, [simple, englishEnabled]);
+  const autoEnglish = useEffectEvent(() => { void loadEnglish(); });
+  useEffect(() => {
+    if (compact && englishEnabled && !autoStarted.current) { autoStarted.current = true; autoEnglish(); }
+  }, [compact, englishEnabled]);
+  useEffect(() => { if (compact) changedEnglish(selected === "auto" && !error); }, [compact, selected, error]);
 
   const load = async (key: string, name: string, read: (signal: AbortSignal) => Promise<ArrayBuffer>) => {
     selectionVersion.current++;
@@ -122,6 +129,7 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     selectionVersion.current++;
     active.current?.abort(); setBusy(false); setError(""); setSelected(key);
     if (!key) { disableSubtitles(video.current); return; }
+    if (key === "auto") { void loadEnglish(); return; }
     setOffset(0);
     if (key === "local" && local) { setLoaded(local); return; }
     if (key === "online" && online) { setLoaded(online); return; }
@@ -137,18 +145,22 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
     });
   };
 
-  return <div aria-label="Subtitle controls" className={`space-y-3 ${simple ? "simple-subtitles" : "rounded border border-neutral-700 bg-neutral-950 p-4"}`}>
+  return <div aria-label="Subtitle controls" className={`space-y-3 ${compact ? "cinema-subtitle-controls" : simple ? "simple-subtitles" : "rounded border border-neutral-700 bg-neutral-950 p-4"}`}>
+    {compact && <button type="button" className="cinema-auto-subtitles" aria-label="English subtitles" aria-pressed={selected === "auto"} disabled={busy} onClick={() => { if (selected === "auto") choose(""); else { autoStarted.current = true; void loadEnglish(); } }}><span>{busy && selected === "auto" ? <LoaderCircle className="cinema-spinner" size={16} /> : <Captions size={17} />}English · automatic</span>{selected === "auto" && !busy && <Check size={16} />}</button>}
     {simple ? <Switch label="English subtitles" checked={englishEnabled} onChange={enabled => onEnglishChange?.(enabled)} description={busy ? "Finding the best match…" : selected === "auto" && loaded ? "On · matched to this video" : "Automatically find and load captions"} /> : <div className="flex flex-wrap items-end gap-3">
       <div className="min-w-0 flex-1 basis-56"><label htmlFor={id} className="mb-2 flex items-center gap-2 text-sm"><Captions className="h-4 w-4 text-orange-400" />Subtitles</label>
         <select id={id} value={selected} onChange={event => choose(event.target.value)} className="h-10 w-full min-w-0 rounded border border-neutral-600 bg-neutral-900 px-3 text-sm text-white">
           <option value="">Off</option>
+          {compact && (selected === "auto" || loaded?.key === "auto") && <option value="auto">English · automatic</option>}
           {subtitles.map(file => <option key={file.id} value={String(file.id)}>{file.path}</option>)}
           {(local || selected === "local") && <option value="local">{local ? `${local.name} (local)` : "Loading local subtitles…"}</option>}
           {(online || selected === "online") && <option value="online">{online ? `${online.name} (SubDL)` : "Loading online subtitles…"}</option>}
         </select>
       </div>
-      <Button variant="outline" onClick={() => input.current?.click()}><Upload />Load SRT / VTT</Button>
-      <Button variant="outline" aria-expanded={showOnline} aria-controls={`${id}-online`} onClick={() => setShowOnline(value => !value)}><Search />{showOnline ? "Hide online search" : "Find online subtitles"}</Button>
+      <div className={compact ? "cinema-subtitle-actions" : "contents"}>
+        <Button variant="outline" onClick={() => input.current?.click()}><Upload />{compact ? "Load file" : "Load SRT / VTT"}</Button>
+        <Button variant="outline" aria-expanded={showOnline} aria-controls={`${id}-online`} onClick={() => setShowOnline(value => !value)}><Search />{compact ? showOnline ? "Hide search" : "Find online" : showOnline ? "Hide online search" : "Find online subtitles"}</Button>
+      </div>
       <input ref={input} type="file" accept=".srt,.vtt" aria-label="Load subtitle file" className="hidden" onChange={event => {
         const file = event.target.files?.[0]; event.target.value = "";
         if (file) void load("local", file.name, async () => {
@@ -159,10 +171,10 @@ export default function Subtitles({ video, playbackId, files, filename, search, 
       }} />
     </div>}
     {loaded && loaded.key === selected && <SubtitleTimingControls offset={offset} onChange={setOffset} />}
-    {!simple && <p className="text-xs leading-relaxed text-neutral-400">{subtitles.length ? "Choose a subtitle file, find one online, or load your own." : "No SRT or VTT files in this torrent. Download subtitle or load your own."} Maximum 2 MiB.</p>}
+    {!simple && <p className="text-xs leading-relaxed text-neutral-400">{compact ? "Use automatic English, choose a track, or load an SRT / VTT file." : subtitles.length ? "Choose a subtitle file, find one online, or load your own." : "No SRT or VTT files in this torrent. Download subtitle or load your own."}{!compact && " Maximum 2 MiB."}</p>}
     {busy && <p role="status" className="text-xs text-orange-400">Loading subtitles… {!simple && <Button variant="ghost" size="sm" onClick={() => choose("")}>Cancel</Button>}</p>}
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}
-    {simple && error && <Button variant="outline" size="sm" disabled={busy} onClick={() => { void loadEnglish(); }}>Retry subtitles</Button>}
+    {(simple || compact) && error && <Button variant="outline" size="sm" disabled={busy} onClick={() => { void loadEnglish(); }}>Retry subtitles</Button>}
     {!simple && <div id={`${id}-online`}>{showOnline && <OnlineSubtitles playbackId={playbackId} filename={filename} search={search} selectionVersion={selectionVersion} onLoad={(name, content) => { void load("online", name, async () => content); }} />}</div>}
   </div>;
 }

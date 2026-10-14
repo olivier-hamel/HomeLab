@@ -30,7 +30,7 @@ export default function AutoPlayback({ intent, close, resumeAt = 0, downloadOnly
     ? `Quality review: ${chosen.assessment.verdict === "good" ? "Good choice" : chosen.assessment.verdict === "sketchy" ? "Caution" : "Uncertain"}\n\n${chosen.source.quality.length ? chosen.source.quality.join(" · ") : "Quality not identified"} · ${chosen.source.seeders === null ? "Unknown seeders" : `${chosen.source.seeders.toLocaleString()} seeders`}\n\n${chosen.assessment.review ?? chosen.assessment.reason}`
     : undefined;
 
-  const next = async (failed = false, manual = false) => {
+  const next = async (failed = false, manual = false, preferSaved = true) => {
     if (active.current) return;
     if (manual) attempts.current = 0;
     if (failed && current.current) {
@@ -43,7 +43,7 @@ export default function AutoPlayback({ intent, close, resumeAt = 0, downloadOnly
     if (attempts.current >= 5) { setError("Torrent unavailable. Retry or choose another source."); return; }
     const controller = new AbortController(); active.current = controller;
     try {
-      if (!downloadOnly && !attempts.current) {
+      if (!downloadOnly && !attempts.current && preferSaved) {
         const saved = await mediaApi<{ downloads: MediaDownload[] }>("downloads", AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)])).catch(() => ({ downloads: [] }));
         controller.signal.throwIfAborted();
         const available = matchingDownload(saved.downloads, intent);
@@ -112,14 +112,13 @@ export default function AutoPlayback({ intent, close, resumeAt = 0, downloadOnly
   return <section ref={panel} aria-label="Watch title" className="simple-watch space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <Button variant="ghost" data-tv-back="" onClick={close}><ArrowLeft />Back to browse</Button>
-      {chosen && review && review.provider !== "gemini" && <p role="status" className="max-w-lg text-xs text-neutral-400">{review.warning || "Selected with basic matching"}</p>}
+      {!chosen && review && review.provider !== "gemini" && <p role="status" className="max-w-lg text-xs text-neutral-400">{review.warning || "Selected with basic matching"}</p>}
     </div>
     <div className="space-y-3">
       <h2 className="text-2xl font-semibold text-white sm:text-3xl">{intent.label || intent.query}</h2>
       {downloadOnly && <p className="text-sm text-neutral-400">Recherche d’une version à conserver sur le serveur. Le téléchargement continuera après la fermeture de cette page.</p>}
-      {local && <p className="text-sm text-orange-300">Lecture du fichier téléchargé sur HomeLab</p>}
     </div>
-    {local ? <Playback source={local} search={intent} close={close} simple resumeAt={resumeAt} /> : chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} downloadOnly={downloadOnly} onQueued={onQueued} nativeSession={nativeSession} qualityInfo={qualityInfo} simple resumeAt={nextPosition} onFailure={() => { void next(true); }} onNext={position => { if (position !== undefined) setNextPosition(position); void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
+    {local ? <Playback source={local} search={intent} close={close} simple resumeAt={resumeAt} englishEnabled={english} onEnglishChange={setEnglish} onNext={position => { if (position !== undefined) setNextPosition(position); setLocal(null); void next(false, true, false); }} /> : chosen ? <Playback key={chosen.key} source={chosen.source} search={intent} close={close} downloadOnly={downloadOnly} onQueued={onQueued} nativeSession={nativeSession} qualityInfo={qualityInfo} simple resumeAt={nextPosition} onFailure={() => { void next(true); }} onNext={position => { if (position !== undefined) setNextPosition(position); void next(true, true); }} englishEnabled={english} onEnglishChange={setEnglish} /> : <div className="simple-watch-pending">
       {error ? <><p role="alert" className="max-w-md text-center text-neutral-300">{error}</p><Button className="bg-orange-600 text-white hover:bg-orange-700" onClick={() => { if (!nextBatch.current && !queue.current.length) nextBatch.current = 1; void next(false, true); }}><RotateCcw />Try again</Button></> : <><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status" className="text-neutral-200">{message}</p><p className="text-sm text-neutral-400">This can take a moment. We'll start when it's ready.</p></>}
       <Button variant="ghost" onClick={close}>{error ? "Choose another title" : "Cancel"}</Button>
     </div>}

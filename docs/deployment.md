@@ -300,18 +300,19 @@ it. Apply access restrictions at your router, Proxmox firewall, or appropriate
 Docker forwarding rules, and in your tailnet policy. See
 [Docker's firewall explanation](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
 
-## 8. Automatically deploy pushed commits
+## 8. Deploy pushed commits from your development machine
 
-Install the deployment service and timer once using
-[SERVER-UPDATE.md](../SERVER-UPDATE.md#2-install-automatic-deployment-on-apps01-once).
-Then review, commit, and push changes to `feat/memo-integration` from your
-development machine. The server checks for pushed commits every minute, builds
-the services sequentially, and waits for healthy containers. Keep local settings
-and keys out of Git.
+Review, commit, and push changes to `feat/memo-integration`, then run the private
+local deployment helper using
+[SERVER-UPDATE.md](../SERVER-UPDATE.md#2-deploy-from-this-machine).
+It fetches the pushed commit locally and transfers it over the agent SSH
+connection. The server builds the services sequentially and waits for healthy
+containers. The helper is excluded from Git; keep its local copy. Keep local
+settings and keys out of Git.
 
 The script refuses local source changes and divergent server history. Successful
-commits are skipped; failed deployments are retried on the next check. The same
-guide covers immediate deployment, logs, configuration, and pausing the timer.
+commits are skipped; rerunning the helper retries failed deployments. The same
+guide covers local invocation, configuration, and forcing a rebuild.
 All app sources are included in this checkout. Routine updates create no backups
 and retain private environment files and named volumes.
 

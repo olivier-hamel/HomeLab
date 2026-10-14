@@ -1,9 +1,9 @@
 # HomeLab
 
 One repository contains the dashboard, Accueil, TV & Movies, Tempo, Mémo, Bibliothèque, and Caméra.
-Use `feat/memo-integration` for development and server deployment. Install the
-deployment timer once, then commit and push; the server automatically deploys
-the latest pushed commit. See [SERVER-UPDATE.md](SERVER-UPDATE.md).
+Use `feat/memo-integration` for development and server deployment. Commit and
+push, then run the private local helper `./scripts/deploy-server.sh` to deploy
+through SSH. See [SERVER-UPDATE.md](SERVER-UPDATE.md).
 
 **HomeLab** opens with its own HTTPS login page and lists the existing Mémo accounts.
 One Mémo session opens Accueil, Tempo, TV & Movies, Mémo, Bibliothèque, and Caméra; no duplicate accounts are created.
