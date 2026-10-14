@@ -18,8 +18,9 @@ import { MediaRecommendations } from "./recommendations.ts";
 import { Omdb } from "./omdb.ts";
 import { MovieDiscovery } from "./movie-discovery.ts";
 import { memoSessionCookie, requireHomeLabAccount, type AccountSession, type AccountVerifier } from "../accounts.ts";
+import { downloadIntent, mediaDownloads, type MediaDownloads } from "./downloads.ts";
 
-type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe };
+type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe; input?: string | Uint8Array<ArrayBuffer> };
 type Share = { owner: string; account: string; accountCookie: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
 function context(value: unknown): SearchContext | undefined {
   if (!value) return;
@@ -41,12 +42,13 @@ function mediaProfile(request: Request, account: AccountSession): string {
   if (account.accounts.some(item => item.username === profile)) return profile;
   throw new MediaError("input", "Choisis un profil cinéma parmi les comptes HomeLab.", 400);
 }
-export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">, authenticate: AccountVerifier = requireHomeLabAccount) {
+export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">, authenticate: AccountVerifier = requireHomeLabAccount, downloads: MediaDownloads = mediaDownloads) {
   const tmdb = new Tmdb(fetcher);
   const catalogue = new CatalogueSearch(fetcher, tmdb);
   const prowlarr = new Prowlarr(fetcher);
   const torrents = new TorrServer(fetcher);
-  const ffmpeg = converter ?? new FFmpeg(torrents);
+  const input = { stream: (hash: string, file: TorrentFile, request: Request) => hash.startsWith("local:") ? downloads.stream(hash, file, request) : torrents.stream(hash, file, request) };
+  const ffmpeg = converter ?? new FFmpeg(input);
   const subdl = new Subdl(fetcher);
   const assist = new SourceAssist(fetcher);
   const welcome = new Welcome(fetcher);
@@ -78,7 +80,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
     };
     request.signal.addEventListener("abort", release, { once: true });
     try {
-      const response = await torrents.stream(hash, file, request);
+      const response = await input.stream(hash, file, request);
       if (!response.body) { release(); return response; }
       const reader = response.body.getReader();
       return new Response(new ReadableStream({
@@ -135,6 +137,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
       if (request.method === "HEAD") return json({ error: "HEAD is supported only for streams." }, 405);
       return await limited(async () => {
         if (request.method === "GET") {
+          if (path[0] === "downloads" && path.length === 1) return json({ downloads: downloads.list(account.user.username) });
           if (path[0] === "continue-watching" && path.length === 1) {
             rate(`progress-list:${owner}`, 30);
             return json({ movies: await progress.list(profile) });
@@ -176,13 +179,33 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
           if (path[0] === "playback") {
             rate(`poll:${owner}`, 45);
             const entry = playback(path[1], owner);
-            const status = await torrents.status(entry.hash, request.signal);
+            const status = entry.hash.startsWith("local:") ? downloads.status(account.user.username, entry.hash.split(":")[2]) : await torrents.status(entry.hash, request.signal);
             entry.files = status.files;
             return json({ ...status, hash: undefined, id: path[1] });
           }
         }
         if (mutation) {
           const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 16_384))));
+          if (path[0] === "downloads") {
+            const username = account.user.username;
+            if (path.length === 1) {
+              rate(`download-add:${owner}`, 20);
+              const entry = playback(string(body.id, 64), owner);
+              if (!entry.file || !entry.input || entry.hash.startsWith("local:")) throw new MediaError("input", "Choisis une vidéo à télécharger.", 400);
+              const intent = downloadIntent(body.intent, entry.file.path);
+              // Persist torrent metadata (including private trackers) for interrupted jobs.
+              await torrents.add(entry.input, request.signal, true);
+              return json({ download: await downloads.enqueue(username, entry.hash, entry.file, intent) }, 202);
+            }
+            if (path.length === 2 && path[1] === "retry") return json({ download: downloads.retry(username, string(body.downloadId, 64)) }, 202);
+            if (path.length === 2 && path[1] === "remove") { await downloads.remove(username, string(body.downloadId, 64)); return json({ removed: true }); }
+            if (path.length === 2 && path[1] === "playback") {
+              const status = downloads.status(username, string(body.downloadId, 64));
+              const id = randomUUID();
+              playbacks.set(id, { owner, hash: status.hash, files: status.files, file: status.files[0] });
+              return json({ ...status, hash: undefined, id });
+            }
+          }
           if (path[0] === "discovery" && path.length === 1) {
             rate(`movie-discovery:${owner}`, 12);
             const discoverySignal = AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]);
@@ -319,12 +342,12 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
             const input = body.sourceId ? await prowlarr.resolve(string(body.sourceId, 64), request.signal) : magnet(body.magnet);
             const status = await torrents.add(input, request.signal);
             const id = randomUUID();
-            playbacks.set(id, { owner, hash: status.hash, files: status.files });
+            playbacks.set(id, { owner, hash: status.hash, files: status.files, input });
             return json({ ...status, hash: undefined, id });
           }
           if (path[0] === "select") {
             const entry = playback(string(body.id, 64), owner);
-            const current = await torrents.status(entry.hash, request.signal);
+            const current = entry.hash.startsWith("local:") ? downloads.status(account.user.username, entry.hash.split(":")[2]) : await torrents.status(entry.hash, request.signal);
             const file = current.files.find(f => f.id === integer(body.fileId));
             if (!file || file.kind !== "video") throw new MediaError("input", "Choose a video from this torrent's file list.", 400);
             // Separate playback handle per file keeps existing viewers and external links stable.

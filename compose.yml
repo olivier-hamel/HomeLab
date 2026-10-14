@@ -57,9 +57,11 @@ services:
       FFPROBE_PATH: /usr/bin/ffprobe
       LIBRARY_STORAGE_PATH: /data/library
       CAMERA_STORAGE_PATH: /data/camera
+      MEDIA_DOWNLOAD_STORAGE_PATH: /data/media-downloads
     volumes:
       - library_data:/data/library
       - camera_data:/data/camera
+      - media_downloads:/data/media-downloads
     depends_on:
       memo:
         condition: service_healthy
@@ -152,6 +154,7 @@ volumes:
   caddy_config:
   library_data:
   camera_data:
+  media_downloads:
 
 networks:
   app:

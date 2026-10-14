@@ -7,6 +7,41 @@ a movie in Simple mode starts automatic source selection and playback.
 
 ## Simple and Advanced mode
 
+### Téléchargements conservés sur le serveur
+
+Depuis les détails d’un film, utilise **Télécharger sur le serveur**. Pour une
+série, choisis la saison puis **Télécharger cet épisode**. La sélection automatique
+cherche une version et ajoute uniquement sa vidéo à la file, sans lancer la lecture.
+En mode avancé, chaque vidéo du torrent et le lecteur proposent aussi cette action.
+
+La section **Téléchargements** dans Cinéma et le dossier **Films et séries
+téléchargés** dans Bibliothèque affichent la même liste pour le compte HomeLab
+connecté. Ils permettent de suivre la progression, reprendre un transfert interrompu,
+regarder un fichier terminé ou le supprimer. Les profils cinéma continuent de gérer
+l’historique; les téléchargements appartiennent au compte connecté.
+
+Les fichiers restent sur le serveur jusqu’à une suppression explicite. Fermer la page
+ne coupe pas le transfert. Une file SQLite persistante traite une vidéo à la fois et
+reprend les tâches après redémarrage du backend; TorrServer conserve les métadonnées
+des sources ajoutées à cette file. Une erreur conserve le fichier partiel pour le bouton
+**Reprendre**. Les téléchargements incomplets ne sont jamais proposés à la lecture.
+La suppression d’un transfert actif annule celui-ci et retire également ses octets partiels.
+
+Quand un film ou un épisode exact est déjà prêt, la lecture automatique du catalogue
+utilise le fichier conservé. **Regarder** dans les téléchargements fonctionne également
+sans TMDB, Prowlarr ou TorrServer. La lecture utilise le serveur HomeLab avec les
+requêtes HTTP Range pour naviguer dans la vidéo; FFmpeg peut toujours convertir les
+formats incompatibles. Les sous-titres en ligne et locaux restent disponibles; les
+fichiers de sous-titres du torrent ne sont pas conservés avec la vidéo.
+
+En Docker, le volume `media_downloads` est monté à `/data/media-downloads`; il
+survit à la recréation du conteneur. En local, le chemin par défaut est
+`backend/.local-data/media-downloads`, modifiable avec `MEDIA_DOWNLOAD_STORAGE_PATH`.
+`MEDIA_DOWNLOAD_RESERVE_MIB` réserve 512 MiB par défaut avant le démarrage d’un
+transfert. La file accepte jusqu’à 20 tâches en attente ou actives par compte.
+Après mise à jour du code, reconstruire le frontend et le backend pour activer
+l’interface, le volume et le worker.
+
 Simple mode is the default. The **Advanced mode** switch at the top remembers
 the choice in this browser and restores the existing manual source, file,
 subtitle and diagnostic controls. Changing modes stops the current player.
@@ -242,6 +277,8 @@ Keep the generated output private.
 | `PROWLARR_API_KEY` | Existing Prowlarr key, sent as a server-side header. |
 | `TORRSERVER_BASE_URL` | Backend-reachable HTTP(S) URL; example `http://100.64.162.49:8090`. |
 | `TORRSERVER_USERNAME`, `TORRSERVER_PASSWORD` | Both blank, or both set for existing HTTP Basic auth. |
+| `MEDIA_DOWNLOAD_STORAGE_PATH` | Durable video and SQLite directory; local default `.local-data/media-downloads`, Docker `/data/media-downloads`. |
+| `MEDIA_DOWNLOAD_RESERVE_MIB` | `512`; free disk reserve checked before starting a download. |
 | `TMDB_READ_ACCESS_TOKEN` | Optional Bearer token. Direct source search works independently. |
 | `MONGODB_URI` | Optional MongoDB connection string enabling persistent Continue Watching and watch history. It may use `<db_username>` and `<db_password>` placeholders. |
 | `MONGODB_USERNAME`, `MONGODB_PASSWORD` | Optional credentials inserted into the URI placeholders and URL-encoded by the backend. |

@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Copy, Download, FastForward, LoaderCircle, Maximize, Pause, Play, RefreshCw, Rewind, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
-import { bytes, mainVideo, mediaApi, preparePlayback, recordWatchHistory, savePlaybackProgress, type PreparedPlayback, type SearchIntent, type Selection, type Source, type TorrentStatus } from "../../lib/media";
+import { bytes, mainVideo, mediaApi, preparePlayback, recordWatchHistory, savePlaybackProgress, type MediaDownload, type PlaybackSource, type PreparedPlayback, type SearchIntent, type Selection, type TorrentStatus } from "../../lib/media";
 import { useMediaTask } from "./useMediaTask";
 import Subtitles, { type NativeSubtitleState } from "./Subtitles";
 import PlaybackTimeline from "./PlaybackTimeline";
@@ -45,7 +45,7 @@ function QualityReview({ value }: { value: string }) {
   </div>;
 }
 
-export default function Playback({ source, search, close, simple = false, nativeSession, qualityInfo, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { source: Source | string; search?: SearchIntent; close: () => void } & SimplePlayback) {
+export default function Playback({ source, search, close, simple = false, downloadOnly = false, onQueued, nativeSession, qualityInfo, resumeAt = 0, onFailure, onNext, englishEnabled, onEnglishChange }: { source: PlaybackSource; search?: SearchIntent; close: () => void; downloadOnly?: boolean; onQueued?: () => void } & SimplePlayback) {
   const panel = useRef<HTMLElement>(null);
   useTvFocus(panel);
   const [status, setStatus] = useState<TorrentStatus | null>(null);
@@ -55,13 +55,15 @@ export default function Playback({ source, search, close, simple = false, native
   const task = useMediaTask();
   const lastId = useRef<string | null>(null);
   const failed = useEffectEvent(() => onFailure?.());
+  const notifyQueued = () => { window.dispatchEvent(new Event("homelab:downloads-changed")); onQueued?.(); };
+  const queued = useEffectEvent(notifyQueued);
   useEffect(() => {
     const controller = new AbortController();
     const deadline = AbortSignal.timeout(75_000);
     const signal = AbortSignal.any([controller.signal, deadline]);
     void (async () => {
       try {
-        let current = lastId.current ? await mediaApi<TorrentStatus>(`playback/${lastId.current}`, signal) : await mediaApi<TorrentStatus>("playback", signal, typeof source === "string" ? { magnet: source } : { sourceId: source.id });
+        let current = lastId.current ? await mediaApi<TorrentStatus>(`playback/${lastId.current}`, signal) : typeof source !== "string" && "downloadId" in source ? await mediaApi<TorrentStatus>("downloads/playback", signal, source) : await mediaApi<TorrentStatus>("playback", signal, typeof source === "string" ? { magnet: source } : { sourceId: source.id });
         if (signal.aborted) return;
         lastId.current = current.id;
         setStatus(current); setError("");
@@ -76,24 +78,27 @@ export default function Playback({ source, search, close, simple = false, native
           const file = mainVideo(current.files, search);
           if (!file) throw new Error("No matching main video is available in this version.");
           const selected = await mediaApi<Selection>("select", signal, { id: current.id, fileId: file.id });
-          if (!signal.aborted) setSelection(selected);
+          if (downloadOnly) {
+            await mediaApi("downloads", signal, { id: selected.id, intent: search });
+            if (!signal.aborted) queued();
+          } else if (!signal.aborted) setSelection(selected);
         }
       } catch (e) { if (!controller.signal.aborted) { setError(deadline.aborted ? "Torrent metadata timed out. Check the connection, then retry." : e instanceof Error ? e.message : "Torrent failed."); if (simple) failed(); } }
     })();
     return () => controller.abort();
-  }, [source, retry, simple, search]);
+  }, [source, retry, simple, search, downloadOnly]);
   const videos = status?.files.filter(f => f.kind === "video") ?? [];
   if (simple) return <section ref={panel} aria-label="Playback" className="simple-playback">
-    {selection ? <Player close={close} nativeSession={nativeSession} qualityInfo={qualityInfo} key={selection.id} selection={selection} initial={status!} search={search} simple resumeAt={resumeAt} onFailure={onFailure} onNext={onNext} englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} /> : <div className="simple-watch-pending"><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role="status">{error ? "Trying another version…" : "Torrent found. Getting your video ready…"}</p>{qualityInfo && <QualityReview value={qualityInfo} />}<Button variant="outline" onClick={() => onNext?.()}><RefreshCw />Not working? Try another source</Button></div>}
+    {selection ? <Player close={close} nativeSession={nativeSession} qualityInfo={qualityInfo} key={selection.id} selection={selection} initial={status!} search={search} simple resumeAt={resumeAt} onFailure={onFailure} onNext={onNext} englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} /> : <div className="simple-watch-pending"><LoaderCircle className="h-10 w-10 animate-spin text-orange-400" aria-hidden="true" /><p role={error ? "alert" : "status"}>{error || (downloadOnly ? "Préparation du téléchargement sur le serveur…" : "Getting your video ready…")}</p>{qualityInfo && <QualityReview value={qualityInfo} />}{onNext && <Button variant="outline" onClick={() => onNext()}><RefreshCw />Try another source</Button>}{error && !onNext && <Button variant="outline" onClick={() => setRetry(value => value + 1)}>Réessayer</Button>}</div>}
   </section>;
   return <section ref={panel} aria-label="Playback" className="space-y-4 rounded-lg border border-orange-500/50 bg-neutral-900 p-4 sm:p-6">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-2 text-xs tracking-widest text-orange-400">YOUR SELECTION</p><h2 className="break-words text-lg font-semibold text-white">{status?.title || (typeof source === "string" ? "Manual magnet" : source.title)}</h2></div><Button data-tv-back="" aria-label="Close playback" variant="ghost" size="icon" onClick={close}><X /></Button></div>
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="mb-2 text-xs tracking-widest text-orange-400">YOUR SELECTION</p><h2 className="break-words text-lg font-semibold text-white">{status?.title || (typeof source === "string" ? "Manual magnet" : "downloadId" in source ? "Téléchargement" : source.title)}</h2></div><Button data-tv-back="" aria-label="Close playback" variant="ghost" size="icon" onClick={close}><X /></Button></div>
     {!selection && <p role="status" className="text-sm text-orange-400">{error ? "Failed" : status?.files.length ? "Ready — choose a video file" : "Fetching metadata…"}</p>}
     {error && <div role="alert" className="space-y-3"><p className="text-sm">{error}</p><Button variant="outline" onClick={() => { setError(""); setRetry(r => r + 1); }}>Retry metadata</Button></div>}
     {status && status.files.length > 0 && <>
       <p className="text-xs text-neutral-400">{status.files.length} files · {videos.length} video candidates. Extensions are hints; they do not establish codec compatibility.</p>
       <div className="max-h-72 space-y-2 overflow-y-auto rounded border border-neutral-700 p-2" aria-label="Torrent files">
-        {status.files.map(file => <div key={file.id} className="flex flex-col gap-2 rounded bg-neutral-950 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words text-sm text-neutral-200">{file.path}</p><p className="mt-1 text-xs text-neutral-500">{bytes(file.size)} · {file.kind}{file.sample ? " · SAMPLE" : ""}</p></div>{file.kind === "video" && <Button variant="outline" className="shrink-0" disabled={task.busy} onClick={() => { void task.run(signal => mediaApi<Selection>("select", signal, { id: status.id, fileId: file.id }), setSelection, 20_000); }}>Choose {file.sample ? "sample" : "video"}</Button>}</div>)}
+        {status.files.map(file => <div key={file.id} className="flex flex-col gap-2 rounded bg-neutral-950 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words text-sm text-neutral-200">{file.path}</p><p className="mt-1 text-xs text-neutral-500">{bytes(file.size)} · {file.kind}{file.sample ? " · SAMPLE" : ""}</p></div>{file.kind === "video" && <div className="flex flex-wrap gap-2"><Button variant="outline" className="shrink-0" disabled={task.busy} onClick={() => { void task.run(signal => mediaApi<Selection>("select", signal, { id: status.id, fileId: file.id }), setSelection, 20_000); }}>Choose {file.sample ? "sample" : "video"}</Button><Button variant="outline" disabled={task.busy || !!status.downloaded} onClick={() => { void task.run(async signal => { const selected = await mediaApi<Selection>("select", signal, { id: status.id, fileId: file.id }); return mediaApi("downloads", signal, { id: selected.id, intent: search }); }, notifyQueued, 30_000); }}><Download />Télécharger sur le serveur</Button></div>}</div>)}
       </div>
       {!videos.length && <p role="alert">No recognized video files. Choose another torrent. Subtitles and other files are listed for identification only.</p>}
     </>}
@@ -126,6 +131,8 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
   const [notice, setNotice] = useState("");
   const [nativeSubtitle, setNativeSubtitle] = useState<NativeSubtitleState>(() => simple && englishEnabled ? { status: "loading" } : { status: "off" });
   const task = useMediaTask();
+  const downloadTask = useMediaTask();
+  const saveDownload = <div className="space-y-2">{!initial.downloaded && <Button variant="outline" disabled={downloadTask.busy} onClick={() => { void downloadTask.run(signal => mediaApi<{ download: MediaDownload }>("downloads", signal, { id: selection.id, intent: search }), () => { setNotice("Téléchargement ajouté. Le fichier restera sur le serveur jusqu’à sa suppression."); window.dispatchEvent(new Event("homelab:downloads-changed")); }, 30_000); }}><Download />{downloadTask.busy ? "Ajout…" : "Télécharger sur le serveur"}</Button>}{downloadTask.error && <p role="alert" className="text-sm text-orange-400">{downloadTask.error}</p>}</div>;
   const failedOnce = useRef(false);
   const historyRecorded = useRef(false);
   const initialResume = useRef(Math.max(0, resumeAt));
@@ -327,7 +334,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     void target?.requestFullscreen().catch(() => setNotice("Use the native player fullscreen control on this device."));
   };
   const shareUrl = share ? new URL(share.path, window.location.origin).href : "";
-  const cacheProgress = state === "checking format" || state === "buffering" ? <CacheProgress stats={stats} /> : null;
+  const cacheProgress = !initial.downloaded && (state === "checking format" || state === "buffering") ? <CacheProgress stats={stats} /> : null;
   const playerControls = <>
     <video ref={video} controls playsInline preload="none" aria-label="Selected video" className="aspect-video w-full rounded bg-black"
       onLoadedMetadata={() => { const element = video.current; if (element && pendingDirectSeek.current) { element.currentTime = Math.min(pendingDirectSeek.current, Math.max(0, element.duration - 1)); pendingDirectSeek.current = 0; } }}
@@ -359,7 +366,8 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     {qualityInfo && <QualityReview value={qualityInfo} />}
     <div className="simple-player-options">
       <Subtitles video={video} playbackId={selection.id} files={stats.files} filename={selection.file.path} search={search} timelineStart={timelineStart} simple englishEnabled={englishEnabled} onEnglishChange={onEnglishChange} onNativeSubtitleChange={setNativeSubtitle} />
-      <div className="space-y-2"><Button variant="outline" onClick={() => onNext?.()}><RefreshCw />Try another source</Button><p className="text-xs text-neutral-400">Playback not working?</p></div>
+      {onNext && <div className="space-y-2"><Button variant="outline" onClick={() => onNext()}><RefreshCw />Try another source</Button><p className="text-xs text-neutral-400">Playback not working?</p></div>}
+      {saveDownload}
     </div>
     {notice && <p role="status" className="text-sm text-neutral-300">{notice}</p>}
   </div>;
@@ -368,6 +376,7 @@ function Player({ selection, initial, search, close, simple = false, nativeSessi
     {tvMode ? <div ref={screen} className="tv-player-screen space-y-4">{playerControls}</div> : playerControls}
     {prepared && <p className="text-xs text-neutral-400">{prepared.mode === "direct" ? "Direct play" : prepared.mode === "remux" ? "Remuxing · original video and audio" : `Converting ${prepared.video === "copy" ? "audio" : prepared.audio === "copy" || prepared.audio === "none" ? "video" : "video and audio"}`}</p>}
     {error && <p role="alert" className="text-sm text-orange-400">{error}</p>}
+    {saveDownload}
     <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-neutral-400"><span>Download: {stats.downloadSpeed === null ? "Unknown" : `${bytes(stats.downloadSpeed)}/s`}</span><span>Connected peers: {stats.connectedPeers ?? "Unknown"}</span><span>Received torrent data: {bytes(stats.downloadedBytes)}</span>{buffer !== null && <span>Browser buffer ahead: {buffer.toFixed(1)} s</span>}</div>
     {stats.preloadBytes !== null && stats.preloadTarget !== null && stats.preloadTarget > 0 && <p className="text-xs text-neutral-500">TorrServer torrent-wide preload: {bytes(stats.preloadBytes)} / {bytes(stats.preloadTarget)}. This may include another viewer’s buffer.</p>}
     {statsError && <p className="text-xs text-orange-400">{statsError}</p>}

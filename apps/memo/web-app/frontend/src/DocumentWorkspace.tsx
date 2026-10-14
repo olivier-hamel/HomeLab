@@ -64,7 +64,6 @@ export default function DocumentWorkspace({ children, header, documents, onDocum
       <div className="reference-toolbar-title"><FileText size={18} /><div><strong>Documents de référence</strong><span>Ton cours à côté de tes cartes</span></div>{documents.length > 0 && <small>{documents.length}</small>}</div>
       <div className="reference-toolbar-actions">
         {editable && <button type="button" className="secondary-button" disabled={disabled || uploading || documents.length >= MAX_DOCUMENTS} onClick={() => setLibraryPickerOpen(true)}>{uploading ? <LoaderCircle size={16} className="import-spinner" /> : <Plus size={16} />}{uploading ? 'Ajout en cours…' : 'Depuis Bibliothèque'}</button>}
-        {(!open || !active) && <button type="button" className="secondary-button" aria-haspopup="dialog" aria-expanded={pickerOpen} onClick={() => setPickerOpen(true)}><Files size={16} />Choisir un document</button>}
         <button type="button" className={`secondary-button ${open ? 'reader-toggle-active' : ''}`} aria-expanded={open} aria-controls="reference-reader" onClick={() => setOpen(current => !current)}>{open ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}{open ? 'Masquer le lecteur' : 'Afficher le lecteur'}</button>
       </div>
     </div>}

@@ -6,5 +6,7 @@ export async function register() {
     startLibraryScheduler();
     const { startTempoScanScheduler } = await import("./lib/library/scans.ts");
     startTempoScanScheduler();
+    const { mediaDownloads } = await import("./lib/media/downloads.ts");
+    mediaDownloads.start();
   }
 }
