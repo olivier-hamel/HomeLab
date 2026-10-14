@@ -14,16 +14,16 @@ export function renderMiniCalendar(state) {
   </section>`;
 }
 function renderLibraryNotifications(state) {
-  const {count = 0, scanning = false, failureCount = 0, aiAvailable = true} = state.libraryNotifications || {};
-  if (!count && !scanning && !failureCount) return '<section id="tempo-library-notifications" class="tempo-library-notifications" hidden></section>';
-  const title = count ? `<span id="tempo-notifications-count">${count}</span> événement${count > 1 ? "s" : ""} à vérifier` : scanning ? "Recherche d’événements en cours" : "Un scan à relancer";
-  const description = count ? "Repérés dans Bibliothèque. Rien n’a été ajouté à ton calendrier." : scanning ? aiAvailable ? "Tempo analyse les nouveaux documents de Bibliothèque." : "Les nouveaux documents attendent la configuration de l’analyse." : "Relance-le depuis le document dans Bibliothèque.";
-  return `<section id="tempo-library-notifications" class="tempo-library-notifications" role="status" aria-live="polite"><div class="tempo-notifications-heading">${icon(count || scanning ? "sparkles" : "document")}<strong>${title}</strong></div><p>${description}</p>${count ? `<button id="tempo-notifications-button" data-action="tempo-review">Vérifier les propositions ${icon("arrowRight")}</button>` : !scanning ? '<a href="/?section=library" target="_top">Ouvrir Bibliothèque</a>' : ""}</section>`;
+  const {count = 0} = state.libraryNotifications || {};
+  if (!count) return '<section id="tempo-library-notifications" class="tempo-library-notifications" hidden></section>';
+  const title = `<span id="tempo-notifications-count">${count}</span> événement${count > 1 ? "s" : ""} à vérifier`;
+  return `<section id="tempo-library-notifications" class="tempo-library-notifications" role="status" aria-live="polite"><div class="tempo-notifications-heading">${icon("sparkles")}<strong>${title}</strong></div><p>Repérés dans Bibliothèque. Rien n’a été ajouté à ton calendrier.</p><button id="tempo-notifications-button" data-action="tempo-review">Vérifier les propositions ${icon("arrowRight")}</button></section>`;
 }
 export function renderSidebar(state) {
   const today = sameDay(state.date, state.today);
   const sync = state.moodleSync;
-  const syncStatus = sync ? `<section id="moodle-sync-status" class="sidebar-moodle-status ${sync.status === "error" || sync.status === "warning" ? "has-error" : ""}" role="status" aria-live="polite"><strong>Moodle · ${escapeHtml(sync.semester || "Session actuelle")}</strong><p>${escapeHtml(sync.message || "Synchronisation automatique toutes les 30 minutes")}</p><button data-action="moodle-sync" ${sync.status === "running" ? "disabled" : ""}>${sync.status === "running" ? "Mise à jour…" : "Actualiser"}</button></section>` : "";
+  const syncLabel = sync?.status === "running" ? "Mise à jour de Moodle en cours" : "Actualiser Moodle";
+  const syncStatus = sync ? `<div id="moodle-sync-status" class="sidebar-moodle-status"><button class="moodle-sync-button" data-action="moodle-sync" aria-label="${syncLabel}" title="${escapeHtml(`${syncLabel}${sync.message ? ` — ${sync.message}` : ""}`)}" ${sync.status === "running" ? "disabled" : ""}><span>Moodle</span>${icon("refresh")}</button></div>` : "";
   return `<div class="sidebar-top"><a class="brand" href="./" data-action="month" aria-label="Calendrier Tempo"><span class="brand-icon">${icon("calendar")}</span><span>Tempo<span class="brand-period">.</span></span></a><button class="icon-button sidebar-close" data-action="close-sidebar" aria-label="Fermer le menu">${icon("close")}</button></div>
     <nav class="sidebar-navigation" aria-label="Navigation principale"><button class="calendar-nav" data-action="calendar-home" ${state.page === "calendar" ? 'aria-current="page"' : ""}>${icon("calendar")}<span>Mon calendrier</span><span class="nav-dot"></span></button>
     </nav>

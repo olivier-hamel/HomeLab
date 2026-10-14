@@ -62,8 +62,28 @@ async function closeClean(){await page.locator('[data-action="close-event-dialog
 async function discard(){await page.locator('[data-action="close-event-dialog"]').first().click();await page.locator('[data-action="event-discard-confirm"]').click();await expect(page.locator('dialog')).toHaveCount(0);}
 async function jump(date){await page.locator('[data-action="jump"]').click();await page.locator('#jump-date').fill(date);await page.locator('#jump-form button[type="submit"]').click();await expect(page.locator('dialog')).toHaveCount(0);}
 try {
+ await page.clock.setFixedTime(new Date('2026-10-13T18:30:00Z'));
  await page.goto('https://tempo.test/calendar/');
  await expect(page.locator('#events-status')).toBeHidden();
+ async function expectCurrentTimeCentered() {
+  const position=await page.locator('.time-body').evaluate(body=>({
+   actual:body.scrollTop,
+   expected:Math.max(0,Math.min(body.scrollHeight-body.clientHeight,14.5/24*body.querySelector('.time-grid').offsetHeight-body.clientHeight/2))
+  }));
+  assert(Math.abs(position.actual-position.expected)<2,'Current Toronto time should be centered');
+ }
+ await page.locator('.view-switch [data-action="week"]').click();
+ await expectCurrentTimeCentered();
+ await page.locator('.time-day-heading[data-date="2026-10-13"]').click();
+ await expectCurrentTimeCentered();
+ await page.locator('#period-title [data-action="week"]').click();
+ await expect(page.locator('.week-view')).toBeVisible();
+ await expect(page.locator('.time-day-heading[data-date="2026-10-13"]')).toHaveClass(/selected/);
+ await expectCurrentTimeCentered();
+ await page.locator('.time-body').evaluate(body=>{body.scrollTop=123;});
+ await page.locator('.view-switch [data-action="week"]').click();
+ assert.equal(await page.locator('.time-body').evaluate(body=>body.scrollTop),123);
+ await page.locator('#period-title [data-action="month"]').click();
  await page.locator('[data-action="create-event"]').first().click();
  await expect(page.locator('#event-prompt')).toBeFocused();
  await page.locator('#event-prompt').fill('Souper avec Camille ce soir à 19 h pendant deux heures, au restaurant du quartier');
