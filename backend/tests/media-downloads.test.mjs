@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, readFile, rm, readdir, open } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, readdir, open, statfs } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { join } from 'node:path';
@@ -32,11 +32,128 @@ async function fixture(t, stream, retries = 0, retryDelay = 0) {
   process.env.MEDIA_DOWNLOAD_RESERVE_MIB = '0';
   process.env.MEDIA_DOWNLOAD_RETRIES = String(retries);
   process.env.MEDIA_DOWNLOAD_RETRY_DELAY_MS = String(retryDelay);
+  delete process.env.MEDIA_DOWNLOAD_CONCURRENCY;
   const store = new MediaDownloads({ stream }, root);
   t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
   return { store, root };
 }
 const complete = async () => new Response('abcdefghij', { headers: { 'Content-Length': '10' } });
+const waitUntil = async (predicate, message) => {
+  for (let attempt = 0; attempt < 300; attempt++) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.fail(message);
+};
+function controlledTransfers() {
+  const active = new Map(), calls = [], aborted = [];
+  let maximum = 0;
+  return {
+    calls, active, aborted,
+    get maximum() { return maximum; },
+    async stream(_hash, selected, request) {
+      const range = request.headers.get('range'), offset = Number(range?.match(/^bytes=(\d+)-$/)?.[1] ?? 0);
+      calls.push({ id: selected.id, range });
+      const content = 'abcdefghij'.slice(offset), initial = content.slice(0, 4);
+      return new Response(new ReadableStream({
+        start(controller) {
+          active.set(selected.id, () => { controller.enqueue(Buffer.from(content.slice(initial.length))); controller.close(); active.delete(selected.id); });
+          maximum = Math.max(maximum, active.size);
+          controller.enqueue(Buffer.from(initial));
+          request.signal.addEventListener('abort', () => {
+            aborted.push(selected.id); active.delete(selected.id); controller.error(new Error('abort'));
+          }, { once: true });
+        },
+      }), range ? { status: 206, headers: { 'Content-Range': `bytes ${offset}-${selected.size - 1}/${selected.size}` } } : undefined);
+    },
+    finish(id) { assert(active.has(id), `Transfer ${id} must be active`); active.get(id)(); },
+  };
+}
+
+test('three movies and episodes download simultaneously and queued work starts when any slot frees up', async t => {
+  const transfers = controlledTransfers();
+  const { store } = await fixture(t, transfers.stream);
+  const movie = downloadIntent({ query: 'Movie 2026', media: { id: 56, kind: 'movie', title: 'Movie', year: '2026' }, context: { kind: 'movie', tmdbId: 56 } }, 'Movie.mp4');
+  const rows = [];
+  for (let id = 1; id <= 5; id++) rows.push(await store.enqueue('oli', hash, { ...file, id, path: id === 1 ? 'Movie.mp4' : `Show.S01E0${id}.mp4` }, id === 1 ? movie : intent));
+  await waitUntil(() => transfers.calls.length === 3, 'The first three transfers must start together');
+  assert.deepEqual(transfers.calls.map(call => call.id).sort(), [1, 2, 3]);
+  assert.deepEqual(rows.map(row => store.get('oli', row.id).state), ['downloading', 'downloading', 'downloading', 'queued', 'queued']);
+  transfers.finish(2);
+  await waitFor(store, rows[1].id, 'ready');
+  await waitUntil(() => transfers.calls.length === 4, 'A completion must start the next queued transfer');
+  assert.equal(store.get('oli', rows[4].id).state, 'queued');
+  await store.remove('oli', rows[0].id);
+  await waitUntil(() => transfers.calls.length === 5, 'Cancellation must free its slot immediately');
+  assert.deepEqual(transfers.aborted, [1], 'Other active downloads must remain running');
+  for (const id of [3, 4, 5]) transfers.finish(id);
+  for (const row of rows.slice(2)) await waitFor(store, row.id, 'ready');
+  assert.equal(transfers.maximum, 3);
+});
+
+test('the configured limit is shared across workers and accounts; shutdown preserves every active transfer for resume', async t => {
+  const transfers = controlledTransfers();
+  const { store, root } = await fixture(t, transfers.stream);
+  process.env.MEDIA_DOWNLOAD_CONCURRENCY = '2';
+  const first = await store.enqueue('oli', hash, { ...file, id: 1 }, intent);
+  const second = await store.enqueue('max', hash, { ...file, id: 2 }, intent);
+  const third = await store.enqueue('oli', hash, { ...file, id: 3 }, intent);
+  await waitUntil(() => transfers.calls.length === 2, 'The configured two slots must both be filled');
+  const other = new MediaDownloads({ stream: transfers.stream }, root);
+  t.after(() => other.close()); other.start();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(transfers.calls.length, 2, 'A second worker must not exceed the server limit or duplicate transfers');
+  assert.equal(store.get('oli', third.id).state, 'queued');
+  await waitUntil(async () => (await readFile(join(root, 'files', `${first.id}.part`))).length === 4 && (await readFile(join(root, 'files', `${second.id}.part`))).length === 4, 'Both partial files must be written before shutdown');
+  await store.close();
+  assert.deepEqual(transfers.aborted.sort(), [1, 2]);
+  assert.equal(other.get('oli', first.id).state, 'queued');
+  assert.equal(other.get('max', second.id).state, 'queued');
+  other.retry('oli', first.id);
+  await waitUntil(() => transfers.calls.length === 4, 'Both interrupted transfers must resume together');
+  assert.deepEqual(transfers.calls.slice(2).sort((a, b) => a.id - b.id), [{ id: 1, range: 'bytes=4-' }, { id: 2, range: 'bytes=4-' }]);
+  transfers.finish(1); transfers.finish(2);
+  await waitFor(other, first.id, 'ready');
+  await waitUntil(() => transfers.calls.length === 5, 'Queued work must start after resumed work');
+  assert.equal(other.get('max', second.id).state, 'ready');
+  transfers.finish(3); await waitFor(other, third.id, 'ready');
+  assert.equal(transfers.maximum, 2);
+});
+
+test('one failed download does not interrupt another transfer or block the queue', async t => {
+  const transfers = controlledTransfers();
+  const { store } = await fixture(t, async (hash, file, request) => {
+    if (file.id === 2) throw new MediaError('stream', 'Source unavailable.', 502);
+    return transfers.stream(hash, file, request);
+  });
+  process.env.MEDIA_DOWNLOAD_CONCURRENCY = '2';
+  const rows = [];
+  for (let id = 1; id <= 3; id++) rows.push(await store.enqueue('oli', hash, { ...file, id }, intent));
+  await waitFor(store, rows[1].id, 'error');
+  await waitUntil(() => transfers.active.has(3), 'A failed transfer must free its slot');
+  assert(transfers.active.has(1), 'The other transfer must continue');
+  assert.deepEqual(transfers.aborted, []);
+  transfers.finish(1); transfers.finish(3);
+  await waitFor(store, rows[0].id, 'ready'); await waitFor(store, rows[2].id, 'ready');
+});
+
+test('concurrent downloads reserve aggregate disk space and release it when cancelled', async t => {
+  const transfers = controlledTransfers();
+  const { store, root } = await fixture(t, transfers.stream);
+  const capacity = await statfs(root), size = Math.floor(capacity.bavail * capacity.bsize * 0.6);
+  const first = await store.enqueue('oli', hash, { ...file, id: 1, size }, intent);
+  await waitUntil(() => transfers.active.has(1), 'The first transfer must reserve its space');
+  const second = await store.enqueue('oli', hash, { ...file, id: 2, size }, intent);
+  assert.match((await waitFor(store, second.id, 'error')).error, /Espace disque insuffisant/);
+  assert.deepEqual(transfers.calls.map(call => call.id), [1], 'Together these transfers exceed the available space');
+  const small = await store.enqueue('oli', hash, { ...file, id: 3 }, intent);
+  await waitUntil(() => transfers.active.has(3), 'A smaller transfer that fits must still start');
+  transfers.finish(3); await waitFor(store, small.id, 'ready');
+  await store.remove('oli', first.id);
+  store.retry('oli', second.id);
+  await waitUntil(() => transfers.active.has(2), 'Cancellation must release the space reservation');
+  await store.remove('oli', second.id);
+});
 
 test('downloads are durable, account-scoped, deduplicated and seekable without TorrServer', async t => {
   let calls = 0;

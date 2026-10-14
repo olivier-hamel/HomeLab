@@ -15,7 +15,7 @@ export type DownloadIntent = {
   movie?: { id: number; title: string; year: string; poster: string | null };
 };
 export type MediaDownload = { id: string; title: string; file: TorrentFile; intent: DownloadIntent; state: "queued" | "downloading" | "ready" | "error" | "deleting"; downloadedBytes: number; totalBytes: number; error: string; createdAt: string; updatedAt: string };
-type Stored = MediaDownload & { username: string; hash: string; token: string; lease: number };
+type Stored = MediaDownload & { username: string; hash: string; token: string; lease: number; reserved?: boolean };
 function identifier(value: string) {
   if (!/^[0-9a-f-]{36}$/.test(value)) throw new MediaError("input", "Téléchargement invalide.", 400);
   return value;
@@ -63,7 +63,8 @@ function downloadFailure(error: unknown): MediaError {
 export class MediaDownloads {
   private db?: DatabaseSync;
   private timer?: ReturnType<typeof setInterval>;
-  private running?: { id: string; controller: AbortController; done: Promise<void> };
+  private running = new Map<string, { controller: AbortController; done: Promise<void> }>();
+  private pumping?: Promise<void>;
   private stopping = false;
   private torrents: Pick<TorrServer, "stream">;
   private root: string;
@@ -132,44 +133,57 @@ export class MediaDownloads {
   async remove(username: string, id: string) {
     const row = this.get(username, id);
     this.storage().prepare("UPDATE downloads SET state = 'deleting' WHERE id = ? AND username = ?").run(id, username);
-    if (this.running?.id === id) { this.running.controller.abort(); await this.running.done; }
+    const running = this.running.get(id);
+    if (running) { running.controller.abort(); await running.done; }
     else if (row.lease <= Date.now()) await this.erase(id);
-    this.start();
+    this.start(); void this.pump().catch(() => {});
   }
   private async erase(id: string) {
     await Promise.all([rm(this.path(id), { force: true }), rm(this.path(id, true), { force: true })]);
     this.storage().prepare("DELETE FROM downloads WHERE id = ? AND state = 'deleting'").run(id);
   }
-  private async pump() {
-    if (this.running || this.stopping) return;
+  private pump(): Promise<void> {
+    if (this.stopping) return Promise.resolve();
+    if (!this.pumping) this.pumping = this.fillSlots().finally(() => { this.pumping = undefined; });
+    return this.pumping;
+  }
+  private async fillSlots() {
     const db = this.storage();
     // Reap interrupted deletions once a previous worker's lease has expired.
     for (const row of db.prepare("SELECT id FROM downloads WHERE state = 'deleting' AND lease < ?").all(Date.now())) await this.erase(String(row.id));
-    if (this.running || this.stopping) return;
-    const token = randomUUID();
-    db.exec("BEGIN IMMEDIATE");
-    let id: string | undefined;
-    try {
-      if (!db.prepare("SELECT id FROM downloads WHERE state = 'downloading' AND lease > ? LIMIT 1").get(Date.now())) {
-        const candidate = db.prepare("SELECT id FROM downloads WHERE state = 'queued' OR (state = 'downloading' AND lease < ?) ORDER BY rowid LIMIT 1").get(Date.now());
-        if (candidate) {
-          id = String(candidate.id);
-          db.prepare("UPDATE downloads SET state = 'downloading', token = ?, lease = ? WHERE id = ?").run(token, Date.now() + 60_000, id);
+    const concurrency = envNumber("MEDIA_DOWNLOAD_CONCURRENCY", 3, 1, 10);
+    while (!this.stopping && this.running.size < concurrency) {
+      const token = randomUUID(), now = Date.now();
+      db.exec("BEGIN IMMEDIATE");
+      let id: string | undefined;
+      try {
+        // Share the limit across backend workers, including transfers being cancelled.
+        const active = db.prepare("SELECT COUNT(*) AS count FROM downloads WHERE state IN ('downloading', 'deleting') AND lease >= ?").get(now)!;
+        if (Number(active.count) < concurrency) {
+          const candidate = db.prepare("SELECT id FROM downloads WHERE state = 'queued' OR (state = 'downloading' AND lease < ?) ORDER BY rowid LIMIT 1").get(now);
+          if (candidate && !this.running.has(String(candidate.id))) {
+            id = String(candidate.id);
+            db.prepare("UPDATE downloads SET state = 'downloading', token = ?, lease = ? WHERE id = ?").run(token, now + 60_000, id);
+          }
         }
-      }
-      db.exec("COMMIT");
-    } catch (error) { db.exec("ROLLBACK"); throw error; }
-    if (!id) return;
-    const controller = new AbortController();
-    const done = this.download(this.read(id)!, token, controller);
-    this.running = { id, controller, done };
-    try { await done; } finally { this.running = undefined; }
-    if (!this.stopping) void this.pump().catch(() => {});
+        db.exec("COMMIT");
+      } catch (error) { db.exec("ROLLBACK"); throw error; }
+      if (!id) return;
+      const downloadId = id, controller = new AbortController();
+      const done = this.download(this.read(downloadId)!, token, controller).finally(() => {
+        this.running.delete(downloadId);
+        if (!this.stopping) void this.pump().catch(() => {});
+      });
+      this.running.set(downloadId, { controller, done });
+      // A cleanup failure must not create an unhandled rejection or strand other slots.
+      void done.catch(() => {});
+    }
   }
   private async download(row: Stored, token: string, controller: AbortController) {
     const signal = controller.signal;
     const update = () => {
       row.updatedAt = new Date().toISOString();
+      if (row.state !== "downloading") row.reserved = false;
       return this.storage().prepare("UPDATE downloads SET state = ?, snapshot = ?, lease = ? WHERE id = ? AND token = ? AND state = 'downloading'").run(row.state, JSON.stringify(row), row.state === "downloading" ? Date.now() + 60_000 : 0, row.id, token).changes;
     };
     const heartbeat = setInterval(() => { if (!update()) controller.abort(); }, 1000);
@@ -215,10 +229,8 @@ export class MediaDownloads {
   private async transfer(row: Stored, handle: FileHandle, signal: AbortSignal) {
     row.downloadedBytes = (await handle.stat()).size;
     if (row.downloadedBytes > row.totalBytes) { await handle.truncate(0); row.downloadedBytes = 0; }
-    const capacity = await statfs(this.root);
-    const reserve = envNumber("MEDIA_DOWNLOAD_RESERVE_MIB", 512, 0, 1_048_576) * 1024 * 1024;
-    if (capacity.bavail * capacity.bsize < row.totalBytes - row.downloadedBytes + reserve) throw new MediaError("storage", "Espace disque insuffisant. Supprime des téléchargements puis réessaie.", 507);
     if (row.downloadedBytes === row.totalBytes) return;
+    await this.reserveSpace(row, signal);
     const headers = row.downloadedBytes ? { Range: `bytes=${row.downloadedBytes}-` } : undefined;
     let response;
     try {
@@ -233,6 +245,7 @@ export class MediaDownloads {
       if (!reader || ![200, 206].includes(response.status) || (response.status === 206 && (!range || Number(range[1]) !== row.downloadedBytes || Number(range[2]) !== row.totalBytes - 1 || Number(range[3]) !== row.totalBytes))) throw new MediaError("download", "Le serveur a retourné un fichier incomplet. Réessaie le téléchargement.", 502);
       if (response.status === 200 && row.downloadedBytes) {
         await handle.truncate(0); row.downloadedBytes = 0;
+        await this.reserveSpace(row, signal);
       }
       while (true) {
         signal.throwIfAborted();
@@ -253,6 +266,27 @@ export class MediaDownloads {
       }
       if (row.downloadedBytes !== row.totalBytes) throw new MediaError("stream_interrupted", "TorrServer a fermé la connexion avant la fin du fichier. Réessaie pour reprendre le téléchargement.", 502);
     } finally { await reader?.cancel().catch(() => {}); }
+  }
+  private async reserveSpace(row: Stored, signal: AbortSignal) {
+    const capacity = await statfs(this.root);
+    signal.throwIfAborted();
+    const reserve = envNumber("MEDIA_DOWNLOAD_RESERVE_MIB", 512, 0, 1_048_576) * 1024 * 1024;
+    const db = this.storage();
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      // Reserve unwritten bytes atomically so simultaneous transfers cannot each
+      // promise themselves the same free space. Older snapshots need no migration.
+      const others = db.prepare("SELECT snapshot FROM downloads WHERE id != ? AND state IN ('downloading', 'deleting') AND lease >= ?").all(row.id, Date.now());
+      const pending = others.reduce((sum, entry) => {
+        const other = JSON.parse(String(entry.snapshot)) as Stored;
+        return sum + (other.reserved ? Math.max(0, other.totalBytes - other.downloadedBytes) : 0);
+      }, 0);
+      if (capacity.bavail * capacity.bsize < pending + row.totalBytes - row.downloadedBytes + reserve) throw new MediaError("storage", "Espace disque insuffisant. Supprime des téléchargements puis réessaie.", 507);
+      row.reserved = true;
+      const saved = db.prepare("UPDATE downloads SET snapshot = ? WHERE id = ? AND token = ? AND state = 'downloading'").run(JSON.stringify(row), row.id, row.token);
+      if (!saved.changes) throw new MediaError("cancelled", "Ce téléchargement a été annulé.", 409);
+      db.exec("COMMIT");
+    } catch (error) { db.exec("ROLLBACK"); throw error; }
   }
   status(username: string, id: string) {
     const row = this.get(username, id);
@@ -291,7 +325,10 @@ export class MediaDownloads {
   }
   async close() {
     this.stopping = true; clearInterval(this.timer); this.timer = undefined;
-    this.running?.controller.abort(); await this.running?.done;
+    await this.pumping?.catch(() => {});
+    const active = [...this.running.values()];
+    for (const running of active) running.controller.abort();
+    await Promise.allSettled(active.map(running => running.done));
     this.db?.close(); this.db = undefined;
   }
 }

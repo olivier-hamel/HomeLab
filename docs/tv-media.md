@@ -21,8 +21,9 @@ regarder un fichier terminé ou le supprimer. Les profils cinéma continuent de 
 l’historique; les téléchargements appartiennent au compte connecté.
 
 Les fichiers restent sur le serveur jusqu’à une suppression explicite. Fermer la page
-ne coupe pas le transfert. Une file SQLite persistante traite une vidéo à la fois et
-reprend les tâches après redémarrage du backend; TorrServer conserve les métadonnées
+ne coupe pas le transfert. Une file SQLite persistante traite jusqu’à trois vidéos
+simultanément par défaut et reprend les tâches après redémarrage du backend;
+TorrServer conserve les métadonnées
 des sources ajoutées à cette file. Une coupure de connexion ou un flux tronqué déclenche
 jusqu’à trois reprises automatiques, espacées de 10 secondes, depuis les octets réellement
 conservés. Les téléchargements tolèrent 3 minutes sans données; la lecture conserve son
@@ -44,7 +45,10 @@ En Docker, le volume `media_downloads` est monté à `/data/media-downloads`; il
 survit à la recréation du conteneur. En local, le chemin par défaut est
 `backend/.local-data/media-downloads`, modifiable avec `MEDIA_DOWNLOAD_STORAGE_PATH`.
 `MEDIA_DOWNLOAD_RESERVE_MIB` réserve 512 MiB par défaut avant le démarrage d’un
-transfert. La file accepte jusqu’à 20 tâches en attente ou actives par compte.
+transfert, en tenant compte de l’espace nécessaire aux autres transferts actifs.
+`MEDIA_DOWNLOAD_CONCURRENCY` règle le nombre de transferts simultanés pour tout
+le serveur (3 par défaut, de 1 à 10); les tâches restantes attendent qu’une place
+se libère. La file accepte jusqu’à 20 tâches en attente ou actives par compte.
 Après mise à jour du code, reconstruire le frontend et le backend pour activer
 l’interface, le volume et le worker.
 

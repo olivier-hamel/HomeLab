@@ -49,9 +49,11 @@ export default function Downloads({ query = "" }: { query?: string }) {
     finally { setBusy(null); }
   };
   const visible = downloads?.filter(download => `${download.title} ${download.file.path}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const activeCount = downloads?.filter(download => download.state === "downloading").length ?? 0;
+  const queuedCount = downloads?.filter(download => download.state === "queued").length ?? 0;
   return <section ref={panel} lang="fr" aria-label="Téléchargements cinéma" className="space-y-5 text-neutral-200">
     {watching ? <><Button data-tv-back="" variant="ghost" onClick={() => setWatching(null)}><ArrowLeft />Retour aux téléchargements</Button><h2 className="text-xl font-semibold text-white">{watching.download.title}</h2><Playback key={watching.download.id} source={watching.source} search={watching.download.intent} simple close={() => setWatching(null)} /></> : <>
-      <div><h2 className="flex items-center gap-2 text-xl font-semibold text-white"><Download />Téléchargements</h2><p className="mt-2 text-sm text-neutral-400">Films et épisodes conservés sur le serveur jusqu’à leur suppression. La lecture se fait depuis HomeLab.</p>{downloads && <p className="mt-2 text-xs text-neutral-400">{downloads.length} fichier{downloads.length !== 1 ? "s" : ""} · {bytes(downloads.reduce((sum, row) => sum + row.downloadedBytes, 0))} conservés</p>}</div>
+      <div><h2 className="flex items-center gap-2 text-xl font-semibold text-white"><Download />Téléchargements</h2><p className="mt-2 text-sm text-neutral-400">Films et épisodes conservés sur le serveur jusqu’à leur suppression. La lecture se fait depuis HomeLab.</p>{downloads && <p className="mt-2 text-xs text-neutral-400">{downloads.length} fichier{downloads.length !== 1 ? "s" : ""} · {bytes(downloads.reduce((sum, row) => sum + row.downloadedBytes, 0))} conservés{(activeCount > 0 || queuedCount > 0) && <> · {activeCount} en cours · {queuedCount} en attente</>}</p>}</div>
       {!downloads && !error && <p role="status">Chargement des téléchargements…</p>}
       {visible?.length === 0 && <p className="rounded-lg border border-neutral-700 p-6 text-neutral-400">{query ? "Aucun téléchargement ne correspond à cette recherche." : "Aucun téléchargement. Ouvre les détails d’un film ou choisis un épisode, puis sélectionne Télécharger sur le serveur."}</p>}
       <div className="space-y-3">{visible?.map(download => {

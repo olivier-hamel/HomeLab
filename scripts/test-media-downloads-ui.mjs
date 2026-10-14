@@ -57,7 +57,7 @@ await page.route('**/api/media/**', async route => {
   else if (path === 'select') data = { id: body.id, file: file(), stream: `/api/media/stream/${body.id}` };
   else if (path === 'downloads' && request.method() === 'POST') {
     assert.equal(body.intent.media.id, intent.context.tmdbId);
-    const row = { id: String(downloads.length + 1), title: body.intent.label, intent: body.intent, file: file(), state: 'ready', downloadedBytes: video.length, totalBytes: video.length, error: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const row = { id: String(downloads.length + 1), title: body.intent.label, intent: body.intent, file: file(), state: 'downloading', downloadedBytes: 100, totalBytes: video.length, error: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     downloads.push(row); data = { download: row };
   } else if (path === 'downloads') data = { downloads };
   else if (path === 'downloads/playback') { intent = downloads.find(row => row.id === body.downloadId).intent; data = status(true); }
@@ -84,12 +84,17 @@ try {
   await page.getByRole('button', { name: 'Choose episode of Fixture Show' }).click();
   await page.getByRole('button', { name: 'Télécharger l’épisode 2 : The second episode' }).click();
   await expect(page.getByRole('article')).toHaveCount(2);
+  await expect(page.getByText('Téléchargement en cours', { exact: false })).toHaveCount(2);
+  await expect(page.getByText('2 en cours · 0 en attente', { exact: false })).toBeVisible();
+  await expect(page.getByRole('progressbar')).toHaveCount(2);
+  assert(!requests.includes('inspect'), 'Adding another download must not start playback');
   await noOverflow(); await shot('cinema-desktop');
+  for (const row of downloads) { row.state = 'ready'; row.downloadedBytes = row.totalBytes; }
   await page.getByRole('button', { name: 'Retour au catalogue' }).click();
   const beforeWatch = requests.length;
   await page.getByRole('button', { name: 'Watch Fixture Movie', exact: true }).click();
-  await expect(page.getByText('Lecture du fichier téléchargé sur HomeLab')).toBeVisible();
   await expect(page.locator('video')).toHaveAttribute('src', '/api/media/stream/local-session');
+  assert(requests.slice(beforeWatch).includes('downloads/playback'), 'Saved playback must use the local download endpoint');
   assert(!requests.slice(beforeWatch).includes('search'), 'saved movie must not search for a torrent');
   assert(!requests.slice(beforeWatch).includes('playback'), 'saved movie must not add a torrent');
   await page.goto(`${origin}/?section=library`);
@@ -112,7 +117,7 @@ try {
   await expect(page.getByRole('button', { name: 'Regarder', exact: true })).toBeVisible();
   await noOverflow(); await shot('cinema-tv');
   assert.deepEqual(errors, []);
-  console.log('Media downloads UI passed: movie/episode queue, no playback during download, local playback, library management, deletion, resume, mobile and TV.');
+  console.log('Media downloads UI passed: simultaneous movie/episode progress, no playback during download, local playback, library management, deletion, resume, mobile and TV.');
 } catch (error) {
   console.error({ body: (await page.locator('body').innerText()).slice(0, 3000), errors, requests });
   await shot('failure');

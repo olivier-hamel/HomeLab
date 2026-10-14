@@ -44,6 +44,10 @@ data/
 volumes/
 backups/
 deployment-private/
+# The deployment helper and its supporting files are private local utilities.
+/scripts/deploy-server.sh
+/scripts/test_deploy_server.py
+/deployment/auto-deploy/
 .worktrees/
 .local-data/
 frontend/public/library-pdf/
