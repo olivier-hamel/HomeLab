@@ -7,6 +7,9 @@
     "node": ">=24.0.0 <25"
   },
   "scripts": {
+    "prepare:library": "node scripts/prepare-library-pdf.mjs",
+    "predev": "npm run prepare:library",
+    "prebuild": "npm run prepare:library",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "android:sync": "npm run build && cap sync android",
@@ -27,7 +30,9 @@
     "@radix-ui/react-slot": "1.3.3",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "hls.js": "1.7.3",
     "lucide-react": "1.41.0",
+    "pdfjs-dist": "6.4.299",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "serve": "14.2.6",

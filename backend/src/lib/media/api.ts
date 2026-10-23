@@ -1,3 +1,4 @@
+import { geminiApiKey } from "../ai/gemini.ts";
 import { randomBytes, randomUUID } from "node:crypto";
 import { BoundedCache, integer, kind, magnet, MediaError, query, record, string, type Fetcher } from "./core.ts";
 import { readLimited } from "./http.ts";
@@ -16,9 +17,11 @@ import { ProgressStore, WatchHistoryStore, type ContinueWatchingRecord, type Wat
 import { MediaRecommendations } from "./recommendations.ts";
 import { Omdb } from "./omdb.ts";
 import { MovieDiscovery } from "./movie-discovery.ts";
+import { memoSessionCookie, requireHomeLabAccount, type AccountSession, type AccountVerifier } from "../accounts.ts";
+import { downloadIntent, mediaDownloads, type MediaDownloads } from "./downloads.ts";
 
-type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe };
-type Share = { owner: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
+type Playback = { owner: string; hash: string; file?: TorrentFile; files: TorrentFile[]; probe?: MediaProbe; input?: string | Uint8Array<ArrayBuffer> };
+type Share = { owner: string; account: string; accountCookie: string; playback: string; hash: string; file: TorrentFile; expires: number; controller: AbortController };
 function context(value: unknown): SearchContext | undefined {
   if (!value) return;
   const c = record(value);
@@ -33,18 +36,19 @@ function catalogueKind(value: string | null): "movie" | "tv" | "all" {
 function json(value: unknown, status = 200, headers: Record<string, string> = {}) {
   return Response.json(value, { status, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", ...headers } });
 }
-function mediaProfile(request: Request): string | undefined {
+function mediaProfile(request: Request, account: AccountSession): string {
   const profile = request.headers.get("X-Media-Profile");
-  if (!profile || profile === "default") return undefined;
-  if (profile === "oli" || profile === "max") return profile;
-  throw new MediaError("input", "Choose a valid media account.", 400);
+  if (!profile) return account.user.username;
+  if (account.accounts.some(item => item.username === profile)) return profile;
+  throw new MediaError("input", "Choisis un profil cinéma parmi les comptes HomeLab.", 400);
 }
-export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">) {
+export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg, "probe" | "stream">, authenticate: AccountVerifier = requireHomeLabAccount, downloads: MediaDownloads = mediaDownloads) {
   const tmdb = new Tmdb(fetcher);
   const catalogue = new CatalogueSearch(fetcher, tmdb);
   const prowlarr = new Prowlarr(fetcher);
   const torrents = new TorrServer(fetcher);
-  const ffmpeg = converter ?? new FFmpeg(torrents);
+  const input = { stream: (hash: string, file: TorrentFile, request: Request) => hash.startsWith("local:") ? downloads.stream(hash, file, request) : torrents.stream(hash, file, request) };
+  const ffmpeg = converter ?? new FFmpeg(input);
   const subdl = new Subdl(fetcher);
   const assist = new SourceAssist(fetcher);
   const welcome = new Welcome(fetcher);
@@ -76,7 +80,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
     };
     request.signal.addEventListener("abort", release, { once: true });
     try {
-      const response = await torrents.stream(hash, file, request);
+      const response = await input.stream(hash, file, request);
       if (!response.body) { release(); return response; }
       const reader = response.body.getReader();
       return new Response(new ReadableStream({
@@ -93,20 +97,27 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
       if (!["GET", "HEAD", "POST"].includes(request.method)) return json({ error: "Method not allowed." }, 405);
       boundary(request, mutation);
       rate("global", 600);
+      if (path[0] === "external" && ["GET", "HEAD"].includes(request.method)) {
+        const share = shares.get(path[1]);
+        if (!share) throw new MediaError("expired", "Stream link expired or revoked.", 410);
+        // Native players use a file-scoped link. Its creator's HomeLab session
+        // must still be valid, including after logout or a password reset.
+        const headers = new Headers(request.headers);
+        headers.set("Cookie", share.accountCookie);
+        const account = await authenticate(new Request(request, { headers }));
+        if (account.user.username !== share.account) throw new MediaError("account_session", "HomeLab session expired.", 401);
+        const signal = AbortSignal.any([request.signal, share.controller.signal, AbortSignal.timeout(Math.max(1, share.expires - Date.now()))]);
+        return await stream(share.hash, share.file, new Request(request, { signal }), share.owner);
+      }
+      const account = await authenticate(request);
       if (path[0] === "status" && request.method === "GET") {
         rate("session-start", 60);
         const { cookie } = startSession(request);
         // Configuration states are independent; connectivity is checked explicitly below.
-        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), discovery: !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, recommendations: ProgressStore.configured() && !!process.env.GEMINI_API_KEY && !!process.env.TMDB_READ_ACCESS_TOKEN, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
+        return json({ tmdb: !!process.env.TMDB_READ_ACCESS_TOKEN, prowlarr: !!(process.env.PROWLARR_BASE_URL && process.env.PROWLARR_API_KEY), torrserver: !!process.env.TORRSERVER_BASE_URL, continueWatching: ProgressStore.configured(), discovery: !!geminiApiKey() && !!process.env.TMDB_READ_ACCESS_TOKEN, recommendations: ProgressStore.configured() && !!geminiApiKey() && !!process.env.TMDB_READ_ACCESS_TOKEN, trust: "LAN / tailnet only" }, 200, { "Set-Cookie": cookie });
       }
-      if (path[0] === "external" && ["GET", "HEAD"].includes(request.method)) {
-        const share = shares.get(path[1]);
-        if (!share) throw new MediaError("expired", "Stream link expired or revoked.", 410);
-        const signal = AbortSignal.any([request.signal, share.controller.signal, AbortSignal.timeout(Math.max(1, share.expires - Date.now()))]);
-        return await stream(share.hash, share.file, new Request(request, { signal }), share.owner);
-      }
-      const owner = requireSession(request);
-      const profile = mediaProfile(request);
+      const owner = `${account.user.username}:${requireSession(request)}`;
+      const profile = mediaProfile(request, account);
       rate(`all:${owner}`, 180);
       if (path[0] === "converted" && path.length === 2 && ["GET", "HEAD"].includes(request.method)) {
         const entry = conversions.get(path[1]);
@@ -126,6 +137,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
       if (request.method === "HEAD") return json({ error: "HEAD is supported only for streams." }, 405);
       return await limited(async () => {
         if (request.method === "GET") {
+          if (path[0] === "downloads" && path.length === 1) return json({ downloads: downloads.list(account.user.username, profile) });
           if (path[0] === "continue-watching" && path.length === 1) {
             rate(`progress-list:${owner}`, 30);
             return json({ movies: await progress.list(profile) });
@@ -167,13 +179,37 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
           if (path[0] === "playback") {
             rate(`poll:${owner}`, 45);
             const entry = playback(path[1], owner);
-            const status = await torrents.status(entry.hash, request.signal);
+            const status = entry.hash.startsWith("local:") ? downloads.status(account.user.username, entry.hash.split(":")[2]) : await torrents.status(entry.hash, request.signal);
             entry.files = status.files;
             return json({ ...status, hash: undefined, id: path[1] });
           }
         }
         if (mutation) {
           const body = record(JSON.parse(new TextDecoder().decode(await readLimited(request, 16_384))));
+          if (path[0] === "downloads") {
+            const username = account.user.username;
+            if (path.length === 1) {
+              rate(`download-add:${owner}`, 20);
+              const entry = playback(string(body.id, 64), owner);
+              if (!entry.file || !entry.input || entry.hash.startsWith("local:")) throw new MediaError("input", "Choisis une vidéo à télécharger.", 400);
+              const intent = downloadIntent(body.intent, entry.file.path);
+              // Persist torrent metadata (including private trackers) for interrupted jobs.
+              await torrents.add(entry.input, request.signal, true);
+              return json({ download: await downloads.enqueue(username, entry.hash, entry.file, intent) }, 202);
+            }
+            if (path.length === 2 && path[1] === "retry") return json({ download: downloads.retry(username, string(body.downloadId, 64)) }, 202);
+            if (path.length === 2 && path[1] === "remove") { await downloads.remove(username, string(body.downloadId, 64)); return json({ removed: true }); }
+            if (path.length === 2 && path[1] === "progress") {
+              rate(`download-progress:${owner}`, 90);
+              return json({ playbackState: downloads.savePlaybackState(username, string(body.downloadId, 64), profile, body) });
+            }
+            if (path.length === 2 && path[1] === "playback") {
+              const status = downloads.status(username, string(body.downloadId, 64), profile);
+              const id = randomUUID();
+              playbacks.set(id, { owner, hash: status.hash, files: status.files, file: status.files[0] });
+              return json({ ...status, hash: undefined, id });
+            }
+          }
           if (path[0] === "discovery" && path.length === 1) {
             rate(`movie-discovery:${owner}`, 12);
             const discoverySignal = AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]);
@@ -310,12 +346,12 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
             const input = body.sourceId ? await prowlarr.resolve(string(body.sourceId, 64), request.signal) : magnet(body.magnet);
             const status = await torrents.add(input, request.signal);
             const id = randomUUID();
-            playbacks.set(id, { owner, hash: status.hash, files: status.files });
+            playbacks.set(id, { owner, hash: status.hash, files: status.files, input });
             return json({ ...status, hash: undefined, id });
           }
           if (path[0] === "select") {
             const entry = playback(string(body.id, 64), owner);
-            const current = await torrents.status(entry.hash, request.signal);
+            const current = entry.hash.startsWith("local:") ? downloads.status(account.user.username, entry.hash.split(":")[2]) : await torrents.status(entry.hash, request.signal);
             const file = current.files.find(f => f.id === integer(body.fileId));
             if (!file || file.kind !== "video") throw new MediaError("input", "Choose a video from this torrent's file list.", 400);
             // Separate playback handle per file keeps existing viewers and external links stable.
@@ -329,7 +365,7 @@ export function createMediaApi(fetcher: Fetcher = fetch, converter?: Pick<FFmpeg
             const entry = playback(id, owner);
             if (!entry.file) throw new MediaError("input", "Choose a video first.", 400);
             const token = randomBytes(32).toString("hex");
-            shares.set(token, { owner, playback: id, hash: entry.hash, file: entry.file, expires: Date.now() + 15 * 60_000, controller: new AbortController() });
+            shares.set(token, { owner, account: account.user.username, accountCookie: memoSessionCookie(request) || "", playback: id, hash: entry.hash, file: entry.file, expires: Date.now() + 15 * 60_000, controller: new AbortController() });
             return json({ token, path: `/api/media/external/${token}`, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() });
           }
           if (path[0] === "revoke") {

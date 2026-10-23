@@ -2,12 +2,21 @@ import { useId, useState } from "react";
 import { ArrowLeft, ArrowRight, RotateCcw } from "lucide-react";
 import { Button } from "../ui/button";
 
-export default function SubtitleTimingControls({ offset, onChange }: { offset: number; onChange: (offset: number) => void }) {
+export default function SubtitleTimingControls({ offset, onChange, compact = false }: { offset: number; onChange: (offset: number) => void; compact?: boolean }) {
   const id = useId();
   const [step, setStep] = useState(0.5);
   const adjust = (direction: number) => onChange(Math.round((offset + direction * step) * 10) / 10);
 
-  return <div role="group" aria-label="Subtitle timing" aria-describedby={`${id}-help`} className="max-w-xl space-y-3 rounded-lg border border-neutral-700 bg-neutral-950/60 p-3 sm:p-4">
+  if (compact) return <div role="group" aria-label="Subtitle timing" className="cinema-subtitle-timing">
+    <div className="cinema-timing-heading"><span>Timing</span><button type="button" disabled={offset === 0} onClick={() => onChange(0)} aria-label="Reset subtitle timing">Reset</button></div>
+    <div className="cinema-timing-adjust">
+      <button type="button" aria-label="Show subtitles 0.5 seconds earlier" onClick={() => onChange(Math.round((offset - 0.5) * 10) / 10)}><ArrowLeft aria-hidden="true" />Earlier</button>
+      <output aria-label="Subtitle offset" aria-live="polite" aria-atomic="true">{offset > 0 ? "+" : ""}{offset.toFixed(1)} s</output>
+      <button type="button" aria-label="Show subtitles 0.5 seconds later" onClick={() => onChange(Math.round((offset + 0.5) * 10) / 10)}>Later<ArrowRight aria-hidden="true" /></button>
+    </div>
+  </div>;
+
+  return <div role="group" aria-label="Subtitle timing" className="max-w-xl space-y-3 rounded-lg border border-neutral-700 bg-neutral-950/60 p-3 sm:p-4">
     <div>
       <p className="text-sm font-medium text-white">Sync subtitles</p>
     </div>

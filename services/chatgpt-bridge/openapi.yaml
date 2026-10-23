@@ -1,0 +1,384 @@
+openapi: 3.1.0
+info:
+  title: Service autonome ChatGPT Plus
+  version: 0.1.0
+  description: >-
+    ChatGPT.com via navigateur dédié ; réponses complètes sans streaming.
+    Accès limité à loopback et aux sous-réseaux LAN privés explicitement configurés
+    (BRIDGE_LAN_CIDRS), d’après l’adresse socket, sans confiance aux en-têtes de proxy.
+    BRIDGE_ALLOWED_HOSTS autorise les hôtes HTTP ; BRIDGE_ALLOWED_ORIGINS autorise
+    les origines navigateur exactes. Un jeton Bearer reste obligatoire hors healthz.
+servers:
+  - url: http://127.0.0.1:3211
+security:
+  - localToken: []
+paths:
+  /healthz:
+    get:
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Processus vivant ; ne vérifie pas la session ChatGPT.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status: { type: string, const: ok }
+                  service: { type: string, const: chatgpt-plus-bridge }
+        '403': { $ref: '#/components/responses/Error' }
+  /v1/openapi.yaml:
+    get:
+      operationId: getOpenApi
+      responses:
+        '200':
+          description: Contrat complet téléchargeable pour intégrer une app du même LAN.
+          content:
+            application/yaml:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /v1/status:
+    get:
+      operationId: status
+      parameters:
+        - in: query
+          name: refresh
+          schema: { type: string, enum: ['true', 'false'] }
+          description: Force la vérification du navigateur si aucune génération/maintenance n’est active.
+      responses:
+        '200':
+          description: Moteur, session, file et état de maintenance sans mot de passe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+        '401': { $ref: '#/components/responses/Error' }
+  /v1/conversations:
+    get:
+      operationId: listConversations
+      responses:
+        '200':
+          description: Objet conversations contenant les fils créés localement.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversations]
+                properties:
+                  conversations:
+                    type: array
+                    items: { $ref: '#/components/schemas/Conversation' }
+    post:
+      operationId: createConversation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                title: { type: string, minLength: 1, maxLength: 200, default: Nouvelle conversation }
+      responses:
+        '201':
+          description: Conversation créée ; le fil distant sera créé au premier message.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '400': { $ref: '#/components/responses/Error' }
+  /v1/conversations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getConversation
+      responses:
+        '200':
+          description: Conversation avec messages ordonnés (sequence, run_id, role, content, created_at).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversationDetail' }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/conversations/{id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      operationId: sendMessage
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: { type: string, minLength: 1, maxLength: 200 }
+          description: Même clé, conversation, texte et documents donnent la même opération. Tout conflit retourne 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 32000 }
+                attachments:
+                  type: array
+                  maxItems: 4
+                  default: []
+                  description: Documents facultatifs, 10 Mio par fichier et 20 Mio au total (octets décodés). Noms distincts. Aucun chemin ou URL.
+                  items: { $ref: '#/components/schemas/DocumentInput' }
+      responses:
+        '202':
+          description: Accepté ; interroger GET /v1/runs/{run_id}. Aucun streaming.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Submission' }
+        '400': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /v1/runs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getRun
+      responses:
+        '200':
+          description: État, réponse finale, avertissement, erreur et liste d’actions. Les arguments/résultats sont des objets JSON.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/runs/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      operationId: cancelRun
+      responses:
+        '200':
+          description: Opération après annulation locale ; un message déjà envoyé à ChatGPT ne peut pas être retiré.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/actions/{id}/decision:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      operationId: decideAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [approved]
+              properties:
+                approved: { type: boolean }
+      responses:
+        '202':
+          description: Décision enregistrée ; arguments de l’action immuables. Répétition identique sans double exécution.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Submission' }
+        '409': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /v1/session/maintenance:
+    description: Réservé aux clients locaux sans en-tête Origin, même si l’API écoute sur le LAN.
+    get:
+      operationId: getMaintenance
+      responses:
+        '200':
+          description: État ; URL locale et mot de passe temporaire seulement lorsque la session est ouverte.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Maintenance' }
+    post:
+      operationId: openMaintenance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                inspect: { type: boolean, default: false, description: Maintient la session ouverte pour inspection même si le compte est déjà connecté. }
+      responses:
+        '202':
+          description: Suspend les générations puis ouvre la session. Interroger GET pendant opening. Appels répétés sans prolonger l’expiration.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Maintenance' }
+    delete:
+      operationId: closeMaintenance
+      responses:
+        '200':
+          description: Ferme noVNC, retire le secret et redémarre le moteur avec le profil conservé.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Maintenance' }
+components:
+  securitySchemes:
+    localToken:
+      type: http
+      scheme: bearer
+      description: Jeton généré dans .local-data/api-token. Ce jeton appartient au service local, pas à l’API OpenAI.
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Error:
+      description: >-
+        Erreur JSON avec code et message ; may_have_been_sent indique une interruption ambiguë.
+        403 peut indiquer lan_only, invalid_host, origin_not_allowed ou local_only.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                $ref: '#/components/schemas/ApiError'
+  schemas:
+    DocumentInput:
+      type: object
+      additionalProperties: false
+      required: [filename, data_base64]
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Nom de base sans séparateur ni caractère de contrôle. Extensions pdf, doc, docx, odt, rtf, xls, xlsx, ppt, pptx, txt, md, csv, tsv, json, html, xml, yaml, yml.
+        mime_type: { type: string, maxLength: 150, description: Facultatif ; doit correspondre à l’extension. Sinon déduit par le serveur. }
+        data_base64: { type: string, minLength: 4, maxLength: 13981016, contentEncoding: base64, description: Base64 canonique sans préfixe data ni espace ; document non vide de 10 Mio maximum. }
+    DocumentAttachment:
+      type: object
+      required: [filename, mime_type, size_bytes, sha256]
+      properties:
+        filename: { type: string }
+        mime_type: { type: string }
+        size_bytes: { type: integer, minimum: 1, maximum: 10485760 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        may_have_been_sent: { type: boolean }
+        remote_id: { type: string }
+        fields:
+          type: array
+          items: { type: string }
+    Status:
+      type: object
+      required: [service, engine, engine_version, mode, session, queue, maintenance]
+      properties:
+        service: { type: string, const: chatgpt-plus-bridge }
+        engine: { type: string, const: tab2api }
+        engine_version: { type: string }
+        mode: { type: string, const: real }
+        session: { type: string }
+        queue:
+          type: object
+          required: [queued, running, awaiting_approval, interrupted, paused, active_run_id]
+          properties:
+            queued: { type: integer }
+            running: { type: integer }
+            awaiting_approval: { type: integer }
+            interrupted: { type: integer }
+            paused: { type: boolean }
+            active_run_id: { type: [string, 'null'], format: uuid }
+        maintenance:
+          type: object
+          required: [state]
+          properties:
+            state: { type: string }
+            expires_at: { type: string, format: date-time }
+            error: { $ref: '#/components/schemas/ApiError' }
+    Conversation:
+      type: object
+      required: [id, title, remote_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        remote_id: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+    Message:
+      type: object
+      required: [sequence, run_id, role, content, attachments, created_at]
+      properties:
+        sequence: { type: integer }
+        run_id: { type: string, format: uuid }
+        role: { type: string, enum: [user, assistant, tool] }
+        content: { type: string, description: Contenu brut ; utiliser Run.answer pour afficher la réponse finale. }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/DocumentAttachment' }
+        created_at: { type: string, format: date-time }
+    ConversationDetail:
+      allOf:
+        - $ref: '#/components/schemas/Conversation'
+        - type: object
+          required: [messages]
+          properties:
+            messages:
+              type: array
+              items: { $ref: '#/components/schemas/Message' }
+    Submission:
+      type: object
+      required: [run_id, status]
+      properties:
+        run_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/RunStatus' }
+    RunStatus:
+      type: string
+      enum: [queued, running, awaiting_approval, completed, failed, cancelled, interrupted]
+    Run:
+      type: object
+      required: [id, conversation_id, prompt, attachments, status, answer, warning, error, tool_count, request_key, created_at, updated_at, actions]
+      properties:
+        id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        prompt: { type: string }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/DocumentAttachment' }
+        status: { $ref: '#/components/schemas/RunStatus' }
+        answer: { type: [string, 'null'] }
+        warning: { type: [string, 'null'] }
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/ApiError'
+            - type: 'null'
+        tool_count: { type: integer }
+        request_key: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        actions:
+          type: array
+          items:
+            type: object
+            required: [id, run_id, name, arguments, status, result, created_at]
+            properties:
+              id: { type: string, format: uuid }
+              run_id: { type: string, format: uuid }
+              name: { type: string, enum: [demo.create_note, demo.list_notes] }
+              arguments: { type: object }
+              status: { type: string, enum: [pending, approved, denied, executed, cancelled] }
+              result: { type: [object, 'null'] }
+              created_at: { type: string, format: date-time }
+    Maintenance:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        state: { type: string, enum: [closed, opening, open, closing, failed] }
+        purpose: { type: string, enum: [login, inspect] }
+        url: { type: string, format: uri }
+        password: { type: string, description: Secret éphémère affiché uniquement par cette route protégée. }
+        expires_at: { type: string, format: date-time }
+        error: { type: object }

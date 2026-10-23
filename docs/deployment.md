@@ -7,8 +7,9 @@ You can also use an existing Ubuntu server without Proxmox.
 
 The repository supplies the dashboard and its deployment files. Your hypervisor,
 other guests, storage, backups, and remote-access service are separate parts of
-your lab. The dashboard contains Calendar, TV & Movies, and Mémo; Mémo has its
-own login system. Start with access from your home network. The optional TV & Movies
+your lab. The dashboard contains Tempo, TV & Movies, and Mémo, protected by
+one HomeLab HTTPS login using the existing Mémo accounts. See [shared accounts](accounts.md).
+Start with access from your home network. The optional TV & Movies
 integration has its own [setup and verification guide](tv-media.md), including
 backend-to-media Tailscale connectivity, credentials and private-access controls.
 
@@ -181,7 +182,7 @@ requests in this order:
 | Request | Result |
 | --- | --- |
 | `/healthz` | Lightweight Caddy health response |
-| `/calendar/*` | Proxy to `calendar:4173`, stripping `/calendar` |
+| `/calendar/*` | Verify the Mémo session, then proxy to `calendar:4173`, stripping `/calendar` (`healthz` stays public) |
 | `/memo/*` | HTTPS-only proxy to `memo:8000`, stripping `/memo` |
 | `/api/media/stream/*`, `/api/media/external/*` | Private media streaming proxy with separate timeouts and disconnect cancellation |
 | `/api` or `/api/*` | Proxy to `backend:3001`, preserving the `/api` prefix |
@@ -236,9 +237,9 @@ curl -i "$APP_URL/missing.css"
 ```
 
 Expect `ok` from `/healthz` and `{"status":"ok"}` from `/api/health`.
-`/` and `/?section=tv` return HTML with status 200. The dashboard opens Calendar
-by default; `?section=tv` and `?section=memo` select the other apps. Unknown
-section names, including removed pages, fall back to Calendar.
+`/` and `/?section=tv` return HTML with status 200. The dashboard opens Accueil
+by default; `?section=calendar`, `?section=tv`, `?section=memo` and
+`?section=library` select the other apps. Unknown section names fall back to Accueil.
 All missing API and asset paths listed above should return 404. A Next.js 404
 may contain HTML, but it must not be the dashboard's index page or a 200 response.
 Future extensionless assets outside `/assets` need their own reserved prefix
@@ -299,23 +300,21 @@ it. Apply access restrictions at your router, Proxmox firewall, or appropriate
 Docker forwarding rules, and in your tailnet policy. See
 [Docker's firewall explanation](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
 
-## 8. Pull changes and redeploy
+## 8. Deploy pushed commits from your development machine
 
-Make source changes on your development machine or fork, review and commit them,
-and publish them to the branch your server tracks. Keep local settings and keys
-out of Git. On the VM, inspect before pulling:
+Review, commit, and push changes to `feat/memo-integration`, then run the private
+local deployment helper using
+[SERVER-UPDATE.md](../SERVER-UPDATE.md#2-deploy-from-this-machine).
+It fetches the pushed commit locally and transfers it over the agent SSH
+connection. The server builds the services sequentially and waits for healthy
+containers. The helper is excluded from Git; keep its local copy. Keep local
+settings and keys out of Git.
 
-```sh
-cd /opt/stacks/homelab
-git status --short
-git diff --stat
-git diff --cached --stat
-git branch -vv
-```
-
-Use the root [SERVER-UPDATE.md](../SERVER-UPDATE.md) for the single-repository
-commit, push, pull, build, and rollout commands. All app sources are included
-in this checkout. Routine updates create no backups.
+The script refuses local source changes and divergent server history. Successful
+commits are skipped; rerunning the helper retries failed deployments. The same
+guide covers local invocation, configuration, and forcing a rebuild.
+All app sources are included in this checkout. Routine updates create no backups
+and retain private environment files and named volumes.
 
 ## 9. Restart, recreate, and stop
 

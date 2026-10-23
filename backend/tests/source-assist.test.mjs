@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ASSIST_MODEL, MIN_STREAMING_SEEDERS, baselineAdvice, SourceAssist } from '../src/lib/media/source-assist.ts';
-import { createMediaApi } from '../src/lib/media/api.ts';
+import { createMediaApi } from './fixtures/accounts.mjs';
 import { queryTarget, sourceIdentity } from '../src/lib/media/source-identity.ts';
 
 const secret = 'test-only-source-assist-private-canary';
@@ -172,7 +172,7 @@ test('missing API key, provider errors, oversized responses and blocked output p
   const key = process.env.GEMINI_API_KEY; delete process.env.GEMINI_API_KEY;
   try {
     const advice = await new SourceAssist(async () => { assert.fail('no provider request without a key'); }).recommend('Film', [source('a')], undefined, signal());
-    assert.match(advice.warning, /API key/); assert.equal(advice.ranking.length, 1);
+    assert.match(advice.warning, /configured/); assert.equal(advice.ranking.length, 1);
   } finally { process.env.GEMINI_API_KEY = key; }
   for (const reply of [() => new Response(secret, { status: 429 }), () => new Response(null, { status: 302, headers: { Location: 'https://evil.test' } }), () => new Response('{broken'), () => new Response('x'.repeat(256 * 1024 + 1)), () => Response.json({ candidates: [{ finishReason: 'SAFETY' }] })]) {
     const advice = await new SourceAssist(async () => reply()).recommend('Film', [source('a')], undefined, signal());
@@ -197,7 +197,7 @@ test('shortlists are bounded and all remaining sources still get a ranking', asy
 });
 
 test('fallback warnings distinguish provider request, authentication and quota errors without exposing the body', async () => {
-  for (const [status, warning] of [[400, /rejected the recommendation request/], [401, /API key/], [403, /permissions/], [429, /limit or quota/], [503, /couldn't complete/]]) {
+  for (const [status, warning] of [[400, /request was rejected/], [401, /not authorized/], [403, /not authorized/], [429, /limit or quota/], [503, /could not be completed/]]) {
     const result = await new SourceAssist(async () => new Response(secret, { status })).recommend('Film', [source('a')], undefined, signal());
     assert.equal(result.provider, 'heuristic');
     assert.match(result.warning, warning);

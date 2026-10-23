@@ -39,11 +39,12 @@ export class TorrServer {
     const headers = this.headers(); headers.set("Content-Type", "application/json");
     return jsonRequest(this.fetcher, "TorrServer", new URL(path, serviceUrl("TORRSERVER_BASE_URL")), { method: "POST", headers, body: JSON.stringify(body) }, envNumber("MEDIA_METADATA_TIMEOUT_MS", 10_000, 1000, 60_000), signal);
   }
-  async add(input: string | Uint8Array<ArrayBuffer>, signal: AbortSignal) {
-    if (typeof input === "string") return normalizeTorrent(await this.request("torrents", { action: "add", link: magnet(input), save_to_db: false }, signal));
+  async add(input: string | Uint8Array<ArrayBuffer>, signal: AbortSignal, persistent = false) {
+    if (typeof input === "string") return normalizeTorrent(await this.request("torrents", { action: "add", link: magnet(input), save_to_db: persistent }, signal));
     const form = new FormData();
     form.set("file", new Blob([input], { type: "application/x-bittorrent" }), "source.torrent");
-    // Omit save entirely: upstream treats any supplied value (even "false") as true.
+    if (persistent) form.set("save", "true");
+    // For temporary playback omit save: upstream treats even "false" as true.
     const result = await jsonRequest(this.fetcher, "TorrServer", new URL("torrent/upload", serviceUrl("TORRSERVER_BASE_URL")), { method: "POST", headers: this.headers(), body: form }, envNumber("MEDIA_METADATA_TIMEOUT_MS", 10_000, 1000, 60_000), signal);
     return normalizeTorrent(Array.isArray(result) ? result[0] : result);
   }
@@ -59,7 +60,7 @@ export class TorrServer {
       return readLimited(response, max);
     });
   }
-  async stream(id: string, file: TorrentFile, request: Request): Promise<Response> {
+  async stream(id: string, file: TorrentFile, request: Request, options: { idleTimeoutMs?: number } = {}): Promise<Response> {
     const url = new URL("stream", serviceUrl("TORRSERVER_BASE_URL"));
     url.search = new URLSearchParams({ link: hash(id), index: String(integer(file.id)), play: "" }).toString();
     const headers = this.headers();
@@ -70,15 +71,17 @@ export class TorrServer {
       if (value) headers.set(name, value);
     }
     const controller = new AbortController();
+    let timedOut = false;
     const abort = () => controller.abort();
+    const timeout = () => { timedOut = true; abort(); };
     request.signal.addEventListener("abort", abort, { once: true });
     if (request.signal.aborted) abort();
-    let timer = setTimeout(abort, envNumber("MEDIA_STREAM_HEADER_TIMEOUT_MS", 90_000, 1000, 180_000));
+    let timer = setTimeout(timeout, envNumber("MEDIA_STREAM_HEADER_TIMEOUT_MS", 90_000, 1000, 180_000));
     const cleanup = () => { clearTimeout(timer); request.signal.removeEventListener("abort", abort); };
     try {
       const upstream = await this.fetcher(url, { method: request.method === "HEAD" ? "HEAD" : "GET", headers, signal: controller.signal, redirect: "manual", cache: "no-store" });
       clearTimeout(timer);
-      if (![200, 206, 416].includes(upstream.status)) { await upstream.body?.cancel(); throw new MediaError("stream", `TorrServer stream returned HTTP ${upstream.status}. Retry or use an external player.`, 502); }
+      if (![200, 206, 416].includes(upstream.status)) { await upstream.body?.cancel(); throw new MediaError(upstream.status >= 500 || upstream.status === 429 ? "stream_unavailable" : "stream", `TorrServer stream returned HTTP ${upstream.status}. Retry or use an external player.`, 502); }
       if (upstream.headers.has("content-encoding") && upstream.headers.get("content-encoding") !== "identity") { await upstream.body?.cancel(); throw new MediaError("stream", "TorrServer returned an encoded stream; byte-range forwarding requires identity encoding."); }
       const output = new Headers({ "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Content-Disposition": "inline", "Content-Security-Policy": "sandbox; default-src 'none'" });
       for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
@@ -99,15 +102,20 @@ export class TorrServer {
       }
       const reader = upstream.body?.getReader();
       if (!reader) throw new MediaError("stream", "TorrServer returned an empty stream.");
-      const idle = envNumber("MEDIA_STREAM_IDLE_TIMEOUT_MS", 45_000, 1000, 180_000);
+      const idle = options.idleTimeoutMs ?? envNumber("MEDIA_STREAM_IDLE_TIMEOUT_MS", 45_000, 1000, 180_000);
       // One read per downstream pull preserves backpressure; no whole-file buffering.
       const body = new ReadableStream<Uint8Array>({
         async pull(destination) {
-          timer = setTimeout(abort, idle);
+          timer = setTimeout(timeout, idle);
           try {
             const { done, value } = await reader.read(); clearTimeout(timer);
             if (done) { cleanup(); destination.close(); } else destination.enqueue(value);
-          } catch { cleanup(); controller.abort(); destination.error(new Error("Media stream interrupted")); }
+          } catch {
+            cleanup(); controller.abort();
+            destination.error(timedOut
+              ? new MediaError("stream_timeout", "TorrServer ne transmet plus de données. La source peut manquer de pairs disponibles.", 504)
+              : new MediaError("stream_interrupted", "La connexion avec TorrServer a été interrompue. Réessaie pour reprendre le fichier."));
+          }
         },
         async cancel() { cleanup(); controller.abort(); await reader.cancel().catch(() => {}); },
       }, { highWaterMark: 0 });
@@ -115,7 +123,7 @@ export class TorrServer {
     } catch (error) {
       cleanup(); controller.abort();
       if (error instanceof MediaError) throw error;
-      throw new MediaError("stream", "Stream unavailable or timed out. Check TorrServer and retry.", 504);
+      throw new MediaError(timedOut ? "stream_timeout" : "stream_unavailable", timedOut ? "TorrServer n’a pas répondu à temps. Réessaie pour reprendre le fichier." : "La connexion avec TorrServer est indisponible. Vérifie le service puis réessaie.", 504);
     }
   }
 }

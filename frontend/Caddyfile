@@ -37,9 +37,13 @@
 			path /calendar /calendar/*
 			not remote_ip 127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7
 		}
-		respond @publicCalendar "Calendar access requires a trusted network" 403
+		respond @publicCalendar "L’accès à Tempo nécessite un réseau de confiance" 403
 		redir /calendar /calendar/ 308
 		handle_path /calendar/* {
+			@calendarContent not path /healthz
+			forward_auth @calendarContent memo:8000 {
+				uri /api/auth/verify
+			}
 			reverse_proxy calendar:4173
 		}
 

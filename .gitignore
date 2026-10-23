@@ -44,8 +44,13 @@ data/
 volumes/
 backups/
 deployment-private/
+# The deployment helper and its supporting files are private local utilities.
+/scripts/deploy-server.sh
+/scripts/test_deploy_server.py
+/deployment/auto-deploy/
 .worktrees/
 .local-data/
+frontend/public/library-pdf/
 .gemini-api-key
 flashcard_progress.json
 **/users/
@@ -53,6 +58,7 @@ flashcard_progress.json
 # Calendar dist is authored source, not generated output.
 !/apps/calendar/dist/
 !/apps/calendar/dist/**
+/apps/calendar/dist/vendor/
 
 # Operating system files
 .DS_Store

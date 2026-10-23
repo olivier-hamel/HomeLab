@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sourceIntent, sourceSearchIntent, sortSources, bytes, sourceFingerprint, recommendedSources, loadDismissedSources, saveDismissedSources, automaticSources, mainVideo } from '../src/lib/media.ts';
+import { sourceIntent, sourceSearchIntent, sortSources, bytes, sourceFingerprint, recommendedSources, loadDismissedSources, saveDismissedSources, automaticSources, mainVideo, matchingDownload } from '../src/lib/media.ts';
+
+test('local playback chooses only ready downloads for the same movie or exact episode', () => {
+  const rows = [
+    { id: 'pending', state: 'downloading', intent: { context: { kind: 'movie', tmdbId: 5 } } },
+    { id: 'movie', state: 'ready', intent: { context: { kind: 'movie', tmdbId: 5 } } },
+    { id: 'episode', state: 'ready', intent: { context: { kind: 'tv', tmdbId: 5, season: 2, episode: 3 } } },
+  ];
+  assert.equal(matchingDownload(rows, { target: { kind: 'movie', tmdbId: 5 } }).id, 'movie');
+  assert.equal(matchingDownload(rows, { context: { kind: 'tv', tmdbId: 5, season: 2, episode: 3 } }).id, 'episode');
+  assert.equal(matchingDownload(rows, { context: { kind: 'tv', tmdbId: 5, season: 1, episode: 3 } }), undefined);
+  assert.equal(matchingDownload(rows, { context: { kind: 'tv', tmdbId: 5, season: 2 } }), undefined);
+  assert.equal(matchingDownload(rows, { query: 'movie' }), undefined);
+});
 
 test('automatic playback respects AI order and never starts uncertain, wrong, duplicate or dismissed releases', () => {
   const results = ['wrong', 'uncertain', 'second', 'first', 'duplicate'].map(id => ({ id, title: id === 'duplicate' ? 'first' : id, size: 100 }));

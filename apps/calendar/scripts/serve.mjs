@@ -4,7 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 const root = fileURLToPath(new URL("../dist/", import.meta.url));
 const port = Number(process.env.PORT || 4173);
-const types = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"};
+const types = {".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".wasm": "application/wasm"};
 createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
@@ -24,4 +24,4 @@ createServer(async (request, response) => {
     response.writeHead(200, {"Content-Type": (types[path.extname(file)] || "application/octet-stream") + "; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"});
     response.end(body);
   } catch {response.writeHead(404); response.end("Not found");}
-}).listen(port, "0.0.0.0", () => console.log(`Calendar is ready. Local: http://localhost:${port}`));
+}).listen(port, process.env.CALENDAR_HOST || "0.0.0.0", () => console.log(`Tempo est prêt. Adresse locale : http://localhost:${port}`));

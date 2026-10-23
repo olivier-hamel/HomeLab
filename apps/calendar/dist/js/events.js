@@ -1,0 +1,104 @@
+import {dateKey, addDays, parseDate, todayInZone} from "./date.js";
+import {occurrencesBetween, nextOccurrence} from "./recurrence.js";
+import {eventImportance} from "./event-types.js";
+
+export const eventCount = count => `${count} événement${count > 1 ? "s" : ""}`;
+export function eventsOnDate(events = [], date) {
+  const key = typeof date === "string" ? date : dateKey(date);
+  return events.flatMap(event => event.kind === "task" && !event.deadline ? [] : occurrencesBetween(event, key, key))
+    .sort((a, b) => Number(b.allDay) - Number(a.allDay) || (a.startTime || "").localeCompare(b.startTime || "") || a.title.localeCompare(b.title));
+}
+export function eventsInRange(events = [], start, end) {
+  return events.flatMap(event => event.kind === "task" && !event.deadline ? [] : occurrencesBetween(event, start, end))
+    .sort((a, b) => a.date.localeCompare(b.date) || Number(b.allDay) - Number(a.allDay) || (a.startTime || "").localeCompare(b.startTime || "") || a.title.localeCompare(b.title));
+}
+export function taskOccurrencesForHome(events = [], today, includeCompleted = false) {
+  return events.filter(event => event.kind === "task").flatMap(event => {
+    if (!event.recurrence) return [event];
+    const done = event.completedOccurrences || {};
+    let pending = nextOccurrence(event, event.date);
+    while (pending && done[pending.date]) {
+      if (pending.date === "9999-12-31") {pending = null; break;}
+      pending = nextOccurrence(event, dateKey(addDays(parseDate(pending.date), 1)));
+    }
+    const completed = Object.entries(done).flatMap(([date, timestamp]) => {
+      if (!includeCompleted && dateKey(todayInZone("America/Toronto", new Date(timestamp))) !== today) return [];
+      return occurrencesBetween(event, date, date);
+    });
+    return [...(pending ? [pending] : []), ...completed];
+  });
+}
+export function timeLabel(time, format = "24") {
+  if (!time) return "Toute la journée";
+  const [hour, minute] = time.split(":").map(Number);
+  return format === "24" ? `${hour} h${minute ? ` ${String(minute).padStart(2, "0")}` : ""}` : `${hour % 12 || 12}${minute ? `:${String(minute).padStart(2, "0")}` : ""} ${hour < 12 ? "a.m." : "p.m."}`;
+}
+export function eventTime(event, format = "24") {
+  if (event.kind === "task") return event.deadline ? `Échéance${event.deadline.time ? ` à ${timeLabel(event.deadline.time, format)}` : " dans la journée"}` : "Sans échéance";
+  return event.allDay ? "Toute la journée" : `${timeLabel(event.startTime, format)} – ${timeLabel(event.endTime, format)}`;
+}
+const minutes = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+export function layoutTimedEvents(events, date, types = [], minimumDuration = 0) {
+  const key = dateKey(date);
+  const rows = eventsOnDate(events, key).filter(event => !event.allDay).map(event => ({event,
+    start: event.date === key ? minutes(event.startTime) : 0,
+    end: event.kind === "task" ? Math.min(1440, minutes(event.startTime) + 15) : event.endDate === key ? minutes(event.endTime) : 1440,
+  })).map(row => ({...row, displayStart: Math.min(row.start, 1440 - minimumDuration), displayEnd: Math.min(1440, Math.max(row.end, Math.min(row.start, 1440 - minimumDuration) + minimumDuration))}))
+    .sort((a, b) => a.displayStart - b.displayStart || b.displayEnd - a.displayEnd);
+  // Include each card's readable minimum height when assigning overlap lanes,
+  // while preserving start/end as the event's actual time and duration.
+  let group = [], groupEnd = -1;
+  function finish() {
+    const lanes = [];
+    for (const row of group) {
+      let lane = lanes.findIndex(end => end <= row.displayStart);
+      if (lane < 0) lane = lanes.length;
+      lanes[lane] = row.displayEnd;
+      row.lane = lane;
+    }
+    for (const row of group) row.lanes = lanes.length;
+    const weights = lanes.map((_, lane) => Math.max(...group.filter(row => row.lane === lane).map(row => ({4: 1.5, 5: 2})[eventImportance(row.event, types)] || 1)));
+    const total = weights.reduce((sum, value) => sum + value, 0);
+    for (const row of group) {
+      row.offset = weights.slice(0, row.lane).reduce((sum, value) => sum + value, 0) / total;
+      row.width = weights[row.lane] / total;
+    }
+  }
+  for (const row of rows) {
+    if (row.displayStart >= groupEnd) {finish(); group = []; groupEnd = -1;}
+    group.push(row); groupEnd = Math.max(groupEnd, row.displayEnd);
+  }
+  finish();
+  return rows;
+}
+export function createEventRepository(fetcher = fetch) {
+  async function request(path, method = "GET", body, signal) {
+    let response;
+    try {
+      response = await fetcher(`/api/calendar/${path}`, {method, credentials: "same-origin", cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
+        ...(body ? {headers: {"Content-Type": "application/json", "X-Calendar-Request": "1"}, body: JSON.stringify(body)} : {})});
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new Error("La connexion a été interrompue. Réessaie; tes détails sont conservés.");
+    }
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(result.error || "L’action n’a pas pu être effectuée. Réessaie.");
+      error.code = result.code;
+      throw error;
+    }
+    return result;
+  }
+  return {
+    list: signal => request("events", "GET", null, signal),
+    listEventTypes: signal => request("event-types", "GET", null, signal),
+    addEventType: (type, requestId, signal) => request("event-types", "POST", {type, requestId}, signal),
+    deleteEventType: (id, signal) => request(`event-types/${id}`, "DELETE", {}, signal),
+    interpret: (text, selectedDate, signal) => request("interpret", "POST", {text, selectedDate}, signal),
+    addEvent: (event, requestId, signal) => request("events", "POST", {event, requestId}, signal),
+    updateEvent: (event, input, signal) => request(`events/${event.id}`, "PATCH", {event: input, updatedAt: event.updatedAt}, signal),
+    completeTask: (event, completed, signal) => request(`events/${event.id}`, "PATCH", {completed, updatedAt: event.updatedAt, ...(event.recurrence ? {occurrenceDate: event.occurrenceDate} : {})}, signal),
+    syncMoodle: signal => request("moodle-sync", "POST", {}, signal),
+    deleteEvent: (event, signal) => request(`events/${event.id}`, "DELETE", {updatedAt: event.updatedAt}, signal),
+  };
+}

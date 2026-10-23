@@ -7,7 +7,7 @@ browser. Fire TV device identifiers automatically enable TV mode and open
 If the browser hides its device identity or uses desktop mode, add `?tv=1`:
 
 ```text
-http://YOUR-HOMELAB-IP:3000/?tv=1
+https://YOUR-HOMELAB-IP:3443/?tv=1
 ```
 
 You can also use that URL on a desktop to preview the TV layout. Use the
@@ -27,7 +27,7 @@ closing details retains the modal focus trap until its brief exit finishes.
 TV mode provides larger text, five poster columns at 720p and seven at 1080p,
 extra space around the screen edges, and a strong orange focus outline. TV mode
 opens TV & Movies directly; desktop and mobile use the sidebar to switch between
-Calendar, TV & Movies, and Mémo.
+Tempo, TV & Movies, and Mémo.
 
 - **Arrows / D-pad:** move between controls; focused items scroll into view.
 - **Scrolling:** the TV view uses normal browser page scrolling. Use Silk's
@@ -142,12 +142,15 @@ playback handoff, TV layouts, and desktop isolation.
 
 From `frontend`, run `npm run lint`, `npm test`, and `npm run build`.
 From the repository root, run `node scripts/test-tv-ui.mjs` after building.
-The browser check uses a local server with mock media responses and headless
+The browser check uses a local HTTPS server with mock Mémo accounts and media responses and headless
 Chrome (`CHROME_BIN` can override its executable); it does not contact your media
 services. It checks TV and desktop layouts, browser/cursor/button scrolling,
 remote navigation, dialog focus,
 source/file selection, player controls, and fallback APIs. It simulates media
 events rather than verifying video decoding.
+
+The HTTPS fixture needs OpenSSL (`OPENSSL_BIN` can override the executable),
+or existing test certificate/key paths in `TV_TEST_CERT` and `TV_TEST_KEY`.
 Motion checks also cover rapid D-pad navigation, interrupted panel toggles,
 dialog exit/focus restoration, and reduced-motion behavior.
 
@@ -176,7 +179,7 @@ the APK.
 The first launch asks for the dashboard URL, for example:
 
 ```text
-http://192.168.1.50:3000
+https://192.168.1.50:3443
 ```
 
 Use the address that already works from another device on the same network.
@@ -187,9 +190,28 @@ header to change it later.
 
 The native project uses Capacitor 6 and `minSdkVersion 22`, covering Fire OS 5
 and later. It declares the Leanback launcher, landscape orientation, and no
-touchscreen requirement. Cleartext HTTP is enabled for private home-network
-deployments; prefer HTTPS when the service is reachable beyond a trusted LAN or
-tailnet.
+touchscreen requirement. HomeLab login requires HTTPS with the existing Mémo
+accounts. Install the Caddy root CA as a trusted authority on the Fire TV, or use
+a certificate already recognized by the device. Rebuild the APK to include its
+network security configuration for user-installed authorities. Saved HTTP server
+addresses are upgraded to HTTPS and persisted so the app does not return to HTTP.
+
+Personal debug APKs can also include the HomeLab Caddy root CA. Copy the public
+root certificate from the trusted HomeLab server to
+`.tools/certs/homelab-caddy-root.crt`, or set `HOMELAB_CA_CERT` to its absolute
+path, then rebuild the APK. Obtain the certificate from the server over a trusted
+connection; it is `/data/caddy/pki/authorities/local/root.crt` inside the frontend
+container. Only the public CA certificate is needed. The debug APK trusts this
+CA in addition to Android's system and user authorities; hostname, validity, and
+certificate-chain verification still apply. Release builds use the original
+system/user trust configuration.
+
+The setup screen shows **Connecting…** while opening the server and displays
+certificate, connection, or HTTP errors instead of leaving Connect unresponsive.
+If navigation never finishes, a 15-second timeout lets you retry.
+After building the frontend, run `node scripts/test-native-server-setup-ui.mjs`
+to check setup validation, connection feedback, error recovery, and navigation
+using a simulated native bridge.
 
 ### Build
 
@@ -226,6 +248,44 @@ The script defaults to `192.168.92.255:5555`. Override an address that changes:
 ```bash
 bash ./scripts/build-and-deploy-fire-tv.sh 192.168.92.42
 ```
+
+### Ubuntu build and deploy
+
+Use the Ubuntu script from any directory, without `sudo`:
+
+```bash
+bash /home/user/Documents/HomeLab/scripts/build-and-deploy-fire-tv-ubuntu.sh FIRE_TV_IP
+```
+
+Replace `FIRE_TV_IP` with the current address shown under Fire TV Settings >
+My Fire TV > About > Network. The optional second argument overrides port 5555.
+Enable ADB debugging and accept the authorization prompt on the TV.
+
+Install the Ubuntu packages once:
+
+```bash
+sudo apt update
+sudo apt install openjdk-17-jdk adb
+```
+
+Use Node.js 24. In Android Studio's SDK Manager, install **Android SDK Platform
+34**, **Android SDK Build-Tools 34.0.0**, and **Android SDK Platform-Tools**.
+If using the Android command-line tools instead, run:
+
+```bash
+sdkmanager --sdk_root="$HOME/Android/Sdk" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+sdkmanager --sdk_root="$HOME/Android/Sdk" --licenses
+```
+
+The script finds JDK 17 under `/usr/lib/jvm`, and the SDK under
+`.tools/android-sdk`, `$HOME/Android/Sdk`, or `/usr/lib/android-sdk`. Set
+`JAVA_HOME` and `ANDROID_SDK_ROOT` if installed elsewhere; an explicitly set
+`JAVA_HOME` must point to JDK 17, which the existing Gradle wrapper requires.
+
+The script installs frontend dependencies, builds and synchronizes Capacitor,
+runs a clean Android build, and installs `artifacts/HomeLab-TV-debug.apk` using
+`adb install -r`. The hosted frontend must also be deployed for changes to the
+remote dashboard page to appear on the TV.
 
 ### Sideload
 

@@ -7,6 +7,11 @@ type User = { username: string; display_name: string; must_change_password: bool
 type Account = { user: User; logout: () => void; changePassword: () => void }
 const AccountContext = createContext<Account | null>(null)
 export const useAccount = () => useContext(AccountContext)
+const embeddedHomeLab = window.parent !== window && import.meta.env.BASE_URL === '/memo/'
+const notifyHomeLab = (type = 'homelab:account-changed') => {
+  if (embeddedHomeLab) window.parent.postMessage({ type }, location.origin)
+  try { localStorage.setItem('homelab:account-changed', String(Date.now())) } catch { /* Storage is optional. */ }
+}
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const [enabled, setEnabled] = useState<boolean | null>(null)
@@ -19,6 +24,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     setEnabled(data.enabled)
     setUser(data.user)
     setChanging(false)
+    if (embeddedHomeLab && (!data.enabled || !data.user || data.user.must_change_password)) notifyHomeLab()
   }, [])
   const load = useCallback(async () => {
     try {
@@ -31,6 +37,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }, [receive])
 
   useEffect(() => {
+    if (import.meta.env.BASE_URL === '/memo/' && window.parent === window) {
+      location.replace('/?section=memo')
+      return
+    }
     void load()
     const expired = () => {
       receive({ enabled: true, user: null })
@@ -52,19 +62,28 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     finally { setBusy(false) }
   }
 
-  if (enabled === false) return <>{children}</>
+  if (enabled === false && !embeddedHomeLab) return <>{children}</>
   const passwordForm = !!user && (!!user.must_change_password || changing)
-  if (user && !passwordForm) return <AccountContext.Provider value={{ user, logout: () => void logout(), changePassword: () => { setChanging(true); setError('') } }}>
+  if (user && !passwordForm) return <AccountContext.Provider value={{ user, logout: () => void logout(), changePassword: () => {
+    if (embeddedHomeLab) notifyHomeLab('homelab:change-password')
+    else { setChanging(true); setError('') }
+  } }}>
     {error && <div className="auth-floating-error" role="alert">{error}</div>}
     {children}
   </AccountContext.Provider>
+
+  if (embeddedHomeLab) return <main className="auth-screen"><section className="auth-panel">
+    <h1>Ton espace HomeLab se prépare…</h1>
+    {error && <p role="alert">{error}</p>}
+    <a href="/?section=memo" target="_top">Revenir à HomeLab</a>
+  </section></main>
 
   return <main className="auth-screen">
     <section className="auth-panel" aria-label={passwordForm ? 'Nouveau mot de passe' : 'Connexion'}>
       <div className="brand-mark"><Flower2 size={34} strokeWidth={1.5} /></div>
       <div className="auth-brand">mémo<span>.</span></div>
       <h1>{enabled === null ? 'Ton espace se prépare…' : passwordForm ? 'Un espace bien à toi.' : 'Heureux de te retrouver.'}</h1>
-      <p>{passwordForm ? 'Choisis un nouveau mot de passe pour protéger ta progression.' : enabled === null ? 'Un instant, tes cartes t’attendent.' : 'Connecte-toi pour reprendre ton apprentissage à ton rythme.'}</p>
+      <p>{passwordForm ? 'Choisis un nouveau mot de passe pour protéger ta progression.' : enabled === null ? 'Un instant, tes cartes t’attendent.' : 'Connecte-toi pour reprendre ton apprentissage.'}</p>
       {error && <div className="auth-error" role="alert">{error}</div>}
       {enabled === null ? error && <button className="primary-button" onClick={() => void load()}>Réessayer</button> : <form key={passwordForm ? 'password' : 'login'} onSubmit={async event => {
         event.preventDefault()

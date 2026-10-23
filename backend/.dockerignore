@@ -20,6 +20,8 @@ secrets
 **/secrets
 data
 **/data
+.local-data
+**/.local-data
 *.log
 **/*.log
 *.tsbuildinfo

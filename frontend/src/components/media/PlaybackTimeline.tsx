@@ -1,15 +1,8 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { useTvMode } from "../../lib/tv";
+import { playbackTimestamp as timestamp } from "../../lib/media";
 
-function timestamp(seconds: number) {
-  const whole = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(whole / 3600);
-  const minutes = Math.floor(whole / 60) % 60;
-  const rest = String(whole % 60).padStart(2, "0");
-  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
-}
-
-export default function PlaybackTimeline({ duration, position, onSeek }: { duration: number; position: number; onSeek: (seconds: number) => void }) {
+export default function PlaybackTimeline({ duration, position, onSeek, compact = false, disabled = false, buffered = [] }: { duration: number; position: number; onSeek: (seconds: number) => void; compact?: boolean; disabled?: boolean; buffered?: [number, number][] }) {
   const tvMode = useTvMode();
   const [preview, setPreview] = useState<number | null>(null);
   const pending = useRef<number | null>(null);
@@ -19,17 +12,24 @@ export default function PlaybackTimeline({ duration, position, onSeek }: { durat
     const target = pending.current;
     pending.current = null;
     setPreview(null);
-    if (target !== null) onSeek(Math.min(target, Math.max(0, duration - 1)));
+    if (target !== null && !disabled && duration > 0) onSeek(Math.min(target, Math.max(0, duration - 1)));
   };
 
-  return <div className="space-y-1 rounded-lg border border-neutral-700 bg-neutral-950 px-4 py-3">
-    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+  const progress = duration > 0 ? current / duration * 100 : 0;
+  return <div className={compact ? "cinema-timeline" : "space-y-1 rounded-lg border border-neutral-700 bg-neutral-950 px-4 py-3"}>
+    {!compact && <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
       <span className="font-medium text-neutral-200">Full video timeline</span>
       <span className="tabular-nums text-neutral-400"><span className="text-orange-400">{timestamp(current)}</span> / {timestamp(duration)}</span>
-    </div>
-    <input type="range" min={0} max={duration} step={1} value={current}
+    </div>}
+    <div className={compact ? "cinema-timeline-track" : undefined} style={compact ? { "--played": `${progress}%` } as CSSProperties : undefined}>
+    {compact && <div className="cinema-timeline-rail" aria-hidden="true">
+      {buffered.map(([start, end], index) => <span key={index} className="cinema-timeline-buffer" style={{ left: `${Math.max(0, start / duration * 100)}%`, width: `${Math.max(0, (Math.min(end, duration) - Math.max(0, start)) / duration * 100)}%` }} />)}
+      <span className="cinema-timeline-played" />
+    </div>}
+    {compact && preview !== null && <output className="cinema-timeline-preview" style={{ left: `${Math.min(96, Math.max(4, progress))}%` }}>{timestamp(preview)}</output>}
+    <input type="range" min={0} max={duration || 1} step={1} value={current} disabled={disabled || duration <= 0}
       aria-label="Seek through full video" aria-valuetext={`${timestamp(current)} of ${timestamp(duration)}`}
-      className="block h-8 w-full cursor-pointer touch-none accent-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400"
+      className={compact ? "cinema-seek" : "block h-8 w-full cursor-pointer touch-none accent-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400"}
       onPointerDown={event => { dragging.current = true; event.currentTarget.setPointerCapture(event.pointerId); }}
       onChange={event => {
         const target = Number(event.currentTarget.value);
@@ -51,8 +51,9 @@ export default function PlaybackTimeline({ duration, position, onSeek }: { durat
       }}
       onKeyUp={event => { if (["ArrowLeft", "ArrowDown", "ArrowRight", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(event.key)) commit(); }}
       onBlur={() => { dragging.current = false; commit(); }} />
-    <div aria-hidden="true" className="flex justify-between text-[10px] tabular-nums text-neutral-500">
-      {[0, 0.25, 0.5, 0.75, 1].map(fraction => <span key={fraction}>{timestamp(duration * fraction)}</span>)}
     </div>
+    {compact ? <div className="cinema-timeline-times"><span>{timestamp(current)}</span><span>{duration > 0 ? `−${timestamp(duration - current)}` : "--:--"}</span></div> : <div aria-hidden="true" className="flex justify-between text-[10px] tabular-nums text-neutral-500">
+      {[0, 0.25, 0.5, 0.75, 1].map(fraction => <span key={fraction}>{timestamp(duration * fraction)}</span>)}
+    </div>}
   </div>;
 }

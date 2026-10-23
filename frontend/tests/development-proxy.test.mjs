@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer as createHttpServer, request } from 'node:http';
 import { fileURLToPath } from 'node:url';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { createServer as createViteServer } from 'vite';
 import config from '../vite.config.ts';
@@ -24,6 +27,9 @@ function throughProxy(port, headers, method = 'GET') {
 }
 
 test('development API proxy preserves browser Host and Origin for media security checks', async t => {
+  // A second Vite instance must not rewrite the running app's dependency cache.
+  const cacheDir = await mkdtemp(join(tmpdir(), 'homelab-proxy-vite-'));
+  t.after(() => rm(cacheDir, { recursive: true, force: true }));
   const backend = createHttpServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ host: req.headers.host, origin: req.headers.origin }));
@@ -43,6 +49,7 @@ test('development API proxy preserves browser Host and Origin for media security
     ...config,
     configFile: false,
     envFile: false,
+    cacheDir,
     root: fileURLToPath(new URL('..', import.meta.url)),
     logLevel: 'silent',
     server: { ...config.server, host: '127.0.0.1', port: 0, strictPort: false, hmr: false, watch: null, proxy },

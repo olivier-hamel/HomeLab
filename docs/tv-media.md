@@ -7,6 +7,51 @@ a movie in Simple mode starts automatic source selection and playback.
 
 ## Simple and Advanced mode
 
+### Téléchargements conservés sur le serveur
+
+Depuis les détails d’un film, utilise **Télécharger sur le serveur**. Pour une
+série, choisis la saison puis **Télécharger cet épisode**. La sélection automatique
+cherche une version et ajoute uniquement sa vidéo à la file, sans lancer la lecture.
+En mode avancé, chaque vidéo du torrent et le lecteur proposent aussi cette action.
+
+La section **Téléchargements** dans Cinéma et le dossier **Films et séries
+téléchargés** dans Bibliothèque affichent la même liste pour le compte HomeLab
+connecté. Ils permettent de suivre la progression, reprendre un transfert interrompu,
+regarder un fichier terminé ou le supprimer. Les profils cinéma continuent de gérer
+l’historique; les téléchargements appartiennent au compte connecté.
+
+Les fichiers restent sur le serveur jusqu’à une suppression explicite. Fermer la page
+ne coupe pas le transfert. Une file SQLite persistante traite jusqu’à trois vidéos
+simultanément par défaut et reprend les tâches après redémarrage du backend;
+TorrServer conserve les métadonnées
+des sources ajoutées à cette file. Une coupure de connexion ou un flux tronqué déclenche
+jusqu’à trois reprises automatiques, espacées de 10 secondes, depuis les octets réellement
+conservés. Les téléchargements tolèrent 3 minutes sans données; la lecture conserve son
+délai de 45 secondes. Après épuisement des reprises, une erreur conserve le fichier partiel
+pour le bouton **Reprendre**. Les erreurs disque et les réponses invalides ne sont pas
+relancées automatiquement. Les téléchargements incomplets ne sont jamais proposés à la lecture.
+La suppression d’un transfert actif annule celui-ci et retire également ses octets partiels.
+Les échecs définitifs écrivent une entrée `media.download.failed` dans les journaux du
+backend, avec la catégorie d’erreur, le code système éventuel et les octets conservés.
+
+Quand un film ou un épisode exact est déjà prêt, la lecture automatique du catalogue
+utilise le fichier conservé. **Regarder** dans les téléchargements fonctionne également
+sans TMDB, Prowlarr ou TorrServer. La lecture utilise le serveur HomeLab avec les
+requêtes HTTP Range pour naviguer dans la vidéo; FFmpeg peut toujours convertir les
+formats incompatibles. Les sous-titres en ligne et locaux restent disponibles; les
+fichiers de sous-titres du torrent ne sont pas conservés avec la vidéo.
+
+En Docker, le volume `media_downloads` est monté à `/data/media-downloads`; il
+survit à la recréation du conteneur. En local, le chemin par défaut est
+`backend/.local-data/media-downloads`, modifiable avec `MEDIA_DOWNLOAD_STORAGE_PATH`.
+`MEDIA_DOWNLOAD_RESERVE_MIB` réserve 512 MiB par défaut avant le démarrage d’un
+transfert, en tenant compte de l’espace nécessaire aux autres transferts actifs.
+`MEDIA_DOWNLOAD_CONCURRENCY` règle le nombre de transferts simultanés pour tout
+le serveur (3 par défaut, de 1 à 10); les tâches restantes attendent qu’une place
+se libère. La file accepte jusqu’à 20 tâches en attente ou actives par compte.
+Après mise à jour du code, reconstruire le frontend et le backend pour activer
+l’interface, le volume et le worker.
+
 Simple mode is the default. The **Advanced mode** switch at the top remembers
 the choice in this browser and restores the existing manual source, file,
 subtitle and diagnostic controls. Changing modes stops the current player.
@@ -42,8 +87,11 @@ pause, when leaving the player, and when the page is backgrounded. Selecting a
 card reacquires a source and resumes at the saved full-video timestamp. The X
 removes a movie; in TV mode it expands into a remote-focusable Remove button.
 Movies are automatically removed at 95% watched or within two minutes of the
-end. `MEDIA_USER_ID` and `MEDIA_PROFILE_ID` identify the shared household
-profile, so browsers and Fire TV devices connected to this backend share history.
+end. Cinema profiles come from the existing Mémo accounts and default to the
+connected HomeLab account. Switching the cinema profile requires no password and
+does not switch the HomeLab login. A profile shares history across browsers and
+Fire TV devices. `MEDIA_USER_ID` retains the household namespace, preserving
+existing `oli` and `max` records; see [shared accounts](accounts.md).
 
 MongoDB also keeps an append-only `watch_history` collection.
 A row is added when catalogue playback actually starts, for both movies and TV
@@ -120,16 +168,16 @@ the container. Test from the backend container, not only from your PC or host.
 
 ## 2. Restrict access before enabling media
 
-There is no login system. All permitted LAN/tailnet clients are trusted to
-search and add torrents. Media is disabled until explicitly configured.
+A valid HomeLab login using the Mémo session is required to browse, search and
+play media. Password changes, logout and session expiry block further media requests. Media is disabled until explicitly configured.
 Keep root `.env` bound to loopback on your PC or your VM's specific LAN/Tailscale
 IP. Do not enable router port forwarding, Funnel or public ingress.
 
 Caddy rejects media requests from public socket-peer addresses and does not
 trust client-supplied X-Forwarded-For for this rule. A reverse proxy or NAT on
 a private address can hide public clients: that ingress must independently
-enforce private access. Origin checks and anonymous signed session cookies
-are CSRF controls, **not user authentication**. Vite lacks Caddy's network
+enforce private access. Mémo supplies user authentication; origin checks and signed media cookies
+also protect media controls and scope playback handles to the current HomeLab account. Vite lacks Caddy's network
 rule; use loopback/firewall restrictions for development.
 
 Keep the existing non-root users, dropped capabilities, no-new-privileges,
@@ -233,17 +281,24 @@ Keep the generated output private.
 | Variable in backend/.env | Meaning / default |
 | --- | --- |
 | `MEDIA_TRUSTED_NETWORK` | `false` disables media. Set `true` after securing access. |
-| `MEDIA_ALLOWED_ORIGINS` | Exact browser origins, comma-separated, no trailing slash. PC example `http://localhost:3000`; deployment uses your actual VM URL. |
+| `MEDIA_ALLOWED_ORIGINS` | Exact browser origins, comma-separated, no trailing slash. PC example `https://localhost:3443`; deployment uses your actual HTTPS VM URL. |
 | `MEDIA_SESSION_SECRET` | At least 32 random characters; 64 hex recommended. Rotation invalidates sessions. |
 | `PROWLARR_BASE_URL` | Backend-reachable HTTP(S) URL; example `http://100.64.162.49:9696`. A configured base path is supported. |
 | `PROWLARR_API_KEY` | Existing Prowlarr key, sent as a server-side header. |
 | `TORRSERVER_BASE_URL` | Backend-reachable HTTP(S) URL; example `http://100.64.162.49:8090`. |
 | `TORRSERVER_USERNAME`, `TORRSERVER_PASSWORD` | Both blank, or both set for existing HTTP Basic auth. |
+| `MEDIA_DOWNLOAD_STORAGE_PATH` | Durable video and SQLite directory; local default `.local-data/media-downloads`, Docker `/data/media-downloads`. |
+| `MEDIA_DOWNLOAD_RESERVE_MIB` | `512`; free disk reserve checked before starting a download. |
+| `MEDIA_DOWNLOAD_IDLE_TIMEOUT_MS` | `180000`; range 1000–600000 ms without data during a download. Independent of playback. |
+| `MEDIA_DOWNLOAD_RETRIES` | `3`; range 0–10 automatic retries for connection failures, timeouts and truncated bodies. Partial bytes are retained. |
+| `MEDIA_DOWNLOAD_RETRY_DELAY_MS` | `10000`; range 0–60000 ms between automatic retries. Deletion cancels the wait. |
 | `TMDB_READ_ACCESS_TOKEN` | Optional Bearer token. Direct source search works independently. |
 | `MONGODB_URI` | Optional MongoDB connection string enabling persistent Continue Watching and watch history. It may use `<db_username>` and `<db_password>` placeholders. |
 | `MONGODB_USERNAME`, `MONGODB_PASSWORD` | Optional credentials inserted into the URI placeholders and URL-encoded by the backend. |
 | `MONGODB_DATABASE` | `homelab`; database containing the `playback_progress` and `watch_history` collections. |
-| `MEDIA_USER_ID`, `MEDIA_PROFILE_ID` | `home` / `default`; shared identity used by all devices until authentication is added. |
+| `MEDIA_USER_ID` | `home`; keep the existing household namespace to retain cinema histories. |
+| `MEDIA_PROFILE_ID` | Legacy storage fallback. The media API uses a verified Mémo username, defaulting to the connected account. |
+| `MEMO_AUTH_URL` | Internal Mémo service URL (`http://memo:8000` in Compose); local development uses `http://127.0.0.1:8000`. |
 | `GEMINI_API_KEY` | Optional server-side Gemini key for catalogue correction, source assist, cinema copy, and personalized movie/TV recommendations based on the 25 latest watch-history entries. |
 | `MEDIA_AI_TIMEOUT_MS` | `20000`; range 1000–60000 ms for a Gemini review. |
 | `MEDIA_METADATA_TIMEOUT_MS` | `10000`; range 1000–60000 ms, for TMDB/TorrServer JSON. |
@@ -513,7 +568,8 @@ External links point to this dashboard, work without browser cookies, expire
 after 15 minutes and are scoped to one file. Revocation/expiry cancels active
 requests and blocks new requests. Caddy skips media access logs. A player must
 still reach the dashboard via LAN/tailnet; a separate login proxy can still
-block VLC. Anyone with a link and network access can use it until expiry.
+block VLC. The creator's Mémo session is checked on every new stream request,
+so logout, password reset or session expiry also blocks these links.
 Download M3U or paste into VLC; there is no universal VLC launch integration.
 Direct TorrServer URLs would require media-VM reachability/auth on the playback
 device and are not emitted. No permanent service credentials appear in links.
@@ -676,7 +732,9 @@ downloads before playback, ZIP file selection and a download completing after Of
 `scripts/test-tv-media.mjs` runs built React, Next standalone, real Caddy and
 hidden Chrome against loopback mock services. Its TMDB/SubDL fetch override is loaded
 only into that test process; production has no mock toggle or alternate TMDB
-origin. It overrides all media credentials with fixture values.
+origin. It overrides all media credentials with fixture values. Mémo accounts
+are also mocked and the dashboard uses HTTPS. The local TLS fixture needs
+OpenSSL (`OPENSSL_BIN`), or `TV_TEST_CERT` and `TV_TEST_KEY` paths.
 
 Playback planner/API tests cover all five playback paths, actual codec profiles,
 silent files, default tracks, ownership and invalid capability/seek requests.

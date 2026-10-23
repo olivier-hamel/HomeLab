@@ -1,28 +1,40 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, CalendarDays, Clapperboard, Maximize2, Menu, Minimize2, X } from "lucide-react";
+import { BookOpen, CalendarDays, Clapperboard, FolderOpen, House, Maximize2, Menu, Minimize2, Video, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import TV from "./pages/TV";
 import Memo from "./pages/Memo";
 import Calendar from "./pages/Calendar";
+import Library from "./pages/Library";
+import Home from "./pages/Home";
+import Camera from "./pages/Camera";
+import { sectionUrl } from "./lib/navigation";
+import type { Navigate } from "./lib/navigation";
+import { useAccount } from "./lib/account-context";
 import { useTvMode } from "./lib/tv";
 import useTvNavigation from "./components/useTvNavigation";
 import { hasNativeVideoPlayer, isNativeApp } from "./native";
+import AccountControls from "./components/AccountControls";
 
 const buildTag = "2026.09.10-native-4";
 
 const sections = [
-  { id: "calendar", icon: CalendarDays, label: "Calendar", component: Calendar },
+  { id: "home", icon: House, label: "Accueil", component: Home },
+  { id: "calendar", icon: CalendarDays, label: "Tempo", component: Calendar },
   { id: "tv", icon: Clapperboard, label: "TV & Movies", component: TV },
   { id: "memo", icon: BookOpen, label: "Mémo", component: Memo },
+  { id: "library", icon: FolderOpen, label: "Bibliothèque", component: Library },
+  { id: "camera", icon: Video, label: "Caméra", component: Camera },
 ] as const;
 
 export default function App() {
+  const { user } = useAccount();
   const tvMode = useTvMode();
   useTvNavigation(tvMode);
   const [activeSection, setActiveSection] = useState<(typeof sections)[number]["id"]>(() => {
     const requested = new URLSearchParams(location.search).get("section");
-    return !tvMode ? sections.find(section => section.id === requested)?.id || "calendar" : "tv";
+    return !tvMode ? sections.find(section => section.id === requested)?.id || "home" : "tv";
   });
+  const [pageSearch, setPageSearch] = useState(location.search);
   const [tvFooterActions, setTvFooterActions] = useState<HTMLDivElement | null>(null);
   const [sidebarKeyboardFocus, setSidebarKeyboardFocus] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -33,8 +45,25 @@ export default function App() {
     setFullscreenView(false);
     requestAnimationFrame(() => (window.matchMedia("(max-width: 767px)").matches ? navigationButton.current : fullscreenButton.current)?.focus());
   }, []);
-  const selectedSection = sections.find((section) => section.id === activeSection)!;
-  const Page = selectedSection.component;
+  const navigate: Navigate = (section, target) => {
+    const url = sectionUrl(section, target);
+    history.pushState(null, "", url);
+    setActiveSection(section);
+    setPageSearch(url.search);
+    setMobileMenuOpen(false);
+    document.getElementById("dashboard-content")?.scrollTo({ top: 0 });
+  };
+
+  useEffect(() => {
+    const restore = () => {
+      const requested = new URLSearchParams(location.search).get("section");
+      setActiveSection(tvMode ? "tv" : sections.find(section => section.id === requested)?.id || "home");
+      setPageSearch(location.search);
+      setMobileMenuOpen(false);
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, [tvMode]);
 
   useEffect(() => {
     if (!fullscreenView) return;
@@ -52,6 +81,7 @@ export default function App() {
       </main>
       <footer className="tv-footer">
         <div ref={setTvFooterActions} className="tv-footer-actions" />
+        <AccountControls />
         <span data-build-tag="">
           BUILD {buildTag} · {hasNativeVideoPlayer() ? "NATIVE PLAYER READY" : isNativeApp() ? "NATIVE PLUGIN MISSING" : "WEB PLAYER"}
         </span>
@@ -65,14 +95,14 @@ export default function App() {
         Skip to dashboard
       </a>
       <aside
-        className={`dashboard-sidebar w-full shrink-0 border-b border-neutral-700 bg-neutral-900 transition-[width] duration-300 md:w-70 md:border-b-0 md:border-r ${fullscreenView ? "hidden" : ""}`}
+        className={`dashboard-sidebar w-full shrink-0 border-b border-neutral-700 bg-neutral-900 transition-[width] duration-300 md:w-70 md:flex-col md:border-b-0 md:border-r ${fullscreenView ? "hidden" : "md:flex"}`}
         data-keyboard-focus={sidebarKeyboardFocus}
         onFocusCapture={event => setSidebarKeyboardFocus(event.target.matches(":focus-visible"))}
         onBlurCapture={event => {
           if (!event.currentTarget.contains(event.relatedTarget)) setSidebarKeyboardFocus(false);
         }}
       >
-        <div className="dashboard-sidebar-header flex h-20 items-center justify-between gap-2 px-4">
+        <div className="dashboard-sidebar-header flex h-20 shrink-0 items-center justify-between gap-2 px-4">
           <span className="dashboard-sidebar-mark hidden text-lg font-bold tracking-wider text-orange-500" aria-hidden="true">HL</span>
           <div className="dashboard-sidebar-brand whitespace-nowrap">
             <p className="text-lg font-bold tracking-wider text-orange-500">HOMELAB</p>
@@ -92,7 +122,7 @@ export default function App() {
           </Button>
         </div>
 
-        <div className={`dashboard-sidebar-content ${mobileMenuOpen ? "block" : "hidden"} max-h-[60svh] overflow-y-auto px-4 pb-4 md:block md:max-h-none`}>
+        <div className={`dashboard-sidebar-content ${mobileMenuOpen ? "block" : "hidden"} min-h-0 max-h-[60svh] overflow-x-hidden overflow-y-auto px-4 pb-4 md:block md:max-h-none md:flex-1`}>
           <nav id="dashboard-navigation" aria-label="Dashboard sections" className="space-y-2">
             {sections.map((section) => (
               <button
@@ -101,13 +131,7 @@ export default function App() {
                 aria-label={section.label}
                 aria-current={activeSection === section.id ? "page" : undefined}
                 title={section.label}
-                onClick={() => {
-                  setActiveSection(section.id);
-                  const url = new URL(location.href);
-                  url.searchParams.set("section", section.id);
-                  history.replaceState(null, "", url);
-                  setMobileMenuOpen(false);
-                }}
+                onClick={() => navigate(section.id)}
                 className={`dashboard-sidebar-link flex w-full items-center gap-3 rounded p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 ${activeSection === section.id ? "bg-orange-500 text-white" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}
               >
                 <section.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
@@ -129,11 +153,14 @@ export default function App() {
             <span className="dashboard-sidebar-label whitespace-nowrap text-sm font-medium">Fullscreen view</span>
           </button>
         </div>
+        <div className={`dashboard-sidebar-footer ${mobileMenuOpen ? "block" : "hidden"} shrink-0 px-4 pb-4 md:block`}>
+          <AccountControls />
+        </div>
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <main id="dashboard-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-auto focus:outline-none">
-          {activeSection === "memo" ? <Memo onEscape={fullscreenView ? exitFullscreen : undefined} /> : activeSection === "calendar" ? <Calendar onEscape={fullscreenView ? exitFullscreen : undefined} /> : <Page />}
+          {activeSection === "home" ? <Home key={user.username} onNavigate={navigate} /> : activeSection === "memo" ? <Memo onEscape={fullscreenView ? exitFullscreen : undefined} /> : activeSection === "calendar" ? <Calendar search={pageSearch} onEscape={fullscreenView ? exitFullscreen : undefined} /> : activeSection === "library" ? <Library /> : activeSection === "camera" ? <Camera key={user.username} /> : <TV />}
         </main>
       </div>
       {fullscreenView && <Button

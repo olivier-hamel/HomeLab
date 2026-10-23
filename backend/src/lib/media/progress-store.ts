@@ -1,4 +1,6 @@
-import { MongoClient, type Collection } from "mongodb";
+import { type Collection } from "mongodb";
+import { database } from "../database.ts";
+export { mongoUri } from "../database.ts";
 import { MediaError } from "./core.ts";
 
 export type ContinueWatchingRecord = {
@@ -40,36 +42,14 @@ type StoredWatchHistory = WatchHistoryRecord & {
   watchedAt: Date;
 };
 
-let connection: Promise<MongoClient> | null = null;
-
 function identity(name: "MEDIA_USER_ID" | "MEDIA_PROFILE_ID", fallback: string) {
   const value = process.env[name]?.trim() || fallback;
   if (!/^[a-zA-Z0-9._-]{1,64}$/.test(value)) throw new MediaError("setup", `${name} must use 1-64 letters, numbers, dots, dashes or underscores.`, 503);
   return value;
 }
 
-export function mongoUri() {
-  const template = process.env.MONGODB_URI?.trim();
-  if (!template) throw new MediaError("setup", "Set MONGODB_URI in backend/.env to enable Continue Watching and watch history.", 503);
-  const username = encodeURIComponent(process.env.MONGODB_USERNAME ?? "");
-  const password = encodeURIComponent(process.env.MONGODB_PASSWORD ?? "");
-  const uri = template.replaceAll("<db_username>", username).replaceAll("<db_password>", password);
-  if (/[<>]/.test(uri)) throw new MediaError("setup", "Replace the MongoDB username and password placeholders, or set MONGODB_USERNAME and MONGODB_PASSWORD.", 503);
-  return uri;
-}
-
 export function completedPlayback(position: number, duration: number) {
   return position / duration >= 0.95 || duration - position <= 120;
-}
-
-async function database() {
-  try {
-    connection ??= new MongoClient(mongoUri(), { serverSelectionTimeoutMS: 7_500 }).connect().catch(error => { connection = null; throw error; });
-    const client = await connection;
-    return client.db(process.env.MONGODB_DATABASE?.trim() || "homelab");
-  } catch {
-    throw new MediaError("database", "Playback storage is unavailable. Check the MongoDB configuration and network access.", 503);
-  }
 }
 
 async function progressCollection(): Promise<Collection<StoredProgress>> {

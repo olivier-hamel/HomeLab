@@ -1,17 +1,25 @@
-import {addDays, addMonths, civilDate, todayInZone, DEFAULT_TIMEZONE} from "./date.js";
+import {addDays, addMonths, civilDate, dateKey, todayInZone, DEFAULT_TIMEZONE} from "./date.js";
 
+// Keep the original key so Tempo preserves existing account preferences.
 const STORAGE_KEY = "clear-calendar:preferences:v1";
-const DEFAULT_PREFERENCES = {weekStart: 1, timeFormat: "12", timezone: DEFAULT_TIMEZONE};
+const DEFAULT_PREFERENCES = {weekStart: 1, timeFormat: "12", timezone: DEFAULT_TIMEZONE, searchEngine: "google"};
 
-export function createCalendarStore(storage = null) {
+function restorePreferences(saved) {
+  const preferences = {...DEFAULT_PREFERENCES};
+  if (saved?.weekStart === 0 || saved?.weekStart === 1) preferences.weekStart = saved.weekStart;
+  if (saved?.timeFormat === "12" || saved?.timeFormat === "24") preferences.timeFormat = saved.timeFormat;
+  if (saved?.searchEngine === "google" || saved?.searchEngine === "duckduckgo") preferences.searchEngine = saved.searchEngine;
+  return preferences;
+}
+
+export function createCalendarStore(storage = null, account = null) {
+  const storageKey = account ? `${STORAGE_KEY}:${account.username}` : STORAGE_KEY;
   let preferences = {...DEFAULT_PREFERENCES};
   try {
-    const saved = JSON.parse(storage?.getItem(STORAGE_KEY) || "null");
-    if (saved?.weekStart === 0 || saved?.weekStart === 1) preferences.weekStart = saved.weekStart;
-    if (saved?.timeFormat === "12" || saved?.timeFormat === "24") preferences.timeFormat = saved.timeFormat;
+    preferences = restorePreferences(JSON.parse(storage?.getItem(storageKey) || "null"));
   } catch { /* Storage is optional, including in private browsing. */ }
   const today = todayInZone(preferences.timezone);
-  let state = {page: "home", view: "month", date: today, today, miniDate: today, preferences, sidebarOpen: false};
+  let state = {page: "calendar", view: "month", date: today, today, miniDate: today, preferences, account, sidebarOpen: false, events: [], eventTypes: [], eventsStatus: "loading", eventsError: "", aiAvailable: true, documents: [], documentFolders: [], currentFolderId: null, documentsStatus: "loading", documentsError: "", documentJobs: [], documentQuery: "", documentFilter: "all", selectedDocumentId: null, documentDetailsOpen: false};
   const subscribers = new Set();
   function update(patch, reason) {
     state = {...state, ...patch};
@@ -26,22 +34,38 @@ export function createCalendarStore(storage = null) {
     getState: () => state,
     subscribe(callback) {subscribers.add(callback); return () => subscribers.delete(callback);},
     selectDate,
+    setEvents(events, patch = {}) {update({events, ...patch}, "events");},
+    setEventTypes(eventTypes) {update({eventTypes}, "event-types");},
+    setDocuments(documents, patch = {}) {update({documents, ...patch}, "documents");},
+    openDocumentFolder(id = null) {
+      if (id && !state.documentFolders.some(folder => folder.id === id)) return;
+      update({page: "documents", currentFolderId: id, documentQuery: "", documentFilter: "all", selectedDocumentId: null, documentDetailsOpen: false, sidebarOpen: false}, "folder-open");
+    },
+    goDocuments(id = null) {update({page: "documents", selectedDocumentId: id || state.selectedDocumentId, documentDetailsOpen: !!id, sidebarOpen: false}, "documents-open");},
+    selectDocument(id, documentDetailsOpen = false) {update({selectedDocumentId: id, documentDetailsOpen}, "document-select");},
+    closeDocumentDetails() {update({documentDetailsOpen: false}, "document-back");},
+    setDocumentQuery(documentQuery) {update({documentQuery}, "documents-search");},
+    setDocumentFilter(documentFilter) {update({documentFilter}, "documents-filter");},
+    syncLocalStorage(key) {
+      if (!storage || (key !== null && key !== storageKey)) return;
+      const patch = {};
+      try {
+        if (key === null || key === storageKey) patch.preferences = restorePreferences(JSON.parse(storage.getItem(storageKey) || "null"));
+      } catch { /* A storage error in another tab must not interrupt this one. */ }
+      if (Object.keys(patch).length) update(patch, "storage");
+    },
     openDate(date, view) {
       if (!validDate(date) || !["month", "week", "day"].includes(view)) return;
       update({page: "calendar", date, miniDate: date, view, sidebarOpen: false}, "drilldown");
     },
-    goHome() {
-      const today = todayInZone(state.preferences.timezone);
-      update({page: "home", today, miniDate: today, sidebarOpen: false}, "home");
-    },
     setView(view) {
       if (["month", "week", "day"].includes(view)) {
-        const date = state.page === "home" ? state.today : state.date;
+        const date = state.page !== "calendar" ? state.today : state.date;
         update({page: "calendar", date, miniDate: date, view, sidebarOpen: false}, "view");
       }
     },
     navigate(direction) {
-      if (state.page === "home") return;
+      if (state.page !== "calendar") return;
       const next = state.view === "month" ? addMonths(state.date, direction) : addDays(state.date, direction * (state.view === "week" ? 7 : 1));
       selectDate(next, "navigate");
     },
@@ -59,7 +83,8 @@ export function createCalendarStore(storage = null) {
       const preferences = {...state.preferences};
       if (patch.weekStart === 0 || patch.weekStart === 1) preferences.weekStart = patch.weekStart;
       if (patch.timeFormat === "12" || patch.timeFormat === "24") preferences.timeFormat = patch.timeFormat;
-      try {storage?.setItem(STORAGE_KEY, JSON.stringify(preferences));} catch { /* Keep working without persistence. */ }
+      if (patch.searchEngine === "google" || patch.searchEngine === "duckduckgo") preferences.searchEngine = patch.searchEngine;
+      try {storage?.setItem(storageKey, JSON.stringify(preferences));} catch { /* Keep working without persistence. */ }
       update({preferences}, "preferences");
     },
     refreshClock() {update({today: todayInZone(state.preferences.timezone)}, "clock");}

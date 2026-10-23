@@ -91,6 +91,12 @@ class Accounts:
         return {"username": user["username"], "display_name": user["display_name"],
                 "must_change_password": bool(user["must_change_password"])}
 
+    def list_public(self):
+        # The login chooser exposes names only, never password or session data.
+        with self.connection() as db:
+            rows = db.execute("SELECT username, display_name FROM users ORDER BY username").fetchall()
+        return [dict(row) for row in rows]
+
     def login(self, name, password, address):
         name = name.strip().lower()[:256]
         now = self.clock()

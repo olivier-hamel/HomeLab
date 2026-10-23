@@ -1,10 +1,11 @@
+import { geminiApiKey, geminiModel, DEFAULT_GEMINI_MODEL } from "../ai/gemini.ts";
 import { createHash } from "node:crypto";
 import { BoundedCache, envNumber, list, MediaError, record, string, type Fetcher } from "./core.ts";
 import { bounded, readLimited } from "./http.ts";
 import type { SearchContext, Source } from "./prowlarr.ts";
 import { queryTarget, sourceIdentity, type Identity, type SourceTarget } from "./source-identity.ts";
 
-export const ASSIST_MODEL = "gemini-3.5-flash-lite";
+export const ASSIST_MODEL = DEFAULT_GEMINI_MODEL;
 export const MIN_STREAMING_SEEDERS = 100;
 const REVIEW_LIMIT = 10;
 export type Assessment = { id: string; identity: Identity; verdict: "good" | "unsure" | "sketchy"; reason: string; review?: string; method: "gemini" | "heuristic" };
@@ -126,8 +127,8 @@ export class SourceAssist {
     const fallback = baselineAdvice(sources, context, target);
     const shortlist = ranked.filter(row => row.identity === "match").slice(0, REVIEW_LIMIT);
     if (!shortlist.length) return fallback;
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
-    if (!apiKey) return { ...fallback, warning: "AI assist needs a Gemini API key; showing basic recommendations." };
+    const apiKey = geminiApiKey();
+    if (!apiKey) return { ...fallback, warning: "Source review needs to be configured; showing basic recommendations." };
     // No download URLs, magnets, indexer configuration or credentials reach Gemini.
     const candidates = shortlist.map(({ source }) => ({ id: source.id, title: source.title, titleIds: source.titleIds, sizeBytes: source.size, seeders: source.seeders, leechers: source.leechers, quality: source.quality }));
     const input = JSON.stringify({ query, requestedTitle: target, targetResolution: 1080, minimumStreamingSeeders: MIN_STREAMING_SEEDERS, candidates });
@@ -135,8 +136,8 @@ export class SourceAssist {
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
     try {
-      const data = await bounded("Gemini source assist", envNumber("MEDIA_AI_TIMEOUT_MS", 20_000, 1000, 60_000), signal, async s => {
-        const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${ASSIST_MODEL}:generateContent`, {
+      const data = await bounded("Source review", envNumber("MEDIA_AI_TIMEOUT_MS", 20_000, 1000, 60_000), signal, async s => {
+        const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
           method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, signal: s, cache: "no-store", redirect: "manual",
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: "user", parts: [{ text: input }] }],
@@ -151,11 +152,11 @@ export class SourceAssist {
         });
         if (!response.ok) {
           await response.body?.cancel();
-          throw new MediaError(response.status === 429 ? "ai_rate_limit" : response.status === 401 || response.status === 403 ? "ai_auth" : response.status === 400 ? "ai_request" : "ai_upstream", "Gemini source assist is unavailable.");
+          throw new MediaError(response.status === 429 ? "ai_rate_limit" : response.status === 401 || response.status === 403 ? "ai_auth" : response.status === 400 ? "ai_request" : "ai_upstream", "Source review is unavailable.");
         }
         const envelope = record(JSON.parse(new TextDecoder().decode(await readLimited(response, 256 * 1024))));
         const candidate = record(list(envelope.candidates)[0]);
-        if (candidate.finishReason !== "STOP") throw new MediaError("ai_schema", "Gemini did not finish its recommendations.");
+        if (candidate.finishReason !== "STOP") throw new MediaError("ai_schema", "The recommendations are incomplete.");
         const output = list(record(candidate.content).parts).map(record).filter(p => p.thought !== true).map(p => string(p.text, 128 * 1024)).join("");
         return record(JSON.parse(output));
       });
@@ -182,21 +183,21 @@ export class SourceAssist {
       });
       // Stable sort preserves Gemini's order within each identity/quality tier.
       const ranking = [...reviewed, ...ranked.filter(row => !allowed.has(row.id))].sort((a, b) => a.tier - b.tier).map(publicAssessment);
-      const advice: SourceAdvice = { provider: "gemini", model: ASSIST_MODEL, warning: ranked.filter(row => row.identity === "match").length > REVIEW_LIMIT ? `Gemini reviewed the ${REVIEW_LIMIT} most promising matching listings; others use basic checks.` : null, reviewed: candidates.length, ranking };
+      const advice: SourceAdvice = { provider: "gemini", model: geminiModel(), warning: ranked.filter(row => row.identity === "match").length > REVIEW_LIMIT ? `The source review covered the ${REVIEW_LIMIT} most promising matching listings; others use basic checks.` : null, reviewed: candidates.length, ranking };
       signal.throwIfAborted();
       return this.cache.set(cacheKey, advice);
     } catch (error) {
       if (signal.aborted) throw error;
       const reasons: Record<string, string> = {
-        timeout: "Gemini's review timed out.",
-        ai_rate_limit: "Gemini's request limit or quota was reached.",
-        ai_auth: "Gemini rejected the API key or its permissions.",
-        ai_request: "Gemini rejected the recommendation request.",
-        ai_schema: "Gemini returned an incomplete or invalid review.",
-        too_large: "Gemini's review exceeded the response size limit.",
+        timeout: "The source review timed out.",
+        ai_rate_limit: "The source review request limit or quota was reached.",
+        ai_auth: "The source review service is not authorized.",
+        ai_request: "The recommendation request was rejected.",
+        ai_schema: "The source review was incomplete or invalid.",
+        too_large: "The source review exceeded the response size limit.",
       };
       const reason = error instanceof MediaError ? reasons[error.code] : undefined;
-      return { ...fallback, warning: `${reason ?? "Gemini couldn't complete this review."} Using basic matching for this search.` };
+      return { ...fallback, warning: `${reason ?? "The source review could not be completed."} Using basic matching for this search.` };
     }
   }
 }

@@ -11,7 +11,7 @@ FROM python:3.12-slim-bookworm AS runtime
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     MEMO_ENV=production FLASHCARD_WEB_AUTH=1 FLASHCARD_WEB_REQUIRE_HTTPS=1 \
-    FLASHCARD_WEB_IMPORT_DESKTOP=0 FLASHCARD_WEB_DATA=/data MEMO_COOKIE_PATH=/memo
+    FLASHCARD_WEB_IMPORT_DESKTOP=0 FLASHCARD_WEB_DATA=/data MEMO_COOKIE_PATH=/
 COPY backend/requirements.lock.txt /app/requirements.lock.txt
 RUN apt-get update && apt-get install -y --no-install-recommends libreoffice-impress fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*

@@ -8,7 +8,7 @@ export type CardSet = {
   id: string; title: string; description: string; editable: boolean; shared: boolean
   revision: string; latest_version: number; versions: { version: number; card_count: number }[]
 }
-export type ReferenceDocument = { id: string; name: string; kind: 'pdf' | 'ppt' | 'pptx'; page_count: number }
+export type ReferenceDocument = { id: string; name: string; kind: 'pdf' | 'ppt' | 'pptx'; page_count: number; library?: boolean; unavailable?: boolean }
 export type SlideComment = { author: string; text: string; replies: { author: string; text: string }[] }
 export type CardSetDetail = CardSet & { version: number; cards: CardInput[]; documents?: ReferenceDocument[] }
 export type SetSelection = { id: string; version: number; title: string }

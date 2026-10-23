@@ -201,7 +201,7 @@ async def extract_set(client, key, url, page):
                              "responseMimeType": "application/json", "responseJsonSchema": RESPONSE_SCHEMA},
     })
     if response.status_code in {400, 401, 403}:
-        raise DeckError(503, "L'IA refuse la configuration d’import. L’administrateur doit vérifier la clé API et l’accès au modèle.")
+        raise DeckError(503, "Le service d’import refuse la demande. L’administrateur doit vérifier sa configuration.")
     if response.status_code == 429:
         raise DeckError(429, "Le quota gratuit de IA est atteint. Réessaie plus tard.")
     if not response.is_success:

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createMediaApi } from '../src/lib/media/api.ts';
+import { createMediaApi } from './fixtures/accounts.mjs';
 import { parseProbe } from '../src/lib/media/playback-plan.ts';
 
 const hash = 'd'.repeat(40), secret = 'playback-test-only-private-canary-secret';

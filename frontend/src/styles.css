@@ -413,8 +413,8 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
   transform: scale(1.035);
   box-shadow: 0 1rem 2.5rem #000a, 0 0 22px #ffffff12;
 }
-[data-tv-mode="true"] .simple-episodes > button { animation: tv-fade-in 280ms ease-out; }
-[data-tv-mode="true"] .simple-episodes > button:is(:hover, :focus) {
+[data-tv-mode="true"] .simple-episodes button { animation: tv-fade-in 280ms ease-out; }
+[data-tv-mode="true"] .simple-episodes button:is(:hover, :focus) {
   transform: translateX(3px);
   border-color: #fb923c;
   background-color: #231c17;
@@ -468,7 +468,7 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) :is(.dashboard-sidebar-brand, .dashboard-sidebar-label) { display: none; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-mark { display: block; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-header { justify-content: center; padding-inline: .5rem; }
-  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-content { padding-inline: .5rem; }
+  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) :is(.dashboard-sidebar-content, .dashboard-sidebar-footer) { padding-inline: .5rem; }
   .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .dashboard-sidebar-link { justify-content: center; }
 }
 
@@ -486,3 +486,48 @@ html[data-tv-mode="true"][data-tv-watching="true"] .tv-footer { display: none; }
 .calendar-status h1 { font-size: 24px; color: #fff; }
 .calendar-status p { color: #a3a3a3; }
 .calendar-status button { display: flex; align-items: center; gap: 10px; border: 1px solid #525252; border-radius: 6px; padding: 12px 18px; color: #fff; }
+/* A single Mémo-backed login protects all HomeLab sections. */
+.homelab-auth-screen { min-height: 100svh; display: grid; place-items: center; padding: 24px; background: #0b0b0d; color: #e5e5e5; overflow-y: auto; }
+.homelab-auth-panel { width: min(100%, 480px); padding: 36px; border: 1px solid #333; border-radius: 24px; background: #171719; }
+.homelab-auth-brand { color: #fb923c; letter-spacing: .2em; font-size: 13px; font-weight: 700; }
+.homelab-auth-icon { margin: 28px 0 16px; color: #fb923c; }
+.homelab-auth-icon svg { width: 32px; height: 32px; }
+.homelab-auth-panel h1 { margin: 0 0 12px; color: white; font-size: 28px; line-height: 1.25; }
+.homelab-auth-panel > p:not(.homelab-auth-brand) { font-size: 14px; line-height: 1.7; color: #a3a3a3; }
+.homelab-auth-panel button { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 48px; padding: 12px 16px; border: 1px solid #525252; border-radius: 12px; background: #ea580c; color: white; cursor: pointer; }
+.homelab-auth-panel button:focus-visible, .homelab-auth-panel input:focus-visible, .homelab-account-controls button:focus-visible { outline: 3px solid #fb923c; outline-offset: 4px; }
+.homelab-auth-panel button:disabled { opacity: .6; cursor: wait; }
+.homelab-auth-panel button svg { width: 20px; height: 20px; flex-shrink: 0; }
+.homelab-auth-accounts { display: grid; gap: 12px; margin-top: 28px; }
+.homelab-auth-accounts button { justify-content: start; background: #242426; text-align: left; }
+.homelab-auth-accounts button:hover { border-color: #fb923c; }
+.homelab-auth-accounts button > span { flex: 1; }
+.homelab-auth-accounts small { display: block; margin-top: 4px; color: #a3a3a3; }
+.homelab-auth-panel form { display: grid; gap: 18px; margin-top: 24px; }
+.homelab-auth-selected { color: #fb923c; }
+.homelab-auth-panel label { display: grid; gap: 8px; font-size: 14px; }
+.homelab-auth-panel input:not(.sr-only) { width: 100%; min-height: 48px; padding: 12px; background: #0b0b0d; color: white; border: 1px solid #525252; border-radius: 10px; }
+.homelab-auth-panel .homelab-auth-secondary { background: transparent; color: #d4d4d4; }
+.homelab-auth-panel .homelab-auth-error, .homelab-auth-notice { padding: 12px; border-radius: 10px; background: #7c2d122e; color: #fdba74; }
+.homelab-auth-notice { position: fixed; top: 16px; right: 16px; z-index: 100; }
+.homelab-account-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 0; color: #d4d4d4; }
+.homelab-account-name { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.homelab-account-name > span { overflow-wrap: anywhere; }
+.homelab-account-name small { display: block; color: #737373; font-size: 10px; }
+.homelab-account-controls svg { width: 18px; height: 18px; flex-shrink: 0; }
+.homelab-account-controls button { display: grid; place-items: center; min-width: 38px; min-height: 38px; border: 1px solid #404040; border-radius: 8px; }
+.homelab-account-controls button:hover { color: #fb923c; }
+.dashboard-sidebar .homelab-account-controls { flex-wrap: nowrap; }
+.dashboard-sidebar .homelab-account-name > span,
+.dashboard-sidebar .homelab-account-name small { min-width: 0; overflow: hidden; overflow-wrap: normal; white-space: nowrap; text-overflow: ellipsis; }
+.dashboard-sidebar .homelab-account-controls button { flex-shrink: 0; }
+html[data-tv-mode="true"] .homelab-auth-panel { width: min(100%, 680px); }
+html[data-tv-mode="true"] .homelab-auth-panel button, html[data-tv-mode="true"] .homelab-auth-panel input:not(.sr-only) { min-height: 60px; font-size: 20px; }
+html[data-tv-mode="true"] .homelab-account-controls button { min-width: 48px; min-height: 48px; }
+@media (hover: hover) and (min-width: 768px) {
+  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .homelab-account-controls { justify-content: center; }
+  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .homelab-account-name { flex: 0 0 auto; justify-content: center; gap: 0; }
+  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .homelab-account-name > span,
+  .dashboard-sidebar:not(:hover):not([data-keyboard-focus="true"]) .homelab-account-controls button { display: none; }
+}
+@media (max-width: 500px) { .homelab-auth-panel { padding: 24px; } }

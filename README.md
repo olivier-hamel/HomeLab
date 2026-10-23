@@ -1,18 +1,35 @@
 # HomeLab
 
-One repository contains the dashboard, TV & Movies, Calendar, and Mémo.
-Use `feat/memo-integration` for development and server deployment. All changes
-use one commit → push → pull workflow; see [SERVER-UPDATE.md](SERVER-UPDATE.md).
+One repository contains the dashboard, Accueil, TV & Movies, Tempo, Mémo, Bibliothèque, and Caméra.
+Use `feat/memo-integration` for development and server deployment. Commit and
+push, then run the private local helper `./scripts/deploy-server.sh` to deploy
+through SSH. See [SERVER-UPDATE.md](SERVER-UPDATE.md).
 
-**Calendar** is the default page. Its source is in [apps/calendar](apps/calendar/README.md).
-See [Calendar setup](docs/calendar.md).
+**HomeLab** opens with its own HTTPS login page and lists the existing Mémo accounts.
+One Mémo session opens Accueil, Tempo, TV & Movies, Mémo, Bibliothèque, and Caméra; no duplicate accounts are created.
+The cinema profile can switch without a password while the HomeLab login stays unchanged.
+See [shared accounts](docs/accounts.md).
 
-**Mémo** is the French flashcard app in [apps/memo](apps/memo/README.md), with
+**Accueil** is the default app after login, with its own blue, indigo, and mint UI.
+It contains Web search, personal tasks, today’s agenda, upcoming events, and app
+shortcuts. See [Accueil](docs/home.md).
+
+**Tempo** opens directly on its calendar. Its source is in [apps/calendar](apps/calendar/README.md).
+See [Tempo setup](docs/calendar.md).
+
+**Mémo** is the flashcard app in [apps/memo](apps/memo/README.md), with
 password-protected accounts. See [Memo setup](docs/memo.md) for private HTTPS
 and persistent data. Original Git histories are preserved; see
 [repository structure and history](docs/repository.md).
 
-The browser dashboard contains only Calendar, TV & Movies, and Mémo. The apps
+**Bibliothèque** is the French document app: nested folders, PDF/PowerPoint
+imports and previews, and automatic A26 Moodle downloads every 30 minutes.
+Tempo scans new Library files and keeps event proposals for approval; Mémo
+selects its reference documents from the same Library.
+Its UI lives in `frontend/src/pages/Library.tsx`; its API and durable file
+storage live in `backend/src/lib/library/`. See [Bibliothèque setup](docs/library.md).
+
+The browser dashboard contains Accueil, Tempo, TV & Movies, Mémo, Bibliothèque, and Caméra. The apps
 fill the content area; fullscreen is available from the sidebar.
 
 **TV & Movies** adds an optional TMDB catalogue,
@@ -20,6 +37,10 @@ Prowlarr search and TorrServer playback through backend APIs. It requires privat
 network configuration and your own credentials. Follow the
 [TV & Movies setup and verification guide](docs/tv-media.md). Live media services
 still need verification on your homelab; implementation tests used mocks.
+
+**Caméra / Veille** streams the Tapo C200 at `192.168.0.188`, with pan/tilt controls,
+saved viewpoints, audio and snapshots. Connect the separate Tapo camera account
+in the app's settings. See [camera setup](docs/camera.md).
 
 Fire Stick users get a separate TV browser layout with larger controls and
 remote navigation. Open `/?tv=1` to enable it manually; desktop keeps its
@@ -83,8 +104,9 @@ if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
 ```
 
 The root example binds to `127.0.0.1:3000` for local use. If you already have a
-`.env`, check its address and port before starting. No credentials are required
-to open Calendar. Mémo uses its own login; TV & Movies requires its media-service configuration.
+`.env`, check its address and port before starting. HomeLab requires an existing Mémo account and switches to HTTPS before login.
+TV & Movies also requires its media-service configuration, including the HTTPS
+dashboard URL in `MEDIA_ALLOWED_ORIGINS`.
 
 Build and start the stack from the repository root:
 
@@ -99,7 +121,8 @@ Open [http://localhost:3000](http://localhost:3000). Check
 [/healthz](http://localhost:3000/healthz) for frontend health and
 [/api/health](http://localhost:3000/api/health) for the API response
 `{"status":"ok"}`. A successful API check verifies the proxy connection; the
-dashboard opens Calendar. Account setup is described in [Memo setup](docs/memo.md).
+dashboard displays the HomeLab account chooser, then opens Accueil after login.
+Account setup is described in [shared accounts](docs/accounts.md).
 
 View logs with `docker compose logs -f --tail=100`. Stop the stack with
 `docker compose stop`; start it again with `docker compose up -d --wait`.
@@ -126,7 +149,20 @@ network and permitted remote clients.
 
 Install [Node.js 24](https://nodejs.org/en/download), including npm. The root
 `.nvmrc` selects Node 24. Each app keeps its own dependencies and npm lockfile;
-Calendar has no dependencies or build step.
+Tempo uses locally served PDF.js assets, prepared by `npm run dev`.
+
+Start all four local services from the repository root with:
+
+```sh
+./start-local.sh
+```
+
+The launcher prepares dependencies, sets up a local development account and
+prints `http://localhost:3000` once everything is ready. `Ctrl+C` stops all
+services. Configure OpenAI (`OPENAI_API_KEY`) for Tempo event creation and document
+scans, and MongoDB in the private `backend/.env`; local
+database names and account setup are described in the
+[local testing guide](docs/calendar-local.md#interface-complète-dans-le-navigateur).
 
 From the repository root, start the frontend in one terminal:
 
@@ -145,7 +181,10 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. Vite proxies `/api` and `/api/*` to the local backend
-on port 3001, preserving the path. Browser API calls should use relative URLs,
+on port 3001, preserving the path. Start Mémo on port 8000 with
+`FLASHCARD_WEB_AUTH=1`; `/memo/*` is proxied to that service and supplies the shared login.
+For loopback HTTP development only, set `FLASHCARD_WEB_REQUIRE_HTTPS=0`.
+Production still requires HTTPS. Set `MEMO_AUTH_URL=http://127.0.0.1:8000` in the local backend. Browser API calls should use relative URLs,
 such as `fetch('/api/health')`. Docker service names belong in server-side proxy
 configuration.
 
@@ -158,9 +197,15 @@ npm test
 npm run build
 ```
 
-For Calendar, run `npm run dev` or `npm test` in `apps/calendar/`.
+For Tempo, run `npm run dev` or `npm test` in `apps/calendar/`.
 For Memo, run `./start.sh --dev` in `apps/memo/web-app/`; see its
 [README](apps/memo/web-app/README.md) for Python dependencies and checks.
+
+To verify real Tempo PDF extraction before deploying, run `npm run test:pdf`
+in `backend/`, or `npm run test:pdf -- "/path/document.pdf"` for your own PDF.
+Configure `OPENAI_API_KEY` in the private `backend/.env` first. This uses the
+production extractor and performs no database writes. See the
+[local Tempo testing guide](docs/calendar-local.md) for the full browser setup.
 
 The existing `npm start` commands remain available for manual production previews.
 The frontend preview serves `dist` and has no API proxy; use Docker Compose to
@@ -174,7 +219,7 @@ compose.yml                  Production services and network
 .env.example                 Compose settings for your local copy
 docs/deployment.md           Home-server setup and operations guide
 frontend/
-  src/                       Dashboard navigation and TV & Movies UI
+  src/                       Dashboard navigation, Accueil, TV & Movies, and Bibliothèque UI
   vite.config.ts             Development server and API proxy
   Caddyfile                  Production static serving and API proxy
   Dockerfile                 Node build and non-root Caddy runtime

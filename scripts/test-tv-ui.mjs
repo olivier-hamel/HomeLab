@@ -1,7 +1,7 @@
 // UI integration check against built assets and local mock APIs; no live media services.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
+import { createServer } from 'node:https';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { checkNativePlayer } from './native-player-ui-checks.mjs';
 import { checkTvMotion } from './tv-motion-ui-checks.mjs';
 import { checkMovieDiscovery } from './movie-discovery-ui-checks.mjs';
+import { fixtureAccount, fixtureCookie, fixtureTls } from './account-ui-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'frontend/dist');
@@ -25,15 +26,19 @@ const plan = { id: 'direct', mode: 'direct', mime: 'video/mp4', container: 'mp4'
 const source = { id: 'source', title: 'Example movie 2026', indexer: 'Fixture', size: 1000000, seeders: 5000, leechers: 0, peers: 5000, quality: ['1080p'], match: 'Title match' };
 const alternatives = [source, { ...source, id: 'best', title: 'Example movie 2026 WEB-DL-GROUP' }, { ...source, id: 'broken', title: 'Example movie 2026 alternate' }, { ...source, id: 'wrong', title: 'Unrelated movie' }];
 const advice = { provider: 'gemini', ranking: ['best', 'broken', 'source', 'wrong'].map(id => ({ id, identity: id === 'wrong' ? 'mismatch' : 'match', verdict: 'good', method: 'gemini', reason: 'Its 1080p quality and 5,000 reported seeders make it a strong streaming choice.' })) };
-const metrics = { adds: [], selects: [], reviews: 0, subtitleSearches: [], subtitleDownloads: [] };
+const metrics = { adds: [], selects: [], reviews: 0, subtitleSearches: [], subtitleDownloads: [], progress: [] };
 const discoveryFixture = { requests: [], fail: false, delay: 0, duplicates: false };
 let simpleFixture = true;
 let subtitleDelay = 0;
 let recommendationDelay = 250;
 let fallbackAdvice = false;
-const server = createServer(async (req, res) => {
+const server = createServer(fixtureTls(output), async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const path = url.pathname;
+  if (path === '/memo/api/auth/me') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': fixtureCookie });
+    res.end(JSON.stringify(fixtureAccount)); return;
+  }
   if (path.startsWith('/api/media/')) {
     const endpoint = path.slice('/api/media/'.length);
     let raw = ''; for await (const chunk of req) raw += chunk;
@@ -52,12 +57,14 @@ const server = createServer(async (req, res) => {
       if (simpleFixture && body.sourceId === 'broken') { res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Fixture source unavailable' })); return; }
     }
     if (endpoint === 'select') metrics.selects.push(body.fileId);
+    if (endpoint === 'progress') metrics.progress.push(body);
     if (endpoint === 'subtitles/search') metrics.subtitleSearches.push(body);
     if (endpoint === 'subtitles/download') { metrics.subtitleDownloads.push(body.choice); await delay(subtitleDelay); }
     const json = endpoint === 'status' ? { tmdb: true, prowlarr: true, torrserver: true, discovery: true }
       : endpoint === 'catalogue' ? { titles: url.searchParams.get('kind') === 'all' ? mixedTitles : url.searchParams.get('kind') === 'tv' ? shows : titles, pages: 1 }
       : endpoint.startsWith('details/') ? { ...(endpoint.startsWith('details/tv/') ? shows : titles)[Number(endpoint.split('/').pop()) - 1], seasons: endpoint.startsWith('details/tv/') ? [{ number: 1, name: 'Season 1', episodes: episodes.length }] : [], imdbId: 'tt123', tvdbId: null, rating: 8.1 }
       : endpoint === 'continue-watching' ? { movies: [] }
+      : endpoint === 'downloads' ? { downloads: [] }
       : endpoint.startsWith('season/') ? { episodes }
       : endpoint === 'search' ? { searchId: 'search', results: simpleFixture ? alternatives : [source], reports: [], more: false, batch: 1, advice: { provider: 'heuristic', ranking: [] } }
       : endpoint === 'recommend' ? fallbackAdvice ? { ...advice, provider: 'heuristic', warning: "Gemini's request limit or quota was reached. Using basic matching for this search." } : advice
@@ -79,8 +86,8 @@ const server = createServer(async (req, res) => {
   } catch { res.writeHead(404); res.end(); }
 });
 await new Promise(done => server.listen(0, '127.0.0.1', done));
-const origin = `http://127.0.0.1:${server.address().port}`;
-const chrome = spawn(process.env.CHROME_BIN || 'C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-extensions', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+const origin = `https://127.0.0.1:${server.address().port}`;
+const chrome = spawn(process.env.CHROME_BIN || 'C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless=new', '--ignore-certificate-errors', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-extensions', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 let socket;
 let call;
 const errors = [];
@@ -167,8 +174,10 @@ try {
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), undefined, 'Normal desktop keeps its layout');
   assert.equal(await evaluate('getComputedStyle(document.documentElement).fontSize'), '16px');
   await focus('nav button'); await press('ArrowRight');
-  assert.equal(await active(), 'OVERVIEW', 'TV spatial navigation is inactive on desktop');
+  assert.equal(await active(), 'Tempo', 'TV spatial navigation is inactive on desktop');
   await call('Page.navigate', { url: `${origin}/?tv=1` });
+  await until('!!document.querySelector(".media-account-button")');
+  await activate('.media-account-button');
   await until('!!document.querySelector(".media-profile-grid button, .tv-catalogue-grid button")');
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".tv-footer")).display'), 'none', 'Profile chooser hides the TV footer');
   await evaluate('document.querySelector(".media-profile-grid button")?.click()');
@@ -333,6 +342,7 @@ try {
   const behindDialog = await evaluate('window.scrollY');
   await evaluate(`document.querySelector('dialog').style.maxHeight = '260px'; document.querySelector('dialog .max-w-4xl').style.minHeight = '900px'`);
   await focus('dialog button'); await press('PageDown');
+  await until('document.querySelector("dialog").scrollTop > 0');
   assert.ok(await evaluate('document.querySelector("dialog").scrollTop > 0'), 'PageDown scrolls long dialog content');
   await scrollSettled('dialog');
   const dialogScroll = await evaluate('document.querySelector("dialog").scrollTop');
@@ -385,13 +395,10 @@ try {
   await press('Escape'); await until('!!document.querySelector("#catalogue-query")');
   assert.equal(await evaluate('document.querySelector(".tv-header")'), null, 'TV mode has no top bar');
   assert.ok(await evaluate('document.querySelector(".tv-footer")?.innerText.includes("BUILD")'), 'TV build information is in the footer');
-  assert.ok(await evaluate('!!document.querySelector(".tv-footer #tv-dashboard-section")'), 'Dashboard navigation is in the footer');
+  assert.ok(await evaluate('document.querySelector(".tv-footer .homelab-account-name")?.innerText.includes("Oli")'), 'The connected HomeLab account is in the TV footer');
+  assert.ok(await evaluate(`!!document.querySelector('.tv-footer [aria-label="Se déconnecter de HomeLab"]')`), 'The TV footer offers HomeLab logout');
   assert.ok(await evaluate(`!!document.querySelector('.tv-footer [aria-label="Advanced mode"]')`), 'Advanced mode is in the footer');
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Advanced mode"]').length`), 1, 'TV page does not duplicate Advanced mode in its header');
-  await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'overview'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  await until('document.querySelector("#tv-dashboard-section").value === "overview"');
-  await evaluate(`(() => { const select = document.querySelector('#tv-dashboard-section'); select.value = 'tv'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  await until('!!document.querySelector("#catalogue-query")');
   await call('Page.navigate', { url: `${origin}/?tv=0` }); await until('!!document.querySelector("aside")');
   assert.equal(await evaluate('document.documentElement.dataset.tvMode'), undefined);
   await call('Page.navigate', { url: origin }); await until('!!document.querySelector("aside")');
@@ -417,8 +424,8 @@ try {
   await activate('#startup-retry');
   await until('!!document.querySelector(".tv-shell")');
   assert.equal(await evaluate('document.querySelector("#startup-error").hidden'), true, 'Retry recovers after bridge failure');
-  // The footer controls a native select during TV render; force that render to throw.
-  const renderFailure = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'Object.defineProperty(HTMLOptionElement.prototype, "selected", { get() { throw new Error("Fixture React render failure"); }, set() { throw new Error("Fixture React render failure"); } });' });
+  // Force the catalogue search input to fail during React rendering.
+  const renderFailure = await call('Page.addScriptToEvaluateOnNewDocument', { source: 'Object.defineProperty(HTMLInputElement.prototype, "value", { get() { throw new Error("Fixture React render failure"); }, set() { throw new Error("Fixture React render failure"); } });' });
   await call('Page.navigate', { url: `${origin}/?tv=1` });
   await until('document.querySelector("#startup-error")?.hidden === false');
   assert.match(await evaluate('document.querySelector("#startup-details").textContent'), /React render error[\s\S]*Fixture React render failure/);

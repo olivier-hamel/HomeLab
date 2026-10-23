@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { before, after, test } from 'node:test';
 import { nativeSubtitleSession } from '../src/lib/native-subtitles.ts';
+import { configureMediaAccount } from '../src/lib/media.ts';
+
+before(() => configureMediaAccount('oli', [{ username: 'oli', display_name: 'Oli' }]));
+after(() => configureMediaAccount(null, []));
 
 const srt = '1\n00:00:01,000 --> 00:00:05,000\nCaption fixture\n';
 const file = { id: 7, path: 'Movie.en.srt', kind: 'subtitle' };

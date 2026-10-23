@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createMediaApi } from '../src/lib/media/api.ts';
+import { createMediaApi } from './fixtures/accounts.mjs';
 import { query, magnet, BoundedCache, MediaError } from '../src/lib/media/core.ts';
 import { bounded, readLimited } from '../src/lib/media/http.ts';
 import { indexerQuery, normalizeSource, Prowlarr } from '../src/lib/media/prowlarr.ts';
@@ -204,6 +204,47 @@ test('request abort is linked to upstream after headers', async () => {
   const controller = new AbortController();
   const response = await ts.stream(hash, { id: 2 }, new Request('http://dashboard.test/stream', { signal: controller.signal }));
   controller.abort(); assert.equal(upstream.aborted, true); await response.body.cancel();
+});
+test('idle timeouts identify stalled torrents and downloads can use a longer deadline', async t => {
+  const previous = process.env.MEDIA_STREAM_IDLE_TIMEOUT_MS;
+  process.env.MEDIA_STREAM_IDLE_TIMEOUT_MS = '1000';
+  t.after(() => { if (previous === undefined) delete process.env.MEDIA_STREAM_IDLE_TIMEOUT_MS; else process.env.MEDIA_STREAM_IDLE_TIMEOUT_MS = previous; });
+  for (const [name, options, deadline] of [['playback', {}, 1000], ['download', { idleTimeoutMs: 180000 }, 180000]]) {
+    await t.test(name, async t => {
+      t.mock.timers.enable({ apis: ['setTimeout'] });
+      let upstream;
+      const ts = new TorrServer(async (_url, init) => {
+        upstream = init.signal;
+        return new Response(new ReadableStream({ start(c) { init.signal.addEventListener('abort', () => c.error(new Error(secret)), { once: true }); } }));
+      });
+      const response = await ts.stream(hash, { id: 2 }, new Request('http://dashboard.test/stream'), options);
+      const reader = response.body.getReader();
+      const read = reader.read();
+      await Promise.resolve();
+      t.mock.timers.tick(deadline - 1); assert.equal(upstream.aborted, false);
+      t.mock.timers.tick(1);
+      await assert.rejects(read, e => e instanceof MediaError && e.code === 'stream_timeout' && e.status === 504 && !e.message.includes(secret));
+      assert.equal(upstream.aborted, true);
+    });
+  }
+});
+test('upstream body errors identify connection interruptions without exposing private details', async () => {
+  const ts = new TorrServer(async () => new Response(new ReadableStream({ pull(c) { c.error(new Error(secret)); } })));
+  const response = await ts.stream(hash, { id: 2 }, new Request('http://dashboard.test/stream'));
+  await assert.rejects(response.text(), e => e instanceof MediaError && e.code === 'stream_interrupted' && !e.message.includes(secret));
+});
+test('stream connection and header failures distinguish recoverable errors from permanent errors', async t => {
+  for (const [status, code] of [[503, 'stream_unavailable'], [429, 'stream_unavailable'], [401, 'stream']]) {
+    const ts = new TorrServer(async () => new Response(secret, { status }));
+    await assert.rejects(ts.stream(hash, { id: 2 }, new Request('http://dashboard.test/stream')), e => e instanceof MediaError && e.code === code && e.message.includes(String(status)) && !e.message.includes(secret));
+  }
+  const disconnected = new TorrServer(async () => { throw new Error(secret); });
+  await assert.rejects(disconnected.stream(hash, { id: 2 }, new Request('http://dashboard.test/stream')), e => e instanceof MediaError && e.code === 'stream_unavailable' && !e.message.includes(secret));
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const stalled = new TorrServer((_url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error(secret)), { once: true })));
+  const response = stalled.stream(hash, { id: 2 }, new Request('http://dashboard.test/stream'));
+  t.mock.timers.tick(180000);
+  await assert.rejects(response, e => e instanceof MediaError && e.code === 'stream_timeout' && !e.message.includes(secret));
 });
 test('metadata timeout cancels work without returning private upstream errors; body sizes are bounded', async () => {
   await assert.rejects(bounded('Fixture', 15, new AbortController().signal, signal => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error(secret))))), e => e instanceof MediaError && e.status === 504 && !e.message.includes(secret));

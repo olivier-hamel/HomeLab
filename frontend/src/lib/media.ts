@@ -1,3 +1,5 @@
+import type { AccountName } from "./accounts";
+
 export type Kind = "movie" | "tv";
 export type Title = { id: number; kind: Kind; title: string; year: string; overview: string; poster: string | null };
 export type Details = Title & { imdbId: string | null; tvdbId: number | null; rating: number | null; seasons: { number: number; name: string; episodes: number | null }[] };
@@ -11,30 +13,59 @@ export type Assessment = { id: string; identity: "match" | "uncertain" | "mismat
 export type SourceAdvice = { provider: "gemini" | "heuristic"; model: string | null; warning: string | null; reviewed: number; ranking: Assessment[] };
 export type SearchResults = { searchId: string; advice: SourceAdvice; results: Source[]; reports: { indexer: string; query: string; strategy: string; error: string | null }[]; more: boolean; batch: number; warning: string | null };
 export type TorrentFile = { id: number; path: string; size: number | null; kind: "video" | "subtitle" | "other"; sample: boolean };
-export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
+export type DownloadPlaybackState = { playbackPositionSeconds: number; durationSeconds: number; subtitleOffsetSeconds: number; completed: boolean; updatedAt: string };
+export type TorrentStatus = { id: string; title: string; state: string; files: TorrentFile[]; downloaded?: boolean; downloadId?: string; playbackState?: DownloadPlaybackState; downloadSpeed: number | null; connectedPeers: number | null; downloadedBytes: number | null; completedBytes: number | null; preloadBytes: number | null; preloadTarget: number | null };
+export type MediaDownload = { id: string; title: string; file: TorrentFile; intent: SearchIntent; state: "queued" | "downloading" | "ready" | "error"; downloadedBytes: number; totalBytes: number; error: string; createdAt: string; updatedAt: string; playbackState?: DownloadPlaybackState };
+export type PlaybackSource = Source | string | { downloadId: string };
+export function matchingDownload(downloads: MediaDownload[], intent: SearchIntent): MediaDownload | undefined {
+  const target = intent.target ?? intent.context;
+  if (!target?.tmdbId || (target.kind === "tv" && target.episode === undefined)) return;
+  return downloads.find(download => {
+    const saved = download.intent.target ?? download.intent.context;
+    return download.state === "ready" && saved?.kind === target.kind && saved.tmdbId === target.tmdbId &&
+      (target.kind === "movie" || (saved.season === target.season && saved.episode === target.episode));
+  });
+}
 export type Selection = { id: string; stream: string; file: TorrentFile };
 export type PlaybackOption = { id: string; mode: "direct" | "remux" | "transcode"; mime: string; container: string; video: "copy" | "h264" | "vp9"; audio: "copy" | "aac" | "opus" | "none" };
 export type PlaybackInspection = { duration: number | null; video: string; audio: string | null; width?: number; height?: number; frameRate?: number; options: PlaybackOption[] };
 export type PreparedPlayback = PlaybackOption & { stream: string; duration: number | null };
 
-export const mediaProfiles = [
-  { id: "default", name: "Home", color: "orange" },
-  { id: "oli", name: "Oli", color: "sky" },
-  { id: "max", name: "Max", color: "emerald" },
-] as const;
-export type MediaProfileId = (typeof mediaProfiles)[number]["id"];
+export type MediaProfileId = string;
+export type MediaProfile = { id: string; name: string; color: string };
 const mediaProfileStorageKey = "homelab:media-profile";
+let homeLabUsername: string | null = null;
+let profiles: MediaProfile[] = [];
+let selectedMediaProfile: string | null = null;
+
+export function mediaProfilesFor(accounts: AccountName[]): MediaProfile[] {
+  const colors = ["orange", "sky", "emerald"];
+  return accounts.map((account, index) => ({ id: account.username, name: account.display_name,
+    color: account.username === "oli" ? "sky" : account.username === "max" ? "emerald" : colors[index % colors.length] }));
+}
+export function configureMediaAccount(username: string | null, accounts: AccountName[]) {
+  if (homeLabUsername !== username) selectedMediaProfile = null;
+  homeLabUsername = username;
+  profiles = mediaProfilesFor(accounts);
+}
 export function loadMediaProfile(): MediaProfileId | null {
+  if (!homeLabUsername) return null;
+  if (profiles.some(profile => profile.id === selectedMediaProfile)) return selectedMediaProfile;
   try {
-    const saved = localStorage.getItem(mediaProfileStorageKey);
-    return mediaProfiles.some(profile => profile.id === saved) ? saved as MediaProfileId : null;
-  } catch { return null; }
+    const saved = localStorage.getItem(`${mediaProfileStorageKey}:${homeLabUsername}`);
+    if (profiles.some(profile => profile.id === saved)) return saved;
+  } catch { /* Use the connected account if storage is unavailable. */ }
+  return profiles.some(profile => profile.id === homeLabUsername) ? homeLabUsername : null;
 }
 export function saveMediaProfile(profile: MediaProfileId) {
-  try { localStorage.setItem(mediaProfileStorageKey, profile); } catch { /* The in-memory selection still works. */ }
+  if (!homeLabUsername || !profiles.some(item => item.id === profile)) return;
+  selectedMediaProfile = profile;
+  try { localStorage.setItem(`${mediaProfileStorageKey}:${homeLabUsername}`, profile); } catch { /* The in-memory selection still works. */ }
 }
 export function activeMediaProfile(): MediaProfileId {
-  return loadMediaProfile() ?? "default";
+  const profile = loadMediaProfile();
+  if (!profile) throw new Error("Connecte-toi à HomeLab pour accéder aux films.");
+  return profile;
 }
 
 export type PlaybackTarget = "browser" | "android-tv";
@@ -60,6 +91,7 @@ export async function mediaApi<T>(path: string, signal: AbortSignal, body?: unkn
   const profile = activeMediaProfile();
   const response = await fetch(`/api/media/${path}`, { signal, credentials: "same-origin", cache: "no-store", headers: { "X-Media-Profile": profile, ...(body === undefined ? {} : { "Content-Type": "application/json", "X-Media-Request": "1" }) }, ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }) });
   const data = await response.json().catch(() => { throw new Error("The media API returned an unreadable response. Check the dashboard proxy."); });
+  if ((response.status === 401 && data.code === "account_session") || data.code === "password_change") window.dispatchEvent(new Event("homelab:session-expired"));
   if (!response.ok) throw new Error(data.error || `Media request failed (HTTP ${response.status}).`);
   return data as T;
 }
@@ -68,6 +100,33 @@ export async function savePlaybackProgress(intent: SearchIntent, playbackPositio
   const response = await fetch("/api/media/progress", { method: "POST", credentials: "same-origin", cache: "no-store", keepalive: true, headers: { "Content-Type": "application/json", "X-Media-Request": "1", "X-Media-Profile": activeMediaProfile() }, body: JSON.stringify({ movie: intent.movie, intent, playbackPositionSeconds, durationSeconds }) });
   if (!response.ok) throw new Error("Playback progress could not be saved.");
   window.dispatchEvent(new CustomEvent("homelab:continue-watching-changed"));
+}
+export async function saveDownloadPlaybackState(downloadId: string, state: Partial<Pick<DownloadPlaybackState, "playbackPositionSeconds" | "durationSeconds" | "subtitleOffsetSeconds">>): Promise<void> {
+  const response = await fetch("/api/media/downloads/progress", { method: "POST", credentials: "same-origin", cache: "no-store", keepalive: true, headers: { "Content-Type": "application/json", "X-Media-Request": "1", "X-Media-Profile": activeMediaProfile() }, body: JSON.stringify({ downloadId, ...state }) });
+  if (!response.ok) throw new Error("Download playback settings could not be saved.");
+  window.dispatchEvent(new Event("homelab:downloads-changed"));
+}
+export function downloadResumePosition(state?: DownloadPlaybackState): number {
+  return state && !state.completed && Number.isFinite(state.playbackPositionSeconds) && state.playbackPositionSeconds > 0 && state.playbackPositionSeconds < state.durationSeconds ? state.playbackPositionSeconds : 0;
+}
+export function playbackTimestamp(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(whole / 3600), minutes = Math.floor(whole / 60) % 60;
+  const rest = String(whole % 60).padStart(2, "0");
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
+}
+function subtitleOffsetKey(file: Pick<TorrentFile, "path" | "size">) {
+  return `homelab:subtitle-timing:v1:${JSON.stringify([activeMediaProfile(), file.path, file.size])}`;
+}
+export function loadSubtitleOffset(file: Pick<TorrentFile, "path" | "size">): number {
+  try {
+    const value = Number(localStorage.getItem(subtitleOffsetKey(file)) ?? 0);
+    return Number.isFinite(value) && Math.abs(value) <= 600 ? value : 0;
+  } catch { return 0; }
+}
+export function saveSubtitleOffset(file: Pick<TorrentFile, "path" | "size">, offset: number): void {
+  if (!Number.isFinite(offset) || Math.abs(offset) > 600) return;
+  try { localStorage.setItem(subtitleOffsetKey(file), String(offset)); } catch { /* Playback still works without browser storage. */ }
 }
 export async function recordWatchHistory(playbackId: string, intent: SearchIntent): Promise<void> {
   if (!intent.media) return;

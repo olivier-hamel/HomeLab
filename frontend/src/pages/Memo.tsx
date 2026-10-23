@@ -24,14 +24,6 @@ export default function Memo({ onEscape }: { onEscape?: () => void }) {
   }, [status, onEscape]);
 
   useEffect(() => {
-    if (location.protocol !== "https:") {
-      const url = new URL(location.href);
-      url.protocol = "https:";
-      url.port = import.meta.env.VITE_MEMO_HTTPS_PORT || "3443";
-      url.searchParams.set("section", "memo");
-      location.replace(url.href);
-      return;
-    }
     const controller = new AbortController();
     fetch("/memo/api/health", { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]), cache: "no-store" })
       .then(response => {
