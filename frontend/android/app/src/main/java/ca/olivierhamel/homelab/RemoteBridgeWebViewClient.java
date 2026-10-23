@@ -2,7 +2,9 @@ package ca.olivierhamel.homelab;
 
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.net.http.SslError;
 import android.util.Log;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -102,14 +104,46 @@ final class RemoteBridgeWebViewClient extends BridgeWebViewClient {
     }
 
     @Override
+    public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+        handler.cancel();
+        String message;
+        switch (error.getPrimaryError()) {
+            case SslError.SSL_UNTRUSTED:
+                message = "This Fire TV does not trust the server's HTTPS certificate. Install the HomeLab certificate or use a trusted HTTPS address.";
+                break;
+            case SslError.SSL_IDMISMATCH:
+                message = "The HTTPS certificate does not match this server address. Use the address the certificate was issued for.";
+                break;
+            case SslError.SSL_EXPIRED:
+            case SslError.SSL_NOTYETVALID:
+            case SslError.SSL_DATE_INVALID:
+                message = "The HTTPS certificate is not valid at the current date. Check the Fire TV clock and the server certificate.";
+                break;
+            default:
+                message = "The server's HTTPS certificate could not be verified. Check the server certificate and try again.";
+        }
+        reportServerError(view, error.getUrl(), message);
+    }
+
+    private void reportServerError(WebView view, String url, String message) {
+        Log.e(TAG, message + " " + url);
+        view.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('homelab:server-error', {detail: {message: " +
+                JSONObject.quote(message) + "}}))", null
+        );
+    }
+
+    @Override
     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         Log.e(TAG, "Load error " + error.getErrorCode() + " " + error.getDescription() + " mainFrame=" + request.isForMainFrame() + " " + request.getUrl());
+        if (request.isForMainFrame()) reportServerError(view, request.getUrl().toString(), "Could not reach HomeLab. Check the server address and network connection, then try again.");
         super.onReceivedError(view, request, error);
     }
 
     @Override
     public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
         Log.e(TAG, "HTTP " + response.getStatusCode() + " mainFrame=" + request.isForMainFrame() + " " + request.getUrl());
+        if (request.isForMainFrame()) reportServerError(view, request.getUrl().toString(), "HomeLab returned HTTP " + response.getStatusCode() + ". Check the server address and try again.");
         super.onReceivedHttpError(view, request, response);
     }
 }

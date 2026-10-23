@@ -10,8 +10,8 @@ android {
         applicationId "ca.olivierhamel.homelab"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.3.0-player-menus"
+        versionCode 6
+        versionName "1.3.1-connect"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -25,6 +25,51 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+// Personal debug builds can trust the owner's Caddy CA without disabling TLS
+// verification or changing the Fire TV's system certificate store.
+def configuredHomeLabCa = System.getenv('HOMELAB_CA_CERT')
+def homeLabCa = configuredHomeLabCa ? file(configuredHomeLabCa) : rootProject.file('../../.tools/certs/homelab-caddy-root.crt')
+if (configuredHomeLabCa && !homeLabCa.isFile()) {
+    throw new GradleException("HOMELAB_CA_CERT does not point to a certificate file: ${homeLabCa}")
+}
+if (homeLabCa.isFile()) {
+    def trustResources = layout.buildDirectory.dir('generated/homelab-trust/res')
+    def generateHomeLabTrust = tasks.register('generateHomeLabTrust') {
+        inputs.file(homeLabCa)
+        outputs.dir(trustResources)
+        doLast {
+            def certificate = homeLabCa.withInputStream {
+                java.security.cert.CertificateFactory.getInstance('X.509').generateCertificate(it)
+            }
+            certificate.checkValidity()
+            if (certificate.basicConstraints < 0) {
+                throw new GradleException('The HomeLab certificate must be a CA certificate, not a server certificate.')
+            }
+            def resourceRoot = trustResources.get().asFile
+            copy {
+                from homeLabCa
+                into new File(resourceRoot, 'raw')
+                rename { 'homelab_ca.crt' }
+            }
+            def config = new File(resourceRoot, 'xml/network_security_config.xml')
+            config.parentFile.mkdirs()
+            config.text = '''<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+            <certificates src="@raw/homelab_ca" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
+'''
+        }
+    }
+    android.sourceSets.debug.res.srcDir(trustResources)
+    tasks.named('preBuild').configure { dependsOn(generateHomeLabTrust) }
 }
 
 repositories {

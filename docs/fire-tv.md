@@ -196,6 +196,23 @@ a certificate already recognized by the device. Rebuild the APK to include its
 network security configuration for user-installed authorities. Saved HTTP server
 addresses are upgraded to HTTPS and persisted so the app does not return to HTTP.
 
+Personal debug APKs can also include the HomeLab Caddy root CA. Copy the public
+root certificate from the trusted HomeLab server to
+`.tools/certs/homelab-caddy-root.crt`, or set `HOMELAB_CA_CERT` to its absolute
+path, then rebuild the APK. Obtain the certificate from the server over a trusted
+connection; it is `/data/caddy/pki/authorities/local/root.crt` inside the frontend
+container. Only the public CA certificate is needed. The debug APK trusts this
+CA in addition to Android's system and user authorities; hostname, validity, and
+certificate-chain verification still apply. Release builds use the original
+system/user trust configuration.
+
+The setup screen shows **Connecting…** while opening the server and displays
+certificate, connection, or HTTP errors instead of leaving Connect unresponsive.
+If navigation never finishes, a 15-second timeout lets you retry.
+After building the frontend, run `node scripts/test-native-server-setup-ui.mjs`
+to check setup validation, connection feedback, error recovery, and navigation
+using a simulated native bridge.
+
 ### Build
 
 Install Node.js 24, JDK 17, and Android SDK Platform/Build Tools 34. Set
@@ -231,6 +248,44 @@ The script defaults to `192.168.92.255:5555`. Override an address that changes:
 ```bash
 bash ./scripts/build-and-deploy-fire-tv.sh 192.168.92.42
 ```
+
+### Ubuntu build and deploy
+
+Use the Ubuntu script from any directory, without `sudo`:
+
+```bash
+bash /home/user/Documents/HomeLab/scripts/build-and-deploy-fire-tv-ubuntu.sh FIRE_TV_IP
+```
+
+Replace `FIRE_TV_IP` with the current address shown under Fire TV Settings >
+My Fire TV > About > Network. The optional second argument overrides port 5555.
+Enable ADB debugging and accept the authorization prompt on the TV.
+
+Install the Ubuntu packages once:
+
+```bash
+sudo apt update
+sudo apt install openjdk-17-jdk adb
+```
+
+Use Node.js 24. In Android Studio's SDK Manager, install **Android SDK Platform
+34**, **Android SDK Build-Tools 34.0.0**, and **Android SDK Platform-Tools**.
+If using the Android command-line tools instead, run:
+
+```bash
+sdkmanager --sdk_root="$HOME/Android/Sdk" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+sdkmanager --sdk_root="$HOME/Android/Sdk" --licenses
+```
+
+The script finds JDK 17 under `/usr/lib/jvm`, and the SDK under
+`.tools/android-sdk`, `$HOME/Android/Sdk`, or `/usr/lib/android-sdk`. Set
+`JAVA_HOME` and `ANDROID_SDK_ROOT` if installed elsewhere; an explicitly set
+`JAVA_HOME` must point to JDK 17, which the existing Gradle wrapper requires.
+
+The script installs frontend dependencies, builds and synchronizes Capacitor,
+runs a clean Android build, and installs `artifacts/HomeLab-TV-debug.apk` using
+`adb install -r`. The hosted frontend must also be deployed for changes to the
+remote dashboard page to appear on the TV.
 
 ### Sideload
 
