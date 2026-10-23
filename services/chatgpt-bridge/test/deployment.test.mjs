@@ -34,7 +34,7 @@ test('archive serveur : code et déploiement inclus, données privées et dépen
 });
 
 test('installateur : syntaxe et aperçu sans root, sans réseau ni mutation', () => {
-  for (const file of ['install-ubuntu.sh','backup.sh','chatgpt-bridge']) {
+  for (const file of ['install-ubuntu.sh','install-from-git.sh','prepare-git.sh','deploy-git.sh','backup.sh','chatgpt-bridge']) {
     const syntax = spawnSync('bash', ['-n', join(projectDir, 'deployment', file)], { encoding: 'utf8' });
     assert.equal(syntax.status, 0, syntax.stderr);
   }
@@ -42,6 +42,67 @@ test('installateur : syntaxe et aperçu sans root, sans réseau ni mutation', ()
   assert.equal(plan.status, 0, plan.stderr);
   assert.match(plan.stdout, /sans modification ni accès réseau/);
   assert.match(plan.stdout, /aucune question/);
+});
+
+test('déploiement Git : commit exact, reprise du dépôt, historique réécrit et aucun fichier privé', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'bridge-git-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = join(dir, 'source'), repository = join(dir, 'server.git'), bundle = join(dir, 'source.bundle');
+  mkdirSync(source);
+  const git = (...args) => {
+    const result = spawnSync('git', ['-C', source, ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  git('init', '--initial-branch=main'); git('config', 'user.name', 'Deployment test'); git('config', 'user.email', 'test@example.invalid');
+  writeFileSync(join(source, '.gitignore'), '.local-data/\n.env\n');
+  writeFileSync(join(source, 'version.txt'), 'old revision');
+  git('add', '.'); git('commit', '-m', 'First');
+  const first = git('rev-parse', 'HEAD');
+  writeFileSync(join(source, 'version.txt'), 'new revision'); git('commit', '-am', 'Second');
+  const second = git('rev-parse', 'HEAD');
+  writeFileSync(join(source, '.env'), 'PRIVATE=not-transferred');
+  mkdirSync(join(source, '.local-data')); writeFileSync(join(source, '.local-data/profile'), 'not-transferred');
+  git('bundle', 'create', bundle, '--branches');
+  const prepare = (commit, checkout) => spawnSync('bash', [join(projectDir, 'deployment/prepare-git.sh'), repository, bundle, commit, checkout], { encoding: 'utf8' });
+  const oldCheckout = join(dir, 'old');
+  assert.equal(prepare(first, oldCheckout).status, 0);
+  assert.equal(readFileSync(join(oldCheckout, 'version.txt'), 'utf8'), 'old revision');
+  assert.equal(existsSync(join(oldCheckout, '.env')), false);
+  assert.equal(existsSync(join(oldCheckout, '.local-data')), false);
+  const currentCheckout = join(dir, 'current');
+  assert.equal(prepare(second, currentCheckout).status, 0);
+  assert.equal(readFileSync(join(currentCheckout, 'version.txt'), 'utf8'), 'new revision');
+  const unavailable = join(dir, 'unavailable');
+  assert.notEqual(prepare('f'.repeat(40), unavailable).status, 0);
+  assert.equal(existsSync(unavailable), false);
+  // An amended/reworded branch is a valid new Git deployment, without publishing
+  // or force-pushing any source repository. Old release worktrees stay intact.
+  git('commit', '--amend', '-m', 'Renamed second');
+  const amended = git('rev-parse', 'HEAD');
+  git('bundle', 'create', bundle, '--branches');
+  assert.equal(prepare(amended, join(dir, 'amended')).status, 0);
+  assert.equal(readFileSync(join(oldCheckout, 'version.txt'), 'utf8'), 'old revision');
+});
+
+test('déploiement Git : aperçu sans SSH, source autonome et refus des fichiers non committés', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'bridge-git-dry-run-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = join(dir, 'source'); mkdirSync(source); mkdirSync(join(source, 'deployment'));
+  for (const file of ['deploy-git.sh', 'install-from-git.sh']) writeFileSync(join(source, 'deployment', file), readFileSync(join(projectDir, 'deployment', file)));
+  const git = (...args) => {
+    const result = spawnSync('git', ['-C', source, ...args], { encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); return result.stdout.trim();
+  };
+  git('init', '--initial-branch=main'); git('config', 'user.name', 'Deployment test'); git('config', 'user.email', 'test@example.invalid');
+  git('add', '.'); git('commit', '-m', 'Deployment fixture');
+  const script = join(source, 'deployment/deploy-git.sh');
+  const preview = spawnSync('bash', [script, '--dry-run', 'agent@vm.example'], { encoding: 'utf8' });
+  assert.equal(preview.status, 0, preview.stderr);
+  assert.match(preview.stdout, new RegExp(git('rev-parse', 'HEAD')));
+  assert.match(preview.stdout, /No changes or network access/);
+  const receiver = spawnSync('bash', [join(source, 'deployment/install-from-git.sh'), '--dry-run', '--bundle', script, '--commit', git('rev-parse', 'HEAD'), '--source-path', '.'], { encoding: 'utf8' });
+  assert.equal(receiver.status, 0, receiver.stderr);
+  writeFileSync(join(source, 'deployment/uncommitted.sh'), 'must not deploy');
+  assert.notEqual(spawnSync('bash', [script, '--dry-run', 'agent@vm.example'], { encoding: 'utf8' }).status, 0);
+  assert.notEqual(spawnSync('bash', [script, '--dry-run', '-oProxyCommand=unsafe'], { encoding: 'utf8' }).status, 0);
 });
 
 test('chemins serveur : Chromium hors du code, données séparées et valeurs locales conservées', t => {

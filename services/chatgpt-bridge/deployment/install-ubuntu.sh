@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run INSIDE the dedicated Ubuntu guest, from an extracted source-only archive.
+# Run INSIDE the dedicated Ubuntu guest, from a pinned Git checkout or source archive.
 set -euo pipefail
 umask 022
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
@@ -10,6 +10,8 @@ config=/etc/chatgpt-bridge/bridge.env
 node_version=24.22.1
 dry_run=false
 start=true
+revision=${BRIDGE_GIT_REVISION:-}
+[[ -z $revision || $revision =~ ^[0-9a-f]{40}$ ]] || { echo 'Révision Git invalide.' >&2; exit 2; }
 for arg in "$@"; do
   case "$arg" in
     --dry-run) dry_run=true ;;
@@ -21,7 +23,7 @@ for arg in "$@"; do
     *) echo "Option inconnue : $arg" >&2; exit 2 ;;
   esac
 done
-[[ -f "$source_dir/package-lock.json" && -f "$source_dir/src/main.ts" ]] || { echo 'Archive source incomplète.' >&2; exit 1; }
+[[ -f "$source_dir/package-lock.json" && -f "$source_dir/src/main.ts" ]] || { echo 'Source incomplète.' >&2; exit 1; }
 if [[ -d /etc/pve ]] || command -v pveversion >/dev/null 2>&1; then
   echo 'Exécuter cet installateur dans la VM, jamais sur l’hôte Proxmox.' >&2
   exit 1
@@ -32,6 +34,7 @@ Plan sans modification ni accès réseau :
 - Vérifier Ubuntu 24.04 avec systemd, x86-64 ou arm64.
 - Installer les dépendances Linux et Node.js 24 depuis nodejs.org, SHA-256 vérifié.
 - Construire une nouvelle version sous /opt/chatgpt-bridge/releases.
+- Enregistrer le commit Git dans GIT_REVISION pour un déploiement Git.
 - Conserver configuration, jetons et profil sous /etc et /var/lib/chatgpt-bridge.
 - Conserver Chromium sous /var/cache/chatgpt-bridge/browsers.
 - Installer le compte non privilégié, la CLI et l’unité systemd.
@@ -45,7 +48,7 @@ fi
 [[ ${ID:-} == ubuntu && ${VERSION_ID:-} == 24.04 ]] || { echo 'Cible prise en charge : Ubuntu Server 24.04.' >&2; exit 1; }
 [[ $(cat /proc/1/comm) == systemd ]] || { echo 'systemd doit être PID 1.' >&2; exit 1; }
 case "$(uname -m)" in x86_64) node_arch=x64 ;; aarch64) node_arch=arm64 ;; *) echo 'Architecture non prise en charge.' >&2; exit 1 ;; esac
-[[ "$source_dir" != "$base/app" && "$source_dir" != "$base/releases/"* ]] || { echo 'Extraire la nouvelle archive ailleurs que dans /opt/chatgpt-bridge.' >&2; exit 1; }
+[[ "$source_dir" != "$base/app" && "$source_dir" != "$base/releases/"* ]] || { echo 'Préparer les nouvelles sources hors des versions actives.' >&2; exit 1; }
 [[ ! -e "$base/app" || -L "$base/app" ]] || { echo '/opt/chatgpt-bridge/app existe et n’est pas un lien géré ; arrêt.' >&2; exit 1; }
 install -d -m 0755 "$base" "$base/releases" "$base/runtimes"
 exec 9>"$base/install.lock"
@@ -102,6 +105,7 @@ install -d -m 0755 "$build_dir"
 for entry in package.json package-lock.json tsconfig.json .env.example .gitignore .nvmrc README.md API.md PROXMOX.md MAINTENANCE.md VALIDATION.md openapi.yaml src scripts test deployment; do
   rsync -a --no-owner --no-group -- "$source_dir/$entry" "$build_dir/"
 done
+if [[ -n $revision ]]; then printf '%s\n' "$revision" > "$build_dir/GIT_REVISION"; fi
 chown -R "$account:$account" "$build_dir"
 as_service() {
   runuser -u "$account" -- env "PATH=$node_bin:/usr/bin:/bin" \
@@ -122,7 +126,7 @@ as_service "$node_bin/node" "--env-file=$config" --input-type=module -e \
 port=$(as_service "$node_bin/node" "--env-file=$config" --input-type=module -e \
   'const p=Number(process.env.BRIDGE_PORT??3211);if(!Number.isInteger(p)||p<1||p>65535)throw new Error("Port invalide");console.log(p);')
 
-release="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+release="$(date -u +%Y%m%dT%H%M%SZ)${revision:+-${revision:0:12}}-$$"
 runtime="$base/runtimes/node-v${node_version}-linux-${node_arch}"
 if [[ ! -d "$runtime" ]]; then mv "$tmp/node" "$runtime"; chown -R root:root "$runtime"; fi
 mv "$build_dir" "$base/releases/$release"

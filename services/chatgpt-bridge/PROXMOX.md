@@ -51,39 +51,46 @@ Dans les commandes suivantes, remplacer `admin@IP_VM` par le compte et l’adres
 de cette **nouvelle VM**. L’installateur refuse l’hôte Proxmox. Il ne crée pas la
 VM, ne touche pas à sa configuration réseau et n’installe pas de bureau graphique.
 
-## 2. Préparer et transférer l’archive
+## 2. Déployer un commit Git
 
-Sur la machine de développement, depuis le dossier du service :
-
-```sh
-npm run package:server
-```
-
-L’archive `.local-data/packages/chatgpt-bridge-server-0.1.0.tar.gz` contient le code,
-le verrou npm, les tests et les fichiers de déploiement. Elle exclut **le profil
-Chromium, les jetons, la base de conversations, `.env`, node_modules et dist**.
-Le fichier `.sha256` permet de vérifier le transfert.
+Sur la machine de développement, vérifier et committer les changements du
+service, puis lancer ces commandes depuis la racine du dépôt HomeLab :
 
 ```sh
-scp .local-data/packages/chatgpt-bridge-server-0.1.0.tar.gz* admin@IP_VM:~/
-ssh admin@IP_VM
-sha256sum --check chatgpt-bridge-server-0.1.0.tar.gz.sha256
-mkdir -p ~/chatgpt-bridge-source
-tar -xzf ~/chatgpt-bridge-server-0.1.0.tar.gz -C ~/chatgpt-bridge-source
-cd ~/chatgpt-bridge-source
-bash deployment/install-ubuntu.sh --dry-run
-sudo bash deployment/install-ubuntu.sh
+bash services/chatgpt-bridge/deployment/deploy-git.sh --dry-run admin@IP_VM main
+BRIDGE_SSH_KEY="$HOME/.ssh/id_ed25519" \
+  bash services/chatgpt-bridge/deployment/deploy-git.sh admin@IP_VM main
 ```
 
-L’installateur cible Ubuntu 24.04 x86-64 ou arm64. Il installe les paquets Linux,
-le QEMU Guest Agent, Node.js 24.22.1 depuis nodejs.org avec vérification SHA-256,
+Le compte administrateur de la VM doit permettre `sudo -n` pour ce déploiement.
+La clé SSH reste sur le PC ; `BRIDGE_SSH_KEY` est facultatif si SSH trouve déjà
+la bonne clé. La vérification de la clé d’hôte reste active. La référence Git
+peut être une branche locale ou un SHA complet ; elle vaut `HEAD` par défaut.
+Les modifications du service non committées bloquent le déploiement.
+
+Le script transfère l’historique committé dans un **bundle Git**, puis le récupère
+dans `/opt/chatgpt-bridge/repository.git` sur la VM. Aucun push GitHub n’est
+nécessaire. Le bundle contient l’historique du dépôt ; les fichiers ignorés tels
+que le profil Chromium, les jetons, SQLite, `.env`, node_modules et dist ne sont
+pas transférés. La VM prépare un checkout détaché du commit exact et installe
+uniquement le dossier du service. Le dépôt Git et les données privées restent
+hors des versions exécutées.
+
+L’installateur cible Ubuntu 24.04 x86-64 ou arm64. Il installe Git si nécessaire,
+les paquets Linux, le QEMU Guest Agent, Node.js 24.22.1 avec vérification SHA-256,
 les dépendances verrouillées et Chromium. Il compile sous un compte non privilégié,
 puis rend le code non modifiable par ce compte. Il démarre et active le service.
-Il vérifie uniquement l’API locale `/healthz` : **aucune question ChatGPT**.
-L’option `--no-start` active le démarrage au prochain boot sans démarrer immédiatement.
+Il vérifie `/healthz` et l’état de session sans poser de question à ChatGPT.
+La version active contient `GIT_REVISION` pour identifier le commit installé :
 
-L’archive ne transporte pas la connexion locale : se connecter une nouvelle fois
-sur la VM évite de déplacer les cookies et les clés de chiffrement du navigateur.
+```sh
+ssh admin@IP_VM
+sudo cat /opt/chatgpt-bridge/app/GIT_REVISION
+sudo chatgpt-bridge status --refresh
+```
+
+Sur une première installation, se connecter au compte dans la session noVNC.
+Les déploiements suivants conservent le profil et les jetons propres à la VM.
 
 ## 3. Connexion initiale via noVNC
 
@@ -128,6 +135,7 @@ les mises à jour, les sauvegardes et le dépannage.
 | Élément | Chemin |
 | --- | --- |
 | Version de code active | `/opt/chatgpt-bridge/app` → version sous `releases/` |
+| Cache Git des sources | `/opt/chatgpt-bridge/repository.git` |
 | Node.js du service | `/opt/chatgpt-bridge/node` → version sous `runtimes/` |
 | Configuration | `/etc/chatgpt-bridge/bridge.env` |
 | Base, profil, jetons, verrous | `/var/lib/chatgpt-bridge/` |
@@ -171,12 +179,14 @@ même avec un jeton valide.
 
 ## 5. Mise à jour et sauvegarde
 
-Créer une nouvelle archive, l’extraire dans un nouveau dossier source de la VM
-et relancer l’installateur. Le code est construit avant l’arrêt de l’ancienne
-version ; configuration et données ne sont pas remplacées. Si la nouvelle version
-ne répond pas à `/healthz`, l’installateur rétablit les anciens liens et redémarre
-la version précédemment active. Les anciennes versions sont conservées pour un
-retour manuel ; surveiller l’espace disque au fil des mises à jour.
+Commiter la nouvelle version et relancer `deployment/deploy-git.sh` depuis le
+PC en choisissant sa branche ou son SHA. Le déploiement exige une file vide et
+crée une sauvegarde privée à froid avant l’installation. Le code est construit
+avant l’arrêt de l’ancienne version ; configuration et données sont conservées.
+Si la nouvelle version ne répond pas à `/healthz`, l’installateur rétablit les
+anciens liens et redémarre la version précédemment active. Le commit est inscrit
+dans `GIT_REVISION` et dans le cache Git. Les anciennes versions restent
+conservées ; surveiller l’espace disque au fil des mises à jour.
 
 Avant une mise à jour importante, faire une sauvegarde Proxmox de la VM. Pour
 une copie des seules données applicatives et de la configuration :

@@ -88,6 +88,7 @@ allowlisted tools can run; shell commands from responses are never executed.
 | --- | --- |
 | Active application | `/opt/chatgpt-bridge/app` (versioned symlink) |
 | Previous applications | `/opt/chatgpt-bridge/releases/` |
+| Git source cache | `/opt/chatgpt-bridge/repository.git` (root only) |
 | Node.js | `/opt/chatgpt-bridge/node` → `runtimes/` |
 | Configuration | `/etc/chatgpt-bridge/bridge.env` |
 | Conversations, tokens, browser profile | `/var/lib/chatgpt-bridge/` |
@@ -141,39 +142,66 @@ Restore ownership `chatgpt-bridge:chatgpt-bridge` on the data directory and mode
 On a replacement VM, install the application first; a new manual login may be
 needed even when restoring the browser profile.
 
-## Update the application
+## Update the application from Git
 
-Build a fresh source-only bundle on the development machine:
+Run checks on the development machine, then commit the bridge changes. Deployment
+uses the exact commit you select; it rejects uncommitted bridge files.
 
 ```sh
 cd services/chatgpt-bridge
 npm ci
 npm run check
 npm test
-npm run package:server
+# Commit the validated changes, then return to the repository root:
+cd ../..
+bash services/chatgpt-bridge/deployment/deploy-git.sh --dry-run admin@IP_VM main
+BRIDGE_SSH_KEY="$HOME/.ssh/id_ed25519" \
+  bash services/chatgpt-bridge/deployment/deploy-git.sh admin@IP_VM main
 ```
 
-The normal tests use local fixtures and do not query ChatGPT. The separate
-`smoke:live` scripts do query ChatGPT and are not part of routine maintenance.
-Transfer the `.tar.gz` and `.sha256` files using the private SSH guide. Verify the
-checksum and extract into a **new** source directory on the VM. Then run:
+Replace `admin@IP_VM` with the dedicated VM's SSH account and address. The source
+ref defaults to `HEAD`; a full commit SHA or another local branch can also be
+selected. `BRIDGE_SSH_KEY` is optional when SSH already finds the correct key.
+Host-key verification stays enabled, and the administrator needs non-interactive
+`sudo` for this command. Keep the private key on the development machine.
+
+The procedure creates a **Git bundle**, transfers it over SSH, and fetches it
+into `/opt/chatgpt-bridge/repository.git` on the VM. This transfers committed
+repository history, including imported application history; ignored browser
+profiles, tokens, databases, `.env` files and uncommitted files are not included.
+It does not push to GitHub, so locally rewritten history can be deployed without
+changing the remote branches. Each installation uses a detached checkout of one
+full commit, never an in-place `git pull` inside the running application.
+
+The VM installs Git if needed, verifies the bundle, requires an empty queue and
+creates a cold backup under `/var/backups/chatgpt-bridge` before invoking the
+installer. The installer builds as the unprivileged service user before switching
+the active release, preserves data/settings, and restores the previous application,
+runtime and unit if startup health checks fail. The Git cache records successful
+revisions under `refs/deployments/`; releases contain `GIT_REVISION` and include
+the abbreviated commit in their directory name.
+
+Verify the installed version **on the VM**:
 
 ```sh
-bash deployment/install-ubuntu.sh --dry-run
-sudo bash deployment/install-ubuntu.sh
+sudo cat /opt/chatgpt-bridge/app/GIT_REVISION
+sudo git --git-dir=/opt/chatgpt-bridge/repository.git rev-parse refs/deployments/current
 sudo chatgpt-bridge status --refresh
 ```
 
-The installer builds before stopping the old service, preserves data/settings,
-and switches versioned symlinks. If startup health checks fail, it attempts to
-restore the previous application, runtime and unit. A successful health check
-does not guarantee that ChatGPT's current interface still works. Keep the backup
-until you have checked a deliberate real exchange. A code rollback alone does
-not reverse database migrations; pair it with the matching backup when needed.
+The two commit IDs must agree. The automatic checks send no question to ChatGPT.
+The normal tests also use local fixtures; `smoke:live` is separate and uses the
+real account. A successful health check does not establish that ChatGPT's current
+interface accepts document uploads. Keep the backup until a deliberate exchange
+has been checked. A code rollback does not reverse database migrations; restore
+the matching private backup when needed.
 
-Previous releases remain under `/opt/chatgpt-bridge/releases`; review disk usage
-and remove only specific inactive releases after successful validation and backup.
-Do not edit files under the active release directly.
+To reinstall a previous committed version, run the same development command with
+that full commit SHA. Previous releases remain under `/opt/chatgpt-bridge/releases`;
+review disk usage and remove only specific inactive releases after validation and
+backup. Do not edit files under the active release directly. The old
+`package:server` archive command remains available for offline handoff, but Git is
+the standard deployment path.
 
 ## Update Ubuntu and the runtime
 
@@ -187,7 +215,7 @@ If a reboot is needed, finish active conversations, make a backup, and reboot th
 VM with `sudo reboot`. Reconnect and check the service and QEMU Guest Agent.
 The installer's Node.js version is pinned; apt does not update it. To upgrade it,
 update `node_version` in `deployment/install-ubuntu.sh`, validate locally and
-deploy a new bundle. Chromium follows the locked Playwright dependency and is
+deploy the committed revision. Chromium follows the locked Playwright dependency and is
 downloaded by the installer. Do not run an unreviewed global npm upgrade on the VM.
 
 ## Troubleshooting

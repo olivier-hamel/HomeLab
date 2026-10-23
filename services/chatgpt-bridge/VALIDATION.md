@@ -1,5 +1,15 @@
 # Validation locale
 
+## Procédure Git — 23 octobre 2026
+
+- Vérification TypeScript et 42 tests automatisés réussis, sans test ignoré.
+- Dépôt Git temporaire et bundle réel : sélection d’un ancien commit exact,
+  conservation des fichiers, refus d’un commit absent et mise à jour après
+  réécriture de l’historique vérifiés. Les fichiers privés ignorés sont exclus.
+- Aperçus sans SSH/réseau, dépôt autonome et refus des modifications non
+  committées vérifiés. La syntaxe des scripts Bash de déploiement est valide.
+
+
 ## Documents joints — 23 octobre 2026
 
 - Vérification TypeScript et compilation Node.js 24 réussies ; contrat OpenAPI

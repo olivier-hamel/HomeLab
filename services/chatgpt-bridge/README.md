@@ -23,7 +23,9 @@ dans la session distante ; les mots de passe ChatGPT ne sont jamais demandés pa
 
 Pour le serveur : [guide Proxmox et installation dans une VM dédiée](PROXMOX.md).
 Pour l’exploitation : [maintenance, sauvegardes et mises à jour](MAINTENANCE.md).
-`npm run package:server` prépare une archive de code sans profil, jeton ni base locale.
+Le déploiement standard utilise un commit Git exact via `deployment/deploy-git.sh`
+et SSH, sans push GitHub. `npm run package:server` reste disponible pour une
+archive de code hors ligne, sans profil, jeton ni base locale.
 
 ## Installation locale
 
