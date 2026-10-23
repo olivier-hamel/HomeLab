@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $EUID -ne 0 ]]; then
+  echo 'Utiliser sudo chatgpt-bridge <commande> sur la VM.' >&2
+  exit 1
+fi
+cd /opt/chatgpt-bridge/app
+exec runuser -u chatgpt-bridge -- \
+  /opt/chatgpt-bridge/node/bin/node --env-file=/etc/chatgpt-bridge/bridge.env \
+  /opt/chatgpt-bridge/app/dist/cli.js "$@"

@@ -1,0 +1,36 @@
+{
+  "name": "chatgpt-plus-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": {
+      "types": "./dist/app-client.d.ts",
+      "import": "./dist/app-client.js"
+    }
+  },
+  "engines": { "node": ">=24.0.0 <25" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "cli": "node --env-file-if-exists=.env dist/cli.js",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node --env-file-if-exists=.env dist/cli.js doctor",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "smoke:live": "node --env-file-if-exists=.env scripts/smoke-live.mjs",
+    "verify:maintenance": "node --env-file-if-exists=.env scripts/verify-maintenance.mjs",
+    "metrics": "node --env-file-if-exists=.env scripts/metrics.mjs",
+    "package:server": "node scripts/package-server.mjs"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "playwright": "^1.55.0",
+    "tab2api": "0.3.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.3"
+  }
+}
